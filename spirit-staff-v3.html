@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>minéral Spirit — Gestion du personnel</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F5F3EF;min-height:100vh}
+input,select,textarea,button{font-family:inherit}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#D0CEC8;border-radius:3px}
+.fade-in{animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback,createContext,useContext}=React;
+
+// ── STORAGE ────────────────────────────────────────────────
+const save=(k,v)=>{try{localStorage.setItem('spirit_'+k,JSON.stringify(v))}catch(e){}};
+const load=(k,def)=>{try{const v=localStorage.getItem('spirit_'+k);return v?JSON.parse(v):def}catch(e){return def}};
+
+// ── DONNÉES INITIALES ─────────────────────────────────────
+const INIT_TEAMS=[
+  {id:'direction',    name:'Direction',      color:'#C5753A',bg:'#FFF4EC',icon:'🏛️',desc:'Direction générale'},
+  {id:'accueil',      name:'Accueil',        color:'#EC4899',bg:'#FDF2F8',icon:'🏠',desc:'Accueil et caisse'},
+  {id:'technique',    name:'Technique',      color:'#0EA5E9',bg:'#F0F9FF',icon:'🔧',desc:'Ouverture voies, entretien'},
+  {id:'enseignement', name:'Enseignement',   color:'#4A8C6E',bg:'#EBF5F0',icon:'🧗',desc:'Moniteurs et encadrants'},
+  {id:'administratif',name:'Administratif',  color:'#7C3AED',bg:'#F5F3FF',icon:'📋',desc:'Secrétariat, RH'},
+  {id:'renforts',     name:'Renforts',       color:'#06B6D4',bg:'#ECFEFF',icon:'⚡',desc:'Renforts ponctuels'},
+  {id:'benevoles',    name:'Bénévoles',      color:'#8B5CF6',bg:'#F5F3FF',icon:'💜',desc:'Équipe bénévole'},
+];
+
+const INIT_FUNCTIONS=[
+  {id:'accueil',         name:'Accueil / Caisse',  color:'#EC4899',bg:'#FDF2F8',icon:'🎫',desc:'Tenue du poste accueil'},
+  {id:'bureau',          name:'Bureau / Admin',    color:'#C5753A',bg:'#FFF4EC',icon:'📋',desc:'Tâches administratives'},
+  {id:'ouverture',       name:'Ouverture',         color:'#22C55E',bg:'#F0FDF4',icon:'🔓',desc:'Ouverture de la salle'},
+  {id:'fermeture',       name:'Fermeture',         color:'#6366F1',bg:'#EEF2FF',icon:'🔒',desc:'Fermeture de la salle'},
+  {id:'ouverture_voies', name:'Ouverture de voies',color:'#F97316',bg:'#FFF7ED',icon:'🪨',desc:'Tracé de nouvelles voies'},
+  {id:'nettoyage',       name:'Entretien',         color:'#64748B',bg:'#F1F5F9',icon:'🧹',desc:'Entretien et nettoyage'},
+  {id:'moniteur',        name:'Moniteur',          color:'#4A8C6E',bg:'#EBF5F0',icon:'🧗',desc:'Animation séances'},
+  {id:'encadrant',       name:'Encadrant',         color:'#059669',bg:'#ECFDF5',icon:'👷',desc:'Encadrement groupes'},
+  {id:'renfort',         name:'Renfort général',   color:'#06B6D4',bg:'#ECFEFF',icon:'⚡',desc:'Renfort polyvalent'},
+  {id:'evenement',       name:'Événementiel',      color:'#F59E0B',bg:'#FFFBEB',icon:'🎉',desc:'Événements'},
+];
+
+const INIT_STAFF=[
+  {id:1, name:'Marion',    initials:'MA',contract:35,team:'accueil',   type:'salarie', rate:14.50,color:'#6366F1',functions:['accueil','bureau','ouverture','fermeture'],   primary:'bureau',         manager_id:null,cp:25,rtt:5, phone:'06 11 22 33 44',email:'marion@mineral-spirit.fr',   hire:'2019-09-01',note:'Responsable accueil'},
+  {id:2, name:'Joséphine', initials:'JO',contract:25,team:'accueil',   type:'salarie', rate:12.50,color:'#EC4899',functions:['accueil','bureau','ouverture','fermeture'],   primary:'accueil',        manager_id:1,   cp:20,rtt:3, phone:'06 22 33 44 55',email:'josephine@mineral-spirit.fr',hire:'2021-01-15',note:'Bureau et accueil'},
+  {id:3, name:'Eva',       initials:'EV',contract:25,team:'accueil',   type:'salarie', rate:12.50,color:'#14B8A6',functions:['accueil','ouverture','fermeture'],              primary:'accueil',        manager_id:1,   cp:22,rtt:3, phone:'06 33 44 55 66',email:'eva@mineral-spirit.fr',      hire:'2020-06-01',note:'Mercredi + Samedi'},
+  {id:4, name:'Brigitte',  initials:'BR',contract:26,team:'accueil',   type:'salarie', rate:12.00,color:'#F97316',functions:['accueil','ouverture','fermeture'],              primary:'accueil',        manager_id:1,   cp:18,rtt:2, phone:'06 44 55 66 77',email:'brigitte@mineral-spirit.fr', hire:'2018-03-01',note:'Week-end principalement'},
+  {id:5, name:'Marine',    initials:'MR',contract:35,team:'technique', type:'salarie', rate:13.50,color:'#8B5CF6',functions:['ouverture_voies','nettoyage','bureau','ouverture'],primary:'ouverture_voies',manager_id:null,cp:28,rtt:5,phone:'06 55 66 77 88',email:'marine@mineral-spirit.fr',  hire:'2017-09-01',note:'Bricolages et ouverture voies'},
+  {id:6, name:'Daphné',    initials:'DA',contract:0, team:'renforts',  type:'renfort', rate:11.50,color:'#06B6D4',functions:['accueil','renfort'],                            primary:'renfort',        manager_id:1,   cp:0, rtt:0, phone:'06 66 77 88 99',email:'daphne@email.fr',             hire:'2022-09-01',note:'Renfort Lundi'},
+  {id:7, name:'Zélie',     initials:'ZE',contract:0, team:'renforts',  type:'renfort', rate:11.00,color:'#22C55E',functions:['renfort','accueil'],                            primary:'renfort',        manager_id:1,   cp:0, rtt:0, phone:'06 77 88 99 00',email:'zelie@email.fr',              hire:'2023-01-01',note:'Renfort ponctuel'},
+  {id:8, name:'Matéo',     initials:'MT',contract:0, team:'renforts',  type:'renfort', rate:11.50,color:'#F59E0B',functions:['renfort','moniteur','accueil'],                 primary:'renfort',        manager_id:5,   cp:0, rtt:0, phone:'06 88 99 00 11',email:'mateo@email.fr',              hire:'2022-06-01',note:'Multi-jours'},
+  {id:9, name:'Julie',     initials:'JU',contract:0, team:'renforts',  type:'renfort', rate:11.00,color:'#EF4444',functions:['accueil','renfort'],                            primary:'renfort',        manager_id:1,   cp:0, rtt:0, phone:'06 99 00 11 22',email:'julie@email.fr',              hire:'2023-03-01',note:'Mer/Jeu/Dim'},
+  {id:10,name:'Anaïs',     initials:'AN',contract:0, team:'renforts',  type:'renfort', rate:11.00,color:'#A855F7',functions:['renfort'],                                      primary:'renfort',        manager_id:1,   cp:0, rtt:0, phone:'07 00 11 22 33',email:'anais@email.fr',             hire:'2023-09-01',note:'Vendredi uniquement'},
+];
+
+// Comptes utilisateurs : email → {password, role, staff_id, name}
+const INIT_USERS={
+  'admin@mineral-spirit.fr':     {password:'Spirit2025!', role:'admin',   staff_id:null,name:'Administrateur'},
+  'marion@mineral-spirit.fr':    {password:'Marion2025',  role:'manager', staff_id:1,   name:'Marion'},
+  'josephine@mineral-spirit.fr': {password:'Jose2025',    role:'staff',   staff_id:2,   name:'Joséphine'},
+  'eva@mineral-spirit.fr':       {password:'Eva2025',     role:'staff',   staff_id:3,   name:'Eva'},
+  'brigitte@mineral-spirit.fr':  {password:'Brig2025',    role:'staff',   staff_id:4,   name:'Brigitte'},
+  'marine@mineral-spirit.fr':    {password:'Marine2025',  role:'manager', staff_id:5,   name:'Marine'},
+  'mateo@email.fr':               {password:'Mateo2025',   role:'staff',   staff_id:8,   name:'Matéo'},
+};
+
+const LEAVE_TYPES={
+  cp:         {label:'Congé payé',        short:'CP',  color:'#22C55E',bg:'#F0FDF4',paid:true, levels:['manager','rh']},
+  rtt:        {label:'RTT',               short:'RTT', color:'#6366F1',bg:'#EEF2FF',paid:true, levels:['manager']},
+  maladie:    {label:'Arrêt maladie',     short:'MAL', color:'#EF4444',bg:'#FEF2F2',paid:true, levels:['rh']},
+  formation:  {label:'Formation',         short:'FOR', color:'#06B6D4',bg:'#ECFEFF',paid:true, levels:['manager','rh']},
+  sans_solde: {label:'Congé sans solde',  short:'CSS', color:'#64748B',bg:'#F1F5F9',paid:false,levels:['manager','rh']},
+  evenement:  {label:'Événement familial',short:'EVT', color:'#F59E0B',bg:'#FFFBEB',paid:true, levels:['manager']},
+  recup:      {label:'Récupération',      short:'REC', color:'#8B5CF6',bg:'#F5F3FF',paid:true, levels:['manager']},
+};
+
+const INIT_LEAVES=[
+  {id:1,staffId:4,type:'cp',       start:'2025-03-23',end:'2025-03-29',days:5,status:'approved',   step:99,note:'Congés annuels'},
+  {id:2,staffId:3,type:'cp',       start:'2025-04-07',end:'2025-04-14',days:5,status:'pending',    step:1, note:'Vacances printemps'},
+  {id:3,staffId:2,type:'rtt',      start:'2025-04-21',end:'2025-04-25',days:3,status:'approved_n1',step:2, note:'RTT accumulés'},
+  {id:4,staffId:8,type:'formation',start:'2025-04-14',end:'2025-04-14',days:1,status:'pending',    step:1, note:'Premiers secours'},
+  {id:5,staffId:5,type:'cp',       start:'2025-05-12',end:'2025-05-16',days:5,status:'pending',    step:1, note:'Congés posés'},
+];
+
+// ── PLANNING ──────────────────────────────────────────────
+const DAYS   =['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+const DAYS_SH=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+const HOURS  =Array.from({length:14},(_,i)=>i+8);
+
+const buildGrid=()=>{const g={};for(let d=0;d<7;d++){g[d]={};for(let h=8;h<22;h++)g[d][h]=[]}return g};
+const addSlot=(g,d,hs,he,id)=>{for(let h=hs;h<he;h++){if(!g[d][h].includes(id))g[d][h].push(id)}};
+
+const createDefaultSchedules=()=>{
+  const sc={};INIT_FUNCTIONS.forEach(f=>{sc[f.id]=buildGrid()});
+  const a=sc.accueil,b=sc.bureau,o=sc.ouverture,f=sc.fermeture,
+        v=sc.ouverture_voies,m=sc.moniteur,r=sc.renfort,n=sc.nettoyage;
+  // Accueil
+  addSlot(a,0,16,22,1);addSlot(a,0,11,13,2);addSlot(a,0,13,16,6);
+  addSlot(a,1,18,20,1);addSlot(a,1,11,15,2);addSlot(a,1,12,14,8);
+  addSlot(a,2,9,17,3);addSlot(a,2,10,15,4);addSlot(a,2,13,18,8);
+  addSlot(a,3,11,15,1);addSlot(a,3,15,19,2);addSlot(a,3,12,15,9);
+  addSlot(a,4,14,17,1);addSlot(a,4,11,14,2);addSlot(a,4,12,14,10);
+  addSlot(a,5,9,19,3);addSlot(a,5,11,19,4);addSlot(a,6,10,18,4);
+  // Bureau
+  addSlot(b,0,9,14,1);addSlot(b,1,9,12,1);addSlot(b,2,9,12,2);
+  addSlot(b,3,9,12,2);addSlot(b,4,9,11,1);addSlot(b,1,13,17,5);addSlot(b,3,9,14,5);
+  // Ouverture
+  addSlot(o,0,8,10,2);addSlot(o,1,8,10,3);addSlot(o,2,8,10,3);
+  addSlot(o,3,8,10,2);addSlot(o,4,8,10,4);addSlot(o,5,8,10,3);addSlot(o,6,8,10,4);
+  // Fermeture
+  addSlot(f,0,21,22,1);addSlot(f,1,21,22,5);addSlot(f,2,21,22,5);
+  addSlot(f,3,21,22,3);addSlot(f,4,21,22,4);addSlot(f,5,21,22,4);addSlot(f,6,21,22,5);
+  // Voies
+  addSlot(v,1,9,13,5);addSlot(v,3,14,18,5);addSlot(v,6,9,14,5);
+  // Moniteur
+  addSlot(m,2,14,18,8);addSlot(m,5,14,18,8);addSlot(m,3,14,18,9);addSlot(m,6,14,18,9);
+  // Renfort
+  addSlot(r,0,13,16,6);addSlot(r,3,14,18,9);addSlot(r,6,10,14,7);addSlot(r,4,12,16,10);
+  // Nettoyage
+  addSlot(n,0,8,10,5);addSlot(n,2,8,10,5);addSlot(n,4,8,10,5);addSlot(n,6,8,10,5);
+  return sc;
+};
+
+// ── CONTEXT ───────────────────────────────────────────────
+const AppCtx=createContext({});
+const useApp=()=>useContext(AppCtx);
+
+// ── COMPOSANTS DE BASE ────────────────────────────────────
+const Avatar=({s,size=30})=>(
+  <div style={{width:size,height:size,borderRadius:'50%',background:s.color,color:'#fff',
+    display:'flex',alignItems:'center',justifyContent:'center',
+    fontSize:size*.32,fontWeight:700,flexShrink:0}}>
+    {s.initials}
+  </div>
+);
+
+const Tag=({color,bg,children,style:extra={}})=>(
+  <span style={{fontSize:11,fontWeight:600,padding:'2px 9px',borderRadius:20,color,background:bg,
+    display:'inline-flex',alignItems:'center',gap:3,whiteSpace:'nowrap',...extra}}>
+    {children}
+  </span>
+);
+
+const Btn=({onClick,children,variant='default',small,disabled,style:extra={}})=>{
+  const v={
+    default:{background:'#fff',border:'1px solid #E4E0D8',color:'#1E2235'},
+    primary:{background:'#C5753A',border:'none',color:'#fff'},
+    danger: {background:'#FEF2F2',border:'1px solid #FCD0D0',color:'#EF4444'},
+    success:{background:'#EBF5F0',border:'1px solid #C8E8D8',color:'#4A8C6E'},
+    ghost:  {background:'transparent',border:'1px solid #E4E0D8',color:'#8B8880'},
+  };
+  return(
+    <button onClick={onClick} disabled={disabled} style={{
+      padding:small?'4px 10px':'7px 14px',borderRadius:7,cursor:disabled?'default':'pointer',
+      display:'inline-flex',alignItems:'center',gap:6,
+      fontSize:small?11:13,fontWeight:500,fontFamily:'inherit',
+      opacity:disabled?.5:1,...v[variant],...extra}}>
+      {children}
+    </button>
+  );
+};
+
+const inputSt={width:'100%',padding:'8px 10px',border:'1px solid #E4E0D8',borderRadius:7,
+  fontSize:13,fontFamily:'inherit',outline:'none',boxSizing:'border-box'};
+
+const Field=({label,children})=>(
+  <div>
+    <div style={{fontSize:11,fontWeight:600,color:'#6B6860',marginBottom:4,
+      textTransform:'uppercase',letterSpacing:'.4px'}}>{label}</div>
+    {children}
+  </div>
+);
+
+// ── MODAL ─────────────────────────────────────────────────
+const Modal=({open,onClose,title,children,width=520})=>{
+  if(!open)return null;
+  return(
+    <div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',
+      alignItems:'center',justifyContent:'center',padding:16}}>
+      <div onClick={onClose} style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)'}}/>
+      <div className="fade-in" style={{position:'relative',width,maxWidth:'95vw',maxHeight:'92vh',
+        overflow:'auto',background:'#fff',borderRadius:14,
+        boxShadow:'0 20px 60px rgba(0,0,0,.2)',zIndex:1}}>
+        <div style={{padding:'18px 22px 14px',borderBottom:'1px solid #ECEAE4',
+          display:'flex',alignItems:'center',justifyContent:'space-between',
+          position:'sticky',top:0,background:'#fff',zIndex:2}}>
+          <div style={{fontWeight:700,fontSize:16,color:'#1E2235'}}>{title}</div>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',
+            padding:4,color:'#9B9890',fontSize:18,display:'flex'}}>✕</button>
+        </div>
+        <div style={{padding:'18px 22px 22px'}}>{children}</div>
+      </div>
+    </div>
+  );
+};
+
+// ── PAGE HEADER ───────────────────────────────────────────
+const PageHeader=({title,sub,actions})=>(
+  <div style={{padding:'18px 24px 14px',borderBottom:'1px solid #ECEAE4',background:'#fff',
+    display:'flex',alignItems:'center',gap:16,flexShrink:0}}>
+    <div style={{flex:1}}>
+      <div style={{fontWeight:700,fontSize:18,color:'#1E2235'}}>{title}</div>
+      {sub&&<div style={{fontSize:12,color:'#8B8880',marginTop:2}}>{sub}</div>}
+    </div>
+    {actions&&<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{actions}</div>}
+  </div>
+);
+
+// ── LOGIN ─────────────────────────────────────────────────
+const Login=({onLogin})=>{
+  const [email,setEmail]=useState('');
+  const [pass,setPass]=useState('');
+  const [err,setErr]=useState('');
+  const [loading,setLoading]=useState(false);
+
+  const handle=async(e)=>{
+    e.preventDefault();setErr('');setLoading(true);
+    await new Promise(r=>setTimeout(r,500));
+    const u=INIT_USERS[email.toLowerCase().trim()];
+    if(!u||u.password!==pass){setErr('Email ou mot de passe incorrect');setLoading(false);return;}
+    onLogin({email:email.toLowerCase().trim(),...u});
+  };
+
+  const presets=[
+    {label:'Admin',           email:'admin@mineral-spirit.fr',     pass:'Spirit2025!',color:'#C5753A'},
+    {label:'Marion (Manager)',email:'marion@mineral-spirit.fr',    pass:'Marion2025', color:'#6366F1'},
+    {label:'Eva (Salarié)',   email:'eva@mineral-spirit.fr',       pass:'Eva2025',    color:'#14B8A6'},
+    {label:'Matéo (Vacation)',email:'mateo@email.fr',               pass:'Mateo2025',  color:'#F59E0B'},
+  ];
+
+  return(
+    <div style={{minHeight:'100vh',display:'flex',alignItems:'center',
+      justifyContent:'center',background:'#181C2E',padding:16}}>
+      <div className="fade-in" style={{width:400,background:'#fff',borderRadius:16,
+        padding:36,boxShadow:'0 24px 80px rgba(0,0,0,.4)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:28}}>
+          <div style={{width:44,height:44,borderRadius:12,
+            background:'linear-gradient(135deg,#C5753A,#E8A06A)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>⛰️</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:20,color:'#1E2235'}}>minéral Spirit</div>
+            <div style={{fontSize:12,color:'#8B8880'}}>Gestion du personnel v2</div>
+          </div>
+        </div>
+
+        <form onSubmit={handle}>
+          <div style={{display:'flex',flexDirection:'column',gap:14,marginBottom:20}}>
+            <Field label="Email">
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                style={inputSt} placeholder="votre@email.fr" required autoFocus/>
+            </Field>
+            <Field label="Mot de passe">
+              <input type="password" value={pass} onChange={e=>setPass(e.target.value)}
+                style={inputSt} placeholder="••••••••" required/>
+            </Field>
+          </div>
+          {err&&(
+            <div style={{padding:'8px 12px',background:'#FEF2F2',border:'1px solid #FCD0D0',
+              borderRadius:7,fontSize:12,color:'#EF4444',marginBottom:14}}>{err}</div>
+          )}
+          <button type="submit" disabled={loading} style={{width:'100%',padding:'11px',
+            background:loading?'#E4E0D8':'#C5753A',border:'none',borderRadius:8,
+            color:'#fff',fontWeight:700,fontSize:14,cursor:loading?'default':'pointer',
+            fontFamily:'inherit'}}>
+            {loading?'Connexion en cours...':'Se connecter →'}
+          </button>
+        </form>
+
+        <div style={{marginTop:24}}>
+          <div style={{fontSize:10,color:'#C0BCB5',textAlign:'center',marginBottom:10,
+            textTransform:'uppercase',letterSpacing:'.5px'}}>Accès rapide — démonstration</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+            {presets.map(p=>(
+              <button key={p.email} onClick={()=>{setEmail(p.email);setPass(p.pass)}}
+                style={{padding:'7px 10px',borderRadius:7,border:`1.5px solid ${p.color}30`,
+                  background:`${p.color}10`,color:p.color,fontSize:11,fontWeight:600,
+                  cursor:'pointer',fontFamily:'inherit',textAlign:'left'}}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{marginTop:20,padding:'12px',background:'#F5F3EF',borderRadius:8}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#8B8880',marginBottom:6,textTransform:'uppercase'}}>Tous les comptes</div>
+          {Object.entries(INIT_USERS).map(([em,u])=>(
+            <div key={em} style={{fontSize:10,color:'#8B8880',marginBottom:2,display:'flex',gap:6,flexWrap:'wrap'}}>
+              <span style={{fontWeight:600,color:'#1E2235'}}>{u.name}</span>
+              <code style={{background:'#fff',padding:'0 4px',borderRadius:3}}>{em}</code>
+              <code style={{background:'#fff',padding:'0 4px',borderRadius:3}}>{u.password}</code>
+              <Tag color={u.role==='admin'?'#C5753A':u.role==='manager'?'#6366F1':'#4A8C6E'}
+                   bg={u.role==='admin'?'#FFF4EC':u.role==='manager'?'#EEF2FF':'#EBF5F0'}>
+                {u.role}
+              </Tag>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── SIDEBAR ───────────────────────────────────────────────
+const Sidebar=({view,setView,leaves,user})=>{
+  const isAdmin=user.role==='admin';
+  const isMgr=user.role==='manager'||isAdmin;
+  const pending=leaves.filter(l=>l.status==='pending'||l.status==='approved_n1').length;
+
+  const nav=[
+    ...(isMgr?[{id:'planning',    label:'Planning',         icon:'📅',sub:'Multi-fonctions'}]:[]),
+    {id:'mon-planning',            label:'Mon Planning',    icon:'👤',sub:'Ma vue personnelle'},
+    ...(isMgr?[{id:'equipe',      label:'Équipe',          icon:'👥',sub:'Membres & fonctions'}]:[]),
+    {id:'conges',                  label:isMgr?'Congés':'Mes congés',icon:'🏖️',sub:'Approbation workflow',badge:isMgr&&pending>0?pending:0},
+    ...(isMgr?[{id:'releves',     label:'Relevés',         icon:'⏱️',sub:'Heures & export'}]:[]),
+    ...(isAdmin?[{id:'config',    label:'Configuration',   icon:'⚙️',sub:'Équipes & fonctions'}]:[]),
+  ];
+
+  return(
+    <div style={{width:220,minHeight:'100vh',background:'#181C2E',display:'flex',
+      flexDirection:'column',position:'fixed',left:0,top:0,bottom:0,zIndex:100}}>
+      {/* Logo */}
+      <div style={{padding:'20px 16px 14px',borderBottom:'1px solid rgba(255,255,255,.07)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:36,height:36,borderRadius:9,
+            background:'linear-gradient(135deg,#C5753A,#E8A06A)',
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>⛰️</div>
+          <div>
+            <div style={{color:'#fff',fontWeight:800,fontSize:14}}>minéral Spirit</div>
+            <div style={{color:'rgba(255,255,255,.3)',fontSize:9,textTransform:'uppercase',letterSpacing:'.5px'}}>
+              {isAdmin?'Admin':isMgr?'Manager':'Salarié'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav style={{flex:1,padding:'10px 8px',overflowY:'auto'}}>
+        {nav.map(item=>{
+          const active=view===item.id;
+          return(
+            <button key={item.id} onClick={()=>setView(item.id)} style={{
+              width:'100%',display:'flex',alignItems:'center',gap:9,padding:'9px 10px',
+              borderRadius:8,border:'none',cursor:'pointer',
+              background:active?'rgba(197,117,58,.18)':'transparent',
+              color:active?'#E8A06A':'rgba(255,255,255,.45)',
+              fontSize:13,fontWeight:active?600:400,fontFamily:'inherit',
+              marginBottom:2,textAlign:'left',position:'relative'}}>
+              <span style={{fontSize:15}}>{item.icon}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.label}</div>
+                {active&&<div style={{fontSize:9,opacity:.6,marginTop:1}}>{item.sub}</div>}
+              </div>
+              {item.badge>0&&(
+                <span style={{background:'#EF4444',color:'#fff',borderRadius:20,
+                  fontSize:9,fontWeight:700,padding:'1px 5px'}}>{item.badge}</span>
+              )}
+              {active&&<div style={{position:'absolute',left:0,top:'20%',bottom:'20%',
+                width:3,borderRadius:'0 3px 3px 0',background:'#E8A06A'}}/>}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* User info + logout */}
+      <div style={{padding:'10px 14px',borderTop:'1px solid rgba(255,255,255,.07)'}}>
+        <div style={{fontSize:11,color:'rgba(255,255,255,.6)',marginBottom:1,
+          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.name}</div>
+        <div style={{fontSize:9,color:'rgba(255,255,255,.25)',overflow:'hidden',
+          textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{user.email}</div>
+        <button onClick={()=>{localStorage.removeItem('spirit_session');window.location.reload()}}
+          style={{marginTop:8,padding:'5px 0',background:'none',border:'none',
+            color:'rgba(255,255,255,.3)',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>
+          Déconnexion →
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ── PLANNING VIEW ─────────────────────────────────────────
+const PlanningView=()=>{
+  const {staff,functions,schedules,setSchedules}=useApp();
+  const [wk,setWk]=useState(0);
+  const [activeFn,setActiveFn]=useState('accueil');
+  const [selStaff,setSelStaff]=useState(null);
+  const [mode,setMode]=useState('fn');
+
+  const dates=useMemo(()=>{
+    const now=new Date(),mon=new Date(now);
+    const diff=now.getDay()===0?-6:1-now.getDay();
+    mon.setDate(now.getDate()+diff+wk*7);
+    return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+  },[wk]);
+
+  const weekLabel=`${dates[0].getDate()} – ${dates[6].getDate()} ${dates[6].toLocaleString('fr-FR',{month:'long',year:'numeric'})}`;
+  const fn=functions.find(f=>f.id===activeFn);
+  const grid=schedules[activeFn]||buildGrid();
+
+  const toggleCell=(d,h)=>{
+    if(!selStaff)return;
+    setSchedules(prev=>{
+      const g=JSON.parse(JSON.stringify(prev));
+      if(!g[activeFn])g[activeFn]=buildGrid();
+      const c=g[activeFn][d][h];
+      g[activeFn][d][h]=c.includes(selStaff)?c.filter(x=>x!==selStaff):[...c,selStaff];
+      return g;
+    });
+  };
+
+  const remove=(d,h,sid,e)=>{
+    e.stopPropagation();
+    setSchedules(prev=>{
+      const g=JSON.parse(JSON.stringify(prev));
+      if(g[activeFn])g[activeFn][d][h]=(g[activeFn][d][h]||[]).filter(x=>x!==sid);
+      return g;
+    });
+  };
+
+  const allGrid=useMemo(()=>{
+    const g=buildGrid();
+    for(const f of functions){
+      const fg=schedules[f.id]||buildGrid();
+      for(let d=0;d<7;d++)for(const h of HOURS)
+        for(const id of(fg[d][h]||[]))g[d][h].push({id,fid:f.id,fn:f});
+    }
+    return g;
+  },[schedules,functions]);
+
+  const fnStaff=staff.filter(s=>s.functions?.includes(activeFn));
+  const selS=staff.find(s=>s.id===selStaff);
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',height:'100vh'}}>
+      {/* Toolbar */}
+      <div style={{padding:'10px 18px',borderBottom:'1px solid #ECEAE4',background:'#fff',
+        display:'flex',gap:10,alignItems:'center',flexShrink:0,flexWrap:'wrap'}}>
+        <div style={{minWidth:130}}>
+          <div style={{fontWeight:700,fontSize:16,color:'#1E2235'}}>Planning</div>
+          <div style={{fontSize:11,color:'#8B8880'}}>{weekLabel}</div>
+        </div>
+
+        <div style={{display:'flex',gap:2,background:'#F5F3EF',borderRadius:7,padding:2}}>
+          {[['fn','📋 Par fonction'],['all','👥 Vue globale']].map(([v,l])=>(
+            <button key={v} onClick={()=>setMode(v)} style={{padding:'5px 10px',borderRadius:5,
+              border:'none',cursor:'pointer',fontFamily:'inherit',
+              background:mode===v?'#fff':'transparent',
+              color:mode===v?'#1E2235':'#9B9890',fontWeight:mode===v?600:400,fontSize:11,
+              boxShadow:mode===v?'0 1px 3px rgba(0,0,0,.1)':'none'}}>{l}</button>
+          ))}
+        </div>
+
+        {mode==='fn'&&(
+          <div style={{display:'flex',gap:4,flex:1,flexWrap:'wrap'}}>
+            {functions.map(f=>(
+              <button key={f.id} onClick={()=>setActiveFn(f.id)} style={{padding:'3px 9px',
+                borderRadius:20,border:`1.5px solid ${activeFn===f.id?f.color:'#E4E0D8'}`,
+                background:activeFn===f.id?f.bg:'#fff',
+                color:activeFn===f.id?f.color:'#9B9890',
+                cursor:'pointer',fontSize:10,fontWeight:activeFn===f.id?700:400,fontFamily:'inherit'}}>
+                {f.icon} {f.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{display:'flex',gap:3,flexShrink:0,marginLeft:'auto'}}>
+          <Btn onClick={()=>setWk(w=>w-1)} small>◀</Btn>
+          <Btn onClick={()=>setWk(0)} small>Auj.</Btn>
+          <Btn onClick={()=>setWk(w=>w+1)} small>▶</Btn>
+        </div>
+      </div>
+
+      <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+        {/* Grille */}
+        <div style={{flex:1,overflow:'auto',background:'#FAFAF8'}}>
+          <div style={{display:'grid',gridTemplateColumns:'44px repeat(7,1fr)',
+            position:'sticky',top:0,zIndex:10,background:'#F5F3EF',borderBottom:'2px solid #E4E0D8'}}>
+            <div/>
+            {DAYS.map((day,di)=>{
+              const date=dates[di],isToday=date.toDateString()===new Date().toDateString();
+              return(
+                <div key={day} style={{padding:'8px 6px 6px',textAlign:'center',
+                  background:isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent',
+                  borderLeft:'1px solid #E4E0D8'}}>
+                  <div style={{fontSize:9,fontWeight:600,color:isToday?'#C5753A':'#9B9890',
+                    textTransform:'uppercase'}}>{DAYS_SH[di]}</div>
+                  <div style={{fontSize:15,fontWeight:isToday?800:600,
+                    color:isToday?'#C5753A':'#1E2235',lineHeight:1.2,margin:'1px 0'}}>{date.getDate()}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
+            <colgroup><col style={{width:44}}/>{DAYS.map((_,i)=><col key={i}/>)}</colgroup>
+            <tbody>
+              {HOURS.map(h=>(
+                <tr key={h}>
+                  <td style={{padding:'0 5px',textAlign:'right',fontSize:9,color:'#C0BCB5',
+                    verticalAlign:'top',paddingTop:4,borderTop:'1px solid #ECEAE4',
+                    position:'sticky',left:0,background:'#F5F3EF',zIndex:5}}>{h}h</td>
+                  {DAYS.map((_,di)=>{
+                    const items=mode==='fn'
+                      ?(grid[di][h]||[]).map(id=>({id,fid:activeFn,fn}))
+                      :(allGrid[di][h]||[]);
+                    const hasSel=selStaff&&items.some(x=>x.id===selStaff);
+                    return(
+                      <td key={di} onClick={()=>mode==='fn'&&toggleCell(di,h)}
+                        onDragOver={e=>e.preventDefault()}
+                        style={{verticalAlign:'top',padding:'2px 3px',
+                          borderLeft:'1px solid #E4E0D8',borderTop:'1px solid #ECEAE4',
+                          background:hasSel?`${selS?.color}12`:di>=5?'#FDFBF8':'#fff',
+                          cursor:mode==='fn'&&selStaff?'crosshair':'default',minHeight:24}}>
+                        <div style={{display:'flex',flexWrap:'wrap',gap:2,minHeight:20}}>
+                          {items.map((ci,ii)=>{
+                            const s=staff.find(x=>x.id===ci.id);
+                            if(!s)return null;
+                            return(
+                              <div key={`${ci.id}-${ci.fid}-${ii}`} style={{display:'flex',
+                                alignItems:'center',gap:2,background:`${s.color}18`,
+                                border:`1px solid ${s.color}35`,borderRadius:4,
+                                padding:'1px 3px',userSelect:'none'}}>
+                                {mode==='all'&&ci.fn&&<span style={{fontSize:8}}>{ci.fn.icon}</span>}
+                                <div style={{width:10,height:10,borderRadius:'50%',background:s.color,
+                                  color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',
+                                  fontSize:7,fontWeight:800}}>{s.initials[0]}</div>
+                                <span style={{fontSize:9,fontWeight:600,color:s.color,whiteSpace:'nowrap'}}>
+                                  {s.name.split(' ')[0]}
+                                </span>
+                                {mode==='fn'&&(
+                                  <button onClick={e=>remove(di,h,s.id,e)} style={{background:'none',
+                                    border:'none',padding:0,cursor:'pointer',color:s.color,
+                                    opacity:.4,display:'flex',fontSize:9,lineHeight:1}}>✕</button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Panneau droit */}
+        {mode==='fn'&&(
+          <div style={{width:220,background:'#fff',borderLeft:'1px solid #E4E0D8',
+            display:'flex',flexDirection:'column',flexShrink:0}}>
+            <div style={{padding:'12px 12px 8px',borderBottom:'1px solid #F0EDE8'}}>
+              {fn&&(
+                <div style={{display:'flex',alignItems:'center',gap:7,padding:'6px 8px',
+                  background:fn.bg,borderRadius:7,border:`1px solid ${fn.color}30`,marginBottom:7}}>
+                  <span style={{fontSize:15}}>{fn.icon}</span>
+                  <div style={{fontSize:12,fontWeight:700,color:fn.color}}>{fn.name}</div>
+                </div>
+              )}
+              <div style={{fontSize:11,color:'#9B9890'}}>
+                {selStaff?`✓ ${selS?.name} — cliquer les cellules`:'Sélectionner pour assigner'}
+              </div>
+            </div>
+            <div style={{flex:1,overflow:'auto',padding:8}}>
+              <div style={{fontSize:10,color:'#C0BCB5',textTransform:'uppercase',
+                letterSpacing:'.5px',padding:'3px 3px 5px',fontWeight:700}}>
+                Habilités à ce poste
+              </div>
+              {fnStaff.length===0&&(
+                <div style={{fontSize:11,color:'#C0BCB5',padding:'8px 4px',fontStyle:'italic'}}>
+                  Aucun salarié assigné
+                </div>
+              )}
+              {fnStaff.map(s=>{
+                const h=DAYS.reduce((a,_,di)=>a+HOURS.filter(hr=>(grid[di][hr]||[]).includes(s.id)).length,0);
+                const isSel=selStaff===s.id;
+                return(
+                  <div key={s.id} onClick={()=>setSelStaff(p=>p===s.id?null:s.id)}
+                    style={{padding:'7px 8px',borderRadius:8,marginBottom:4,
+                      border:`1.5px solid ${isSel?s.color:'#ECEAE4'}`,
+                      background:isSel?`${s.color}0D`:'#FAFAF8',cursor:'pointer'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7}}>
+                      <Avatar s={s} size={22}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,color:'#1E2235'}}>
+                          {s.name.split(' ')[0]} {isSel&&'✓'}
+                        </div>
+                        <div style={{fontSize:9,color:'#9B9890'}}>
+                          {s.type==='renfort'?'Vacation':'Salarié'}
+                        </div>
+                      </div>
+                      <span style={{fontSize:11,fontWeight:700,color:h>0?s.color:'#C0BCB5'}}>{h}h</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── MON PLANNING ──────────────────────────────────────────
+const MonPlanningView=({initialPerson})=>{
+  const {staff,functions,schedules,user}=useApp();
+  const isStaff=user.role==='staff';
+  const [pid,setPid]=useState(initialPerson||(user.staff_id||1));
+  const [mode,setMode]=useState('overlay');
+  const [wk,setWk]=useState(0);
+
+  useEffect(()=>{if(initialPerson)setPid(initialPerson);},[initialPerson]);
+
+  const dates=useMemo(()=>{
+    const now=new Date(),mon=new Date(now);
+    const diff=now.getDay()===0?-6:1-now.getDay();
+    mon.setDate(now.getDate()+diff+wk*7);
+    return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+  },[wk]);
+
+  const person=staff.find(s=>s.id===pid);
+  const pFns=functions.filter(f=>person?.functions?.includes(f.id));
+
+  const myGrid=useMemo(()=>{
+    if(!person)return buildGrid();
+    const g=buildGrid();
+    for(const fn of pFns){
+      const fg=schedules[fn.id]||buildGrid();
+      for(let d=0;d<7;d++)for(const h of HOURS)
+        if((fg[d][h]||[]).includes(person.id))g[d][h].push({fid:fn.id,fn});
+    }
+    return g;
+  },[person,pFns,schedules]);
+
+  const fnStats=pFns.map(fn=>{
+    const g=schedules[fn.id]||buildGrid();
+    let h=0;for(let d=0;d<7;d++)for(const hr of HOURS)if((g[d][hr]||[]).includes(person?.id))h++;
+    return{fn,hours:h};
+  }).filter(x=>x.hours>0);
+
+  const totalH=fnStats.reduce((a,b)=>a+b.hours,0);
+
+  return(
+    <div style={{flex:1,overflow:'auto'}}>
+      <PageHeader
+        title="Mon Planning"
+        sub="Vue personnelle multi-fonctions — tous les postes superposés"
+        actions={
+          <div style={{display:'flex',gap:3}}>
+            <Btn onClick={()=>setWk(w=>w-1)} small>◀</Btn>
+            <Btn onClick={()=>setWk(0)} small>Cette semaine</Btn>
+            <Btn onClick={()=>setWk(w=>w+1)} small>▶</Btn>
+          </div>
+        }
+      />
+
+      <div style={{padding:'18px 24px'}}>
+        <div style={{display:'flex',gap:14,marginBottom:18}}>
+          {/* Sélecteur de personne (caché pour les salariés) */}
+          {!isStaff&&(
+            <div style={{width:200,flexShrink:0,background:'#fff',borderRadius:10,
+              border:'1px solid #E4E0D8',padding:12}}>
+              <div style={{fontSize:10,color:'#8B8880',marginBottom:7,fontWeight:600,
+                textTransform:'uppercase',letterSpacing:'.4px'}}>Salarié</div>
+              <div style={{display:'flex',flexDirection:'column',gap:4,maxHeight:280,overflowY:'auto'}}>
+                {staff.map(s=>(
+                  <div key={s.id} onClick={()=>setPid(s.id)} style={{display:'flex',alignItems:'center',
+                    gap:7,padding:'6px 8px',borderRadius:7,cursor:'pointer',
+                    background:pid===s.id?`${s.color}15`:'#FAFAF8',
+                    border:`1.5px solid ${pid===s.id?s.color:'#ECEAE4'}`}}>
+                    <Avatar s={s} size={20}/>
+                    <span style={{fontSize:12,fontWeight:600,color:'#1E2235',flex:1}}>{s.name}</span>
+                    {pid===s.id&&<span style={{color:s.color}}>✓</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {person&&(
+            <div style={{flex:1}}>
+              {/* Header personne */}
+              <div style={{background:'#fff',borderRadius:10,border:'1px solid #E4E0D8',
+                padding:'14px 18px',display:'flex',alignItems:'center',gap:14,marginBottom:12}}>
+                <Avatar s={person} size={44}/>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:17,color:'#1E2235'}}>{person.name}</div>
+                  <div style={{display:'flex',gap:5,marginTop:4,flexWrap:'wrap'}}>
+                    {pFns.map(fn=><Tag key={fn.id} color={fn.color} bg={fn.bg}>{fn.icon} {fn.name}</Tag>)}
+                  </div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:26,fontWeight:800,color:'#1E2235'}}>{totalH}h</div>
+                  <div style={{fontSize:11,color:'#8B8880'}}>cette semaine</div>
+                  {person.contract>0&&(
+                    <div style={{fontSize:11,fontWeight:600,marginTop:2,
+                      color:totalH>person.contract?'#EF4444':totalH===person.contract?'#4A8C6E':'#8B8880'}}>
+                      {totalH>person.contract?`+${totalH-person.contract}h surplus`
+                        :totalH===person.contract?'✓ Contrat rempli'
+                        :`${person.contract-totalH}h restantes`}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Cards par fonction */}
+              {fnStats.length>0&&(
+                <div style={{display:'grid',gridTemplateColumns:`repeat(${Math.min(fnStats.length,4)},1fr)`,gap:8,marginBottom:12}}>
+                  {fnStats.map(({fn,hours})=>(
+                    <div key={fn.id} style={{background:'#fff',borderRadius:8,border:'1px solid #E4E0D8',
+                      padding:'10px 12px',borderLeft:`4px solid ${fn.color}`}}>
+                      <div style={{fontSize:16}}>{fn.icon}</div>
+                      <div style={{fontSize:10,color:'#8B8880',marginTop:3}}>{fn.name}</div>
+                      <div style={{fontSize:18,fontWeight:800,color:fn.color}}>{hours}h</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Mode toggle */}
+        <div style={{display:'flex',gap:3,background:'#F5F3EF',borderRadius:7,padding:3,
+          marginBottom:12,width:'fit-content'}}>
+          {[['overlay','🔲 Vue globale superposée'],['by-fn','📋 Par poste']].map(([v,l])=>(
+            <button key={v} onClick={()=>setMode(v)} style={{padding:'5px 14px',borderRadius:5,
+              border:'none',cursor:'pointer',fontFamily:'inherit',
+              background:mode===v?'#fff':'transparent',
+              color:mode===v?'#1E2235':'#9B9890',fontWeight:mode===v?600:400,fontSize:12,
+              boxShadow:mode===v?'0 1px 3px rgba(0,0,0,.1)':'none'}}>{l}</button>
+          ))}
+        </div>
+
+        {person&&mode==='overlay'&&(
+          <div style={{background:'#fff',borderRadius:10,border:'1px solid #E4E0D8',overflow:'hidden'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed'}}>
+              <colgroup><col style={{width:40}}/>{DAYS.map((_,i)=><col key={i}/>)}</colgroup>
+              <thead style={{background:'#F5F3EF',position:'sticky',top:0,zIndex:5}}>
+                <tr>
+                  <th style={{borderBottom:'2px solid #E4E0D8'}}/>
+                  {DAYS.map((day,di)=>{
+                    const date=dates[di],isToday=date.toDateString()===new Date().toDateString();
+                    return(
+                      <th key={day} style={{padding:'7px 5px',textAlign:'center',
+                        borderLeft:'1px solid #E4E0D8',borderBottom:'2px solid #E4E0D8',
+                        background:isToday?'#FFF4EC':'transparent'}}>
+                        <div style={{fontSize:9,color:isToday?'#C5753A':'#9B9890',textTransform:'uppercase'}}>{DAYS_SH[di]}</div>
+                        <div style={{fontSize:14,fontWeight:isToday?800:600,color:isToday?'#C5753A':'#1E2235'}}>{date.getDate()}</div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {HOURS.map(h=>(
+                  <tr key={h}>
+                    <td style={{padding:'0 4px',textAlign:'right',fontSize:9,color:'#C0BCB5',
+                      borderTop:'1px solid #ECEAE4',position:'sticky',left:0,background:'#F5F3EF'}}>{h}h</td>
+                    {DAYS.map((_,di)=>{
+                      const fns=myGrid[di][h]||[];
+                      return(
+                        <td key={di} style={{borderLeft:'1px solid #E4E0D8',borderTop:'1px solid #ECEAE4',
+                          padding:'2px 3px',background:fns.length>0?`${person.color}08`:di>=5?'#FDFBF8':'#fff',
+                          minHeight:22,verticalAlign:'top'}}>
+                          <div style={{display:'flex',flexWrap:'wrap',gap:2}}>
+                            {fns.map((ci,i)=>(
+                              <span key={i} style={{fontSize:8,fontWeight:600,padding:'1px 4px',
+                                borderRadius:3,background:ci.fn?.bg||'#F5F5F5',
+                                color:ci.fn?.color||'#8B8880',display:'inline-flex',alignItems:'center',gap:1}}>
+                                {ci.fn?.icon} {ci.fn?.name?.split('/')[0].trim()}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {person&&mode==='by-fn'&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            {pFns.length===0&&(
+              <div style={{padding:'32px',textAlign:'center',color:'#C0BCB5',
+                background:'#fff',borderRadius:10,border:'1px solid #E4E0D8'}}>
+                Aucun poste assigné à ce salarié
+              </div>
+            )}
+            {pFns.map(fn=>{
+              const g=schedules[fn.id]||buildGrid();
+              return(
+                <div key={fn.id} style={{background:'#fff',borderRadius:10,border:'1px solid #E4E0D8',overflow:'hidden'}}>
+                  <div style={{padding:'9px 14px',borderBottom:`3px solid ${fn.color}`,
+                    display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:17}}>{fn.icon}</span>
+                    <span style={{fontWeight:700,fontSize:13,color:fn.color}}>{fn.name}</span>
+                    <span style={{fontSize:11,color:'#8B8880'}}>— {fn.desc}</span>
+                  </div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',tableLayout:'fixed',minWidth:480}}>
+                      <colgroup><col style={{width:36}}/>{DAYS.map((_,i)=><col key={i}/>)}</colgroup>
+                      <thead>
+                        <tr style={{background:'#F9F7F5'}}>
+                          <th style={{borderBottom:'1px solid #ECEAE4'}}/>
+                          {DAYS_SH.map((d,di)=>{
+                            const date=dates[di],isToday=date.toDateString()===new Date().toDateString();
+                            return(
+                              <th key={d} style={{padding:'5px 3px',textAlign:'center',fontSize:9,
+                                color:isToday?'#C5753A':'#8B8880',
+                                borderLeft:'1px solid #ECEAE4',borderBottom:'1px solid #ECEAE4'}}>
+                                {d} {date.getDate()}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {HOURS.map(h=>{
+                          const working=DAYS.some((_,di)=>(g[di][h]||[]).includes(person.id));
+                          return(
+                            <tr key={h} style={{background:working?`${fn.color}08`:'#fff'}}>
+                              <td style={{padding:'0 4px',textAlign:'right',fontSize:9,color:'#C0BCB5',
+                                borderTop:'1px solid #F0EDE8',position:'sticky',left:0,
+                                background:working?fn.bg:'#fff'}}>{h}h</td>
+                              {DAYS.map((_,di)=>{
+                                const has=(g[di][h]||[]).includes(person.id);
+                                return(
+                                  <td key={di} style={{borderLeft:'1px solid #F0EDE8',
+                                    borderTop:'1px solid #F0EDE8',textAlign:'center',padding:'3px'}}>
+                                    {has&&<div style={{width:'75%',height:12,borderRadius:3,
+                                      background:fn.color,margin:'0 auto'}}/>}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── STAFF FORM ────────────────────────────────────────────
+const StaffForm=({initial,teams,functions,onSave,onClose})=>{
+  const empty={name:'',initials:'',contract:0,team:'accueil',type:'salarie',rate:12,color:'#6366F1',
+    functions:[],primary:'',manager_id:null,cp:25,rtt:5,phone:'',email:'',hire:'',note:''};
+  const [f,setF]=useState(initial||empty);
+  useEffect(()=>setF(initial||empty),[initial]);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+  const toggleFn=(id)=>setF(p=>({...p,functions:p.functions.includes(id)?p.functions.filter(x=>x!==id):[...p.functions,id]}));
+  const save=()=>{
+    if(!f.name.trim())return;
+    onSave({...f,id:initial?.id||Date.now(),initials:f.initials||f.name.substring(0,2).toUpperCase()});
+    onClose();
+  };
+  const colors=['#6366F1','#EC4899','#14B8A6','#F97316','#8B5CF6','#06B6D4','#22C55E','#EF4444','#F59E0B','#A855F7','#0EA5E9','#C5753A','#4A8C6E','#64748B'];
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <Field label="Nom *"><input value={f.name} onChange={e=>set('name',e.target.value)} style={inputSt} placeholder="Prénom Nom" autoFocus/></Field>
+        <Field label="Initiales"><input value={f.initials} onChange={e=>set('initials',e.target.value)} style={inputSt} placeholder="Ex: MA"/></Field>
+        <Field label="Équipe">
+          <select value={f.team} onChange={e=>set('team',e.target.value)} style={inputSt}>
+            {teams.map(t=><option key={t.id} value={t.id}>{t.icon} {t.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Type de contrat">
+          <select value={f.type} onChange={e=>set('type',e.target.value)} style={inputSt}>
+            <option value="salarie">Salarié(e)</option>
+            <option value="renfort">Renfort / Vacation</option>
+            <option value="independant">Indépendant</option>
+            <option value="benevole">Bénévole</option>
+          </select>
+        </Field>
+        <Field label="Heures / sem"><input type="number" value={f.contract} onChange={e=>set('contract',+e.target.value)} style={inputSt}/></Field>
+        <Field label="Taux horaire (€)"><input type="number" step="0.5" value={f.rate} onChange={e=>set('rate',+e.target.value)} style={inputSt}/></Field>
+        <Field label="Email"><input type="email" value={f.email} onChange={e=>set('email',e.target.value)} style={inputSt}/></Field>
+        <Field label="Téléphone"><input value={f.phone} onChange={e=>set('phone',e.target.value)} style={inputSt}/></Field>
+        <Field label="Date d'entrée"><input type="date" value={f.hire} onChange={e=>set('hire',e.target.value)} style={inputSt}/></Field>
+        <Field label="Solde CP (jours)"><input type="number" value={f.cp} onChange={e=>set('cp',+e.target.value)} style={inputSt}/></Field>
+      </div>
+
+      <Field label="Couleur d'identification">
+        <div style={{display:'flex',gap:7,flexWrap:'wrap',marginTop:4}}>
+          {colors.map(c=><button key={c} onClick={()=>set('color',c)} style={{width:26,height:26,borderRadius:6,background:c,border:`3px solid ${f.color===c?'#1E2235':'transparent'}`,cursor:'pointer'}}/>)}
+        </div>
+      </Field>
+
+      <Field label="Postes / Fonctions habilitées">
+        <div style={{display:'flex',gap:5,flexWrap:'wrap',marginTop:4}}>
+          {functions.map(fn=>{
+            const sel=f.functions.includes(fn.id);
+            return(
+              <button key={fn.id} onClick={()=>toggleFn(fn.id)} style={{padding:'3px 9px',
+                borderRadius:20,border:`1.5px solid ${sel?fn.color:'#E4E0D8'}`,
+                background:sel?fn.bg:'#fff',color:sel?fn.color:'#9B9890',
+                cursor:'pointer',fontSize:11,fontFamily:'inherit',fontWeight:sel?700:400}}>
+                {fn.icon} {fn.name}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      <Field label="Note interne">
+        <textarea value={f.note} onChange={e=>set('note',e.target.value)} rows={2}
+          style={{...inputSt,resize:'vertical'}} placeholder="Informations complémentaires..."/>
+      </Field>
+
+      <div style={{display:'flex',gap:10,paddingTop:12,borderTop:'1px solid #F0EDE8'}}>
+        <Btn onClick={save} variant="primary" style={{flex:1,justifyContent:'center'}}>
+          ✓ {initial?'Enregistrer les modifications':'Créer le membre'}
+        </Btn>
+        <Btn onClick={onClose}>Annuler</Btn>
+      </div>
+    </div>
+  );
+};
+
+// ── ÉQUIPE VIEW ───────────────────────────────────────────
+const EquipeView=({goToMyPlanning})=>{
+  const {staff,setStaff,teams,functions,schedules}=useApp();
+  const [filter,setFilter]=useState('all');
+  const [modal,setModal]=useState({open:false,initial:null});
+  const [delConfirm,setDelConfirm]=useState(null);
+
+  const filtered=filter==='all'?staff:staff.filter(s=>s.team===filter);
+
+  const totalH=(s)=>{
+    let h=0;
+    for(const fnId of(s.functions||[])){
+      const g=schedules[fnId]||buildGrid();
+      for(let d=0;d<7;d++)for(const hr of HOURS)if((g[d][hr]||[]).includes(s.id))h++;
+    }
+    return h;
+  };
+
+  const save=(updated)=>{
+    setStaff(prev=>{
+      const idx=prev.findIndex(s=>s.id===updated.id);
+      if(idx===-1)return[...prev,updated];
+      const n=[...prev];n[idx]=updated;return n;
+    });
+  };
+
+  return(
+    <div style={{flex:1,overflow:'auto'}}>
+      <PageHeader
+        title="Équipe & Fonctions"
+        sub={`${staff.length} membres · ${functions.length} fonctions définies`}
+        actions={<Btn onClick={()=>setModal({open:true,initial:null})} variant="primary">+ Ajouter un membre</Btn>}
+      />
+
+      <div style={{padding:'18px 24px'}}>
+        {/* Filtres équipes */}
+        <div style={{display:'flex',gap:5,marginBottom:18,flexWrap:'wrap'}}>
+          <Btn onClick={()=>setFilter('all')} variant={filter==='all'?'primary':'default'} small>
+            Tous ({staff.length})
+          </Btn>
+          {teams.map(t=>{
+            const n=staff.filter(s=>s.team===t.id).length;
+            return n>0&&(
+              <button key={t.id} onClick={()=>setFilter(t.id)} style={{padding:'4px 10px',
+                borderRadius:20,border:`1.5px solid ${filter===t.id?t.color:'#E4E0D8'}`,
+                background:filter===t.id?t.bg:'#fff',color:filter===t.id?t.color:'#5E5B55',
+                cursor:'pointer',fontSize:11,fontWeight:filter===t.id?700:400,fontFamily:'inherit'}}>
+                {t.icon} {t.name} ({n})
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
+          {filtered.map(s=>{
+            const team=teams.find(t=>t.id===s.team);
+            const h=totalH(s);
+            const sFns=functions.filter(f=>s.functions?.includes(f.id));
+            return(
+              <div key={s.id} style={{background:'#fff',borderRadius:12,border:'1px solid #E4E0D8',
+                padding:14,overflow:'hidden'}}>
+                <div style={{height:3,background:s.color,margin:'-14px -14px 10px',borderRadius:'12px 12px 0 0'}}/>
+                <div style={{display:'flex',gap:9,marginBottom:10}}>
+                  <Avatar s={s} size={38}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:14,color:'#1E2235'}}>{s.name}</div>
+                    {team&&<Tag color={team.color} bg={team.bg||team.color+'22'}>{team.icon} {team.name}</Tag>}
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:10,color:'#8B8880'}}>{s.contract?`${s.contract}h/sem`:'Vacation'}</div>
+                    <div style={{fontSize:15,fontWeight:800,color:s.color}}>{h}h</div>
+                  </div>
+                </div>
+
+                {/* Fonctions */}
+                <div style={{marginBottom:8}}>
+                  <div style={{fontSize:9,color:'#9B9890',marginBottom:4,fontWeight:600,
+                    textTransform:'uppercase',letterSpacing:'.4px'}}>Fonctions ({sFns.length})</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:3}}>
+                    {sFns.map(f=><Tag key={f.id} color={f.color} bg={f.bg||f.color+'22'}>{f.icon} {f.name}</Tag>)}
+                    {sFns.length===0&&<span style={{fontSize:10,color:'#C0BCB5',fontStyle:'italic'}}>Aucune fonction assignée</span>}
+                  </div>
+                </div>
+
+                {/* Barre de remplissage */}
+                {s.type==='salarie'&&s.contract>0&&(
+                  <div style={{height:4,borderRadius:2,background:'#F0EDE8',overflow:'hidden',marginBottom:8}}>
+                    <div style={{height:'100%',borderRadius:2,
+                      width:`${Math.min(100,(h/s.contract)*100)}%`,
+                      background:h>s.contract?'#EF4444':s.color}}/>
+                  </div>
+                )}
+
+                {s.phone&&<div style={{fontSize:10,color:'#8B8880',marginBottom:3}}>📞 {s.phone}</div>}
+                {s.email&&<div style={{fontSize:10,color:'#8B8880',marginBottom:8,
+                  overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>✉️ {s.email}</div>}
+
+                {/* BOUTONS CÂBLÉS */}
+                <div style={{display:'flex',gap:5}}>
+                  <button onClick={()=>goToMyPlanning(s.id)} style={{flex:1,padding:'5px 0',
+                    borderRadius:6,border:'1px solid #BAE6FD',background:'#F0F9FF',
+                    color:'#0EA5E9',cursor:'pointer',fontSize:10,fontWeight:600,fontFamily:'inherit'}}>
+                    👤 Planning
+                  </button>
+                  <button onClick={()=>setModal({open:true,initial:s})} style={{flex:1,padding:'5px 0',
+                    borderRadius:6,border:'1px solid #E4E0D8',background:'#fff',
+                    color:'#1E2235',cursor:'pointer',fontSize:10,fontFamily:'inherit'}}>
+                    ✏️ Modifier
+                  </button>
+                  <button onClick={()=>setDelConfirm(s)} style={{padding:'5px 8px',
+                    borderRadius:6,border:'1px solid #FCD0D0',background:'#FEF2F2',
+                    color:'#EF4444',cursor:'pointer',fontSize:10,fontFamily:'inherit'}}>
+                    🗑
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Modale ajouter/modifier */}
+      <Modal open={modal.open} onClose={()=>setModal({open:false,initial:null})}
+        title={modal.initial?`Modifier — ${modal.initial?.name}`:'Ajouter un membre'} width={580}>
+        <StaffForm initial={modal.initial} teams={teams} functions={functions}
+          onSave={save} onClose={()=>setModal({open:false,initial:null})}/>
+      </Modal>
+
+      {/* Confirmer suppression */}
+      <Modal open={!!delConfirm} onClose={()=>setDelConfirm(null)} title="Confirmer la suppression" width={380}>
+        <p style={{fontSize:14,color:'#4A4844',marginBottom:16}}>
+          Supprimer <strong>{delConfirm?.name}</strong> ? Cette action est irréversible.
+        </p>
+        <div style={{display:'flex',gap:10}}>
+          <Btn onClick={()=>{setStaff(p=>p.filter(s=>s.id!==delConfirm.id));setDelConfirm(null);}}
+            variant="danger" style={{flex:1,justifyContent:'center'}}>
+            🗑️ Supprimer définitivement
+          </Btn>
+          <Btn onClick={()=>setDelConfirm(null)}>Annuler</Btn>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ── CONGÉS VIEW ───────────────────────────────────────────
+const CongesView=()=>{
+  const {staff,teams,leaves,setLeaves,user}=useApp();
+  const isStaff=user.role==='staff';
+  const myId=user.staff_id;
+  const [filter,setFilter]=useState('all');
+  const [leaveModal,setLeaveModal]=useState(false);
+  const [lf,setLf]=useState({staffId:myId?String(myId):'',type:'cp',start:'',end:'',note:''});
+
+  const visible=isStaff?leaves.filter(l=>l.staffId===myId):leaves;
+  const filtered=filter==='all'?visible
+    :filter==='pending'?visible.filter(l=>l.status==='pending'||l.status==='approved_n1')
+    :visible.filter(l=>l.status===filter);
+  const pending=leaves.filter(l=>l.status==='pending'||l.status==='approved_n1').length;
+  const ldays=lf.start&&lf.end?Math.max(0,Math.round((new Date(lf.end)-new Date(lf.start))/86400000)+1):0;
+
+  const approve=(id,ok)=>{
+    setLeaves(p=>p.map(l=>{
+      if(l.id!==id)return l;
+      if(!ok)return{...l,status:'refused'};
+      const lt=LEAVE_TYPES[l.type],levels=lt?.levels||['manager'];
+      const next=l.step+1;
+      return{...l,step:next,status:next>levels.length?'approved':'approved_n1'};
+    }));
+  };
+
+  const submitLeave=()=>{
+    if(!lf.staffId||!lf.start||!lf.end)return;
+    setLeaves(p=>[...p,{...lf,id:Date.now(),staffId:+lf.staffId,days:ldays,status:'pending',step:1}]);
+    setLeaveModal(false);
+    setLf({staffId:myId?String(myId):'',type:'cp',start:'',end:'',note:''});
+  };
+
+  const getInfo=(l)=>{
+    if(l.status==='approved')return{label:'Approuvé',color:'#22C55E',bg:'#F0FDF4',icon:'✓'};
+    if(l.status==='refused') return{label:'Refusé',  color:'#EF4444',bg:'#FEF2F2',icon:'✗'};
+    const lt=LEAVE_TYPES[l.type],levels=lt?.levels||['manager'];
+    const names={manager:'Attente manager',rh:'Attente RH',direction:'Attente direction'};
+    return{label:names[levels[l.step-1]]||'En attente',color:'#F59E0B',bg:'#FFFBEB',icon:'⏳'};
+  };
+
+  const myStaff=staff.find(s=>s.id===myId);
+
+  return(
+    <div style={{flex:1,overflow:'auto'}}>
+      <PageHeader
+        title={isStaff?'Mes congés':'Congés & Absences'}
+        sub={isStaff?'Vos demandes et soldes de congés':'Workflow d\'approbation hiérarchique multi-niveaux'}
+        actions={<Btn onClick={()=>setLeaveModal(true)} variant="primary">+ Nouvelle demande</Btn>}
+      />
+
+      <div style={{padding:'18px 24px',maxWidth:900}}>
+        {/* Soldes pour le salarié */}
+        {isStaff&&myStaff&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:18}}>
+            <div style={{background:'#F0FDF4',borderRadius:9,padding:'12px 14px',border:'1px solid #22C55E30'}}>
+              <div style={{fontSize:11,color:'#22C55E',fontWeight:700,marginBottom:3}}>Congés payés</div>
+              <div style={{fontSize:24,fontWeight:800,color:'#1E2235'}}>{myStaff.cp} jours</div>
+              <div style={{fontSize:10,color:'#8B8880'}}>Solde restant</div>
+            </div>
+            <div style={{background:'#EEF2FF',borderRadius:9,padding:'12px 14px',border:'1px solid #6366F130'}}>
+              <div style={{fontSize:11,color:'#6366F1',fontWeight:700,marginBottom:3}}>RTT</div>
+              <div style={{fontSize:24,fontWeight:800,color:'#1E2235'}}>{myStaff.rtt} jours</div>
+              <div style={{fontSize:10,color:'#8B8880'}}>Solde restant</div>
+            </div>
+            <div style={{background:'#F9F7F5',borderRadius:9,padding:'12px 14px',border:'1px solid #E4E0D8'}}>
+              <div style={{fontSize:11,color:'#8B8880',fontWeight:700,marginBottom:3}}>Posés (approuvés)</div>
+              <div style={{fontSize:24,fontWeight:800,color:'#1E2235'}}>
+                {leaves.filter(l=>l.staffId===myId&&l.status==='approved').reduce((a,l)=>a+l.days,0)} jours
+              </div>
+              <div style={{fontSize:10,color:'#8B8880'}}>Cette année</div>
+            </div>
+          </div>
+        )}
+
+        {!isStaff&&pending>0&&(
+          <div style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',
+            background:'#FFFBEB',border:'1px solid #FCD34D',borderRadius:9,marginBottom:16}}>
+            🔔 <span style={{fontSize:13,fontWeight:600,color:'#92400E'}}>
+              {pending} demande{pending!==1?'s':''} en attente de validation
+            </span>
+          </div>
+        )}
+
+        {/* Filtres */}
+        <div style={{display:'flex',gap:5,marginBottom:16,flexWrap:'wrap'}}>
+          {[['all','Toutes'],['pending','En attente',!isStaff&&pending>0?pending:0],
+            ['approved','Approuvées'],['refused','Refusées']].map(([v,l,cnt])=>(
+            <Btn key={v} onClick={()=>setFilter(v)} variant={filter===v?'primary':'default'} small>
+              {l}
+              {cnt>0&&<span style={{background:'#EF4444',color:'#fff',borderRadius:20,
+                fontSize:9,fontWeight:700,padding:'0 5px',marginLeft:2}}>{cnt}</span>}
+            </Btn>
+          ))}
+        </div>
+
+        {/* Liste des congés */}
+        <div style={{display:'flex',flexDirection:'column',gap:9}}>
+          {filtered.length===0&&(
+            <div style={{padding:'36px',textAlign:'center',color:'#C0BCB5',
+              background:'#fff',borderRadius:10,border:'1px solid #E4E0D8'}}>
+              🏖️ Aucune demande dans cette catégorie
+            </div>
+          )}
+          {filtered.map(leave=>{
+            const s=staff.find(x=>x.id===leave.staffId);
+            const lt=LEAVE_TYPES[leave.type];
+            const team=teams.find(t=>t.id===s?.team);
+            const info=getInfo(leave);
+            const isPending=leave.status==='pending'||leave.status==='approved_n1';
+            const levels=lt?.levels||['manager'];
+            const lnames={manager:'Manager',rh:'RH',direction:'Direction'};
+            if(!s||!lt)return null;
+            return(
+              <div key={leave.id} style={{background:'#fff',borderRadius:10,
+                border:'1px solid #E4E0D8',padding:'14px 18px'}}>
+                <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+                  <Avatar s={s} size={36}/>
+                  <div style={{flex:1}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:5,flexWrap:'wrap'}}>
+                      <span style={{fontWeight:700,fontSize:14,color:'#1E2235'}}>{s.name}</span>
+                      {team&&!isStaff&&<Tag color={team.color} bg={team.bg}>{team.icon} {team.name}</Tag>}
+                      <Tag color={lt.color} bg={lt.bg}>{lt.label}</Tag>
+                      <Tag color={info.color} bg={info.bg}>{info.icon} {info.label}</Tag>
+                    </div>
+                    <div style={{fontSize:13,color:'#5E5B55',marginBottom:5}}>
+                      📅 {new Date(leave.start).toLocaleDateString('fr-FR',{day:'numeric',month:'long'})}
+                      {' → '}
+                      {new Date(leave.end).toLocaleDateString('fr-FR',{day:'numeric',month:'long'})}
+                      <strong style={{marginLeft:8}}>{leave.days} jour{leave.days!==1?'s':''}</strong>
+                      {!lt.paid&&<span style={{color:'#EF4444',marginLeft:6}}>Sans solde</span>}
+                    </div>
+                    {leave.note&&<div style={{fontSize:11,color:'#9B9890',fontStyle:'italic',marginBottom:7}}>{leave.note}</div>}
+                    {/* Étapes du workflow */}
+                    <div style={{display:'flex',alignItems:'center',gap:5}}>
+                      {levels.map((lv,i)=>{
+                        const done=i<leave.step-1||leave.status==='approved';
+                        const current=i===leave.step-1&&isPending;
+                        const refused=leave.status==='refused'&&i===0;
+                        return(
+                          <div key={lv} style={{display:'flex',alignItems:'center',gap:4}}>
+                            {i>0&&<span style={{color:'#C0BCB5',fontSize:11}}>→</span>}
+                            <span style={{fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20,
+                              background:refused?'#FEF2F2':done?'#EBF5F0':current?'#FFFBEB':'#F5F3EF',
+                              color:refused?'#EF4444':done?'#4A8C6E':current?'#F59E0B':'#9B9890',
+                              border:`1px solid ${refused?'#FCD0D0':done?'#C8E8D8':current?'#FCD34D':'#ECEAE4'}`}}>
+                              {refused?'✗':done?'✓':current?'⏳':'○'} {lnames[lv]||lv}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {isPending&&!isStaff?(
+                    <div style={{display:'flex',gap:6,flexShrink:0}}>
+                      <Btn onClick={()=>approve(leave.id,true)} variant="success" small>✓ Approuver</Btn>
+                      <Btn onClick={()=>approve(leave.id,false)} variant="danger" small>✗ Refuser</Btn>
+                    </div>
+                  ):(
+                    !isPending&&<Tag color={info.color} bg={info.bg}>{info.icon} {info.label}</Tag>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Soldes (vue manager) */}
+        {!isStaff&&(
+          <div style={{background:'#fff',borderRadius:10,border:'1px solid #E4E0D8',
+            padding:'16px 18px',marginTop:20}}>
+            <div style={{fontWeight:600,fontSize:14,color:'#1E2235',marginBottom:12}}>🏖️ Soldes congés payés</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:9}}>
+              {staff.filter(s=>s.type==='salarie').map(s=>(
+                <div key={s.id} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 11px',
+                  background:'#FAFAF8',borderRadius:8,border:'1px solid #ECEAE4'}}>
+                  <Avatar s={s} size={24}/>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600}}>{s.name}</div>
+                    <div style={{fontSize:10,color:'#8B8880'}}>CP: {s.cp}j · RTT: {s.rtt}j</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Modale nouvelle demande */}
+      <Modal open={leaveModal} onClose={()=>setLeaveModal(false)} title="Nouvelle demande de congé" width={460}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          {!isStaff&&(
+            <Field label="Salarié *">
+              <select value={lf.staffId} onChange={e=>setLf(p=>({...p,staffId:e.target.value}))} style={inputSt}>
+                <option value="">Sélectionner...</option>
+                {staff.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </Field>
+          )}
+
+          <Field label="Type de congé">
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:5,marginTop:4}}>
+              {Object.entries(LEAVE_TYPES).map(([k,v])=>(
+                <button key={k} onClick={()=>setLf(p=>({...p,type:k}))} style={{padding:'6px 7px',
+                  borderRadius:6,border:`1.5px solid ${lf.type===k?v.color:'#E4E0D8'}`,
+                  background:lf.type===k?v.bg:'#fff',color:lf.type===k?v.color:'#5E5B55',
+                  cursor:'pointer',fontSize:11,fontFamily:'inherit',
+                  fontWeight:lf.type===k?700:400,textAlign:'left'}}>
+                  <Tag color={v.color} bg={v.bg}>{v.short}</Tag>
+                  <div style={{fontSize:10,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.label}</div>
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {LEAVE_TYPES[lf.type]&&(
+            <div style={{padding:'8px 11px',background:LEAVE_TYPES[lf.type].bg,borderRadius:7,fontSize:11,
+              color:LEAVE_TYPES[lf.type].color,border:`1px solid ${LEAVE_TYPES[lf.type].color}30`}}>
+              {LEAVE_TYPES[lf.type].paid?'✓ Congé payé':'⚠ Non payé'}
+              {' · Validation : '}
+              {LEAVE_TYPES[lf.type].levels.map(l=>({manager:'Manager',rh:'RH',direction:'Direction'})[l]).join(' → ')}
+            </div>
+          )}
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <Field label="Date de début *"><input type="date" value={lf.start} onChange={e=>setLf(p=>({...p,start:e.target.value}))} style={inputSt}/></Field>
+            <Field label="Date de fin *"><input type="date" value={lf.end} onChange={e=>setLf(p=>({...p,end:e.target.value}))} style={inputSt}/></Field>
+          </div>
+
+          {ldays>0&&(
+            <div style={{textAlign:'center',padding:'9px',background:'#F5F3EF',
+              borderRadius:8,fontWeight:700,color:'#1E2235'}}>
+              {ldays} jour{ldays!==1?'s':''}
+            </div>
+          )}
+
+          <Field label="Motif / Note">
+            <textarea value={lf.note} onChange={e=>setLf(p=>({...p,note:e.target.value}))} rows={2}
+              style={{...inputSt,resize:'vertical'}} placeholder="Motif de la demande..."/>
+          </Field>
+
+          <div style={{display:'flex',gap:10,paddingTop:10,borderTop:'1px solid #F0EDE8'}}>
+            <Btn onClick={submitLeave} variant="primary" style={{flex:1,justifyContent:'center'}}>
+              + Soumettre la demande
+            </Btn>
+            <Btn onClick={()=>setLeaveModal(false)}>Annuler</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ── RELEVÉS VIEW ──────────────────────────────────────────
+const RelevesView=()=>{
+  const {staff,functions,schedules}=useApp();
+  const [coeff,setCoeff]=useState(1.42);
+
+  const rows=staff.map(s=>{
+    let h=0;
+    for(const fnId of(s.functions||[])){
+      const g=schedules[fnId]||buildGrid();
+      for(let d=0;d<7;d++)for(const hr of HOURS)if((g[d][hr]||[]).includes(s.id))h++;
+    }
+    const brut=h*s.rate,cost=s.type==='salarie'?brut*coeff:brut;
+    return{...s,h,brut,cost,diff:s.contract>0?h-s.contract:null};
+  });
+
+  const totH=rows.reduce((a,b)=>a+b.h,0);
+  const totB=rows.reduce((a,b)=>a+b.brut,0);
+  const totC=rows.reduce((a,b)=>a+b.cost,0);
+
+  const exportCSV=()=>{
+    const hdr='Nom,Type,Heures planifiées,Contrat,Écart,Brut (€),Coût chargé (€)\n';
+    const body=rows.map(s=>
+      `"${s.name}","${s.type==='renfort'?'Vacation':'Salarié'}",${s.h},${s.contract||''},${s.diff!==null?s.diff:''},${s.brut.toFixed(2)},${s.cost.toFixed(2)}`
+    ).join('\n');
+    const blob=new Blob(['\uFEFF'+hdr+body],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='releves_spirit.csv';
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);URL.revokeObjectURL(url);
+  };
+
+  return(
+    <div style={{flex:1,overflow:'auto'}}>
+      <PageHeader
+        title="Relevés d'heures"
+        sub="Récapitulatif hebdomadaire — toutes fonctions confondues"
+        actions={<Btn onClick={exportCSV}>📥 Export CSV</Btn>}
+      />
+
+      <div style={{padding:'18px 24px'}}>
+        {/* KPIs */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:10,marginBottom:18}}>
+          {[['Heures planifiées',`${totH}h`,false],
+            ['Masse salariale brute',`${totB.toFixed(0)} €`,false],
+            ['Coût total chargé',`${totC.toFixed(0)} €`,true],
+            ['Mensuel estimé',`${(totC*4.33).toFixed(0)} €`,false]].map(([l,v,hl])=>(
+            <div key={l} style={{background:hl?'#1E2235':'#fff',borderRadius:9,
+              border:hl?'none':'1px solid #E4E0D8',padding:'14px 16px'}}>
+              <div style={{fontSize:11,color:hl?'rgba(255,255,255,.45)':'#8B8880',marginBottom:5}}>{l}</div>
+              <div style={{fontSize:22,fontWeight:800,color:hl?'#fff':'#1E2235'}}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Coeff charges */}
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+          <span style={{fontSize:13,color:'#8B8880'}}>Coeff. charges patronales :</span>
+          <input type="number" value={coeff} step={0.01} min={1} max={3}
+            onChange={e=>setCoeff(+e.target.value||1)}
+            style={{width:72,padding:'6px 9px',border:'1px solid #E4E0D8',borderRadius:6,
+              fontSize:13,fontFamily:'inherit',outline:'none'}}/>
+          <span style={{fontSize:11,color:'#C0BCB5'}}>Appliqué aux salariés uniquement</span>
+        </div>
+
+        {/* Tableau */}
+        <div style={{background:'#fff',borderRadius:10,border:'1px solid #E4E0D8',overflow:'hidden'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr style={{background:'#F5F3EF'}}>
+                {['Salarié','Type','H planifiées','Contrat','Écart','Brut / sem','Coût chargé'].map(c=>(
+                  <th key={c} style={{padding:'9px 12px',textAlign:'left',fontSize:11,
+                    fontWeight:600,color:'#8B8880',borderBottom:'2px solid #ECEAE4',whiteSpace:'nowrap'}}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s,i)=>{
+                const dc=s.diff===null?'#8B8880':s.diff>2?'#EF4444':s.diff<-2?'#F59E0B':'#4A8C6E';
+                return(
+                  <tr key={s.id} style={{background:i%2===0?'#fff':'#FDFBF9',borderBottom:'1px solid #F0EDE8'}}>
+                    <td style={{padding:'9px 12px'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <Avatar s={s} size={24}/>
+                        <span style={{fontWeight:600,fontSize:13}}>{s.name}</span>
+                      </div>
+                    </td>
+                    <td style={{padding:'9px 12px'}}>
+                      <Tag color={s.type==='renfort'?'#06B6D4':'#4A8C6E'}
+                           bg={s.type==='renfort'?'#ECFEFF':'#EBF5F0'}>
+                        {s.type==='renfort'?'Vacation':'Salarié'}
+                      </Tag>
+                    </td>
+                    <td style={{padding:'9px 12px',fontSize:14,fontWeight:700}}>{s.h}h</td>
+                    <td style={{padding:'9px 12px',fontSize:12,color:'#8B8880'}}>{s.contract?`${s.contract}h`:'—'}</td>
+                    <td style={{padding:'9px 12px',fontSize:12,fontWeight:600,color:dc}}>
+                      {s.diff===null?'—':s.diff>0?`+${s.diff}h`:s.diff===0?'✓ OK':`${s.diff}h`}
+                    </td>
+                    <td style={{padding:'9px 12px',fontSize:12}}>{s.brut.toFixed(2)} €</td>
+                    <td style={{padding:'9px 12px',fontSize:13,fontWeight:700}}>
+                      {s.type==='salarie'
+                        ?`${s.cost.toFixed(2)} €`
+                        :<span style={{color:'#8B8880',fontWeight:400}}>{s.brut.toFixed(2)} € (ind.)</span>
+                      }
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{background:'#F5F3EF',borderTop:'2px solid #ECEAE4'}}>
+                <td style={{padding:'10px 12px',fontWeight:700}} colSpan={2}>Total</td>
+                <td style={{padding:'10px 12px',fontWeight:800,fontSize:14}}>{totH}h</td>
+                <td/><td/>
+                <td style={{padding:'10px 12px',fontWeight:700}}>{totB.toFixed(0)} €</td>
+                <td style={{padding:'10px 12px',fontWeight:800,fontSize:14}}>{totC.toFixed(0)} €</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── CONFIG VIEW ───────────────────────────────────────────
+const ConfigView=()=>{
+  const {teams,setTeams,functions,setFunctions}=useApp();
+  const [tab,setTab]=useState('teams');
+  const [modal,setModal]=useState({open:false,initial:null});
+  const items=tab==='teams'?teams:functions;
+
+  const empty={name:'',color:'#8B5CF6',bg:'#F5F3FF',icon:'📋',desc:''};
+  const [f,setF]=useState(empty);
+  useEffect(()=>setF(modal.initial||empty),[modal]);
+  const set=(k,v)=>setF(p=>({...p,[k]:v}));
+
+  const icons=['🏛️','🏠','🔧','🧗','📋','🎫','🔓','🔒','🪨','🧹','⚡','💜','🎉','📚','🔖','👷','🛡️','📊','🎯','🔑','👥','🌿','🎪','⚽'];
+  const clrs=['#EC4899','#C5753A','#22C55E','#6366F1','#0EA5E9','#F97316','#4A8C6E','#EF4444','#8B5CF6','#06B6D4','#F59E0B','#64748B'];
+
+  const save=()=>{
+    if(!f.name.trim())return;
+    const id=modal.initial?.id||f.name.toLowerCase()
+      .replace(/\s+/g,'-')
+      .replace(/[éèêëàâùûü]/g,c=>({é:'e',è:'e',ê:'e',ë:'e',à:'a',â:'a',ù:'u',û:'u',ü:'u'}[c]||''))
+      .replace(/[^a-z0-9-]/g,'');
+    const item={...f,id:id||String(Date.now())};
+    if(tab==='teams')setTeams(p=>modal.initial?p.map(t=>t.id===item.id?item:t):[...p,item]);
+    else setFunctions(p=>modal.initial?p.map(fn=>fn.id===item.id?item:fn):[...p,item]);
+    setModal({open:false,initial:null});
+  };
+
+  const del=(id)=>{
+    if(tab==='teams')setTeams(p=>p.filter(t=>t.id!==id));
+    else setFunctions(p=>p.filter(f=>f.id!==id));
+  };
+
+  return(
+    <div style={{flex:1,overflow:'auto'}}>
+      <PageHeader
+        title="Configuration"
+        sub="Gérez vos équipes et postes — tout est modifiable et persistant"
+        actions={<Btn onClick={()=>setModal({open:true,initial:null})} variant="primary">+ {tab==='teams'?'Nouvelle équipe':'Nouveau poste'}</Btn>}
+      />
+
+      <div style={{padding:'18px 24px'}}>
+        {/* Comptes de connexion */}
+        <div style={{background:'#FFF4EC',borderRadius:10,border:'1px solid #F0D4B8',
+          padding:'14px 18px',marginBottom:18}}>
+          <div style={{fontWeight:700,fontSize:13,color:'#C5753A',marginBottom:8}}>🔑 Comptes de connexion</div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:6}}>
+            {Object.entries(INIT_USERS).map(([email,u])=>(
+              <div key={email} style={{fontSize:11,padding:'7px 10px',background:'#fff',
+                borderRadius:7,border:'1px solid #F0D4B8'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                  <span style={{fontWeight:600,color:'#1E2235'}}>{u.name}</span>
+                  <Tag color={u.role==='admin'?'#C5753A':u.role==='manager'?'#6366F1':'#4A8C6E'}
+                       bg={u.role==='admin'?'#FFF4EC':u.role==='manager'?'#EEF2FF':'#EBF5F0'}>
+                    {u.role}
+                  </Tag>
+                </div>
+                <div style={{color:'#8B8880',marginTop:3,fontSize:10}}>
+                  {email} · <code style={{background:'#F5F3EF',padding:'0 3px',borderRadius:2}}>{u.password}</code>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:'flex',gap:3,background:'#F5F3EF',borderRadius:8,padding:3,
+          marginBottom:18,width:'fit-content'}}>
+          {[['teams','👥 Équipes'],['functions','🔖 Fonctions / Postes']].map(([v,l])=>(
+            <button key={v} onClick={()=>setTab(v)} style={{padding:'6px 18px',borderRadius:6,
+              border:'none',cursor:'pointer',fontFamily:'inherit',
+              background:tab===v?'#fff':'transparent',
+              color:tab===v?'#1E2235':'#9B9890',fontWeight:tab===v?600:400,fontSize:13,
+              boxShadow:tab===v?'0 1px 3px rgba(0,0,0,.1)':'none'}}>{l}</button>
+          ))}
+        </div>
+
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}}>
+          {items.map(item=>(
+            <div key={item.id} style={{background:'#fff',borderRadius:12,
+              border:'1px solid #E4E0D8',padding:14,overflow:'hidden'}}>
+              <div style={{height:3,background:item.color,margin:'-14px -14px 10px',borderRadius:'12px 12px 0 0'}}/>
+              <div style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:10}}>
+                <div style={{width:36,height:36,borderRadius:9,background:item.bg||item.color+'22',
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  fontSize:18,flexShrink:0,border:`1px solid ${item.color}25`}}>{item.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:14,color:'#1E2235'}}>{item.name}</div>
+                  <div style={{fontSize:11,color:'#8B8880',marginTop:2}}>{item.desc||item.id}</div>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:5}}>
+                <button onClick={()=>setModal({open:true,initial:item})} style={{flex:1,padding:'5px 0',
+                  borderRadius:6,border:'1px solid #E4E0D8',background:'#fff',
+                  cursor:'pointer',fontSize:10,fontFamily:'inherit'}}>✏️ Modifier</button>
+                <button onClick={()=>del(item.id)} style={{padding:'5px 8px',
+                  borderRadius:6,border:'1px solid #FCD0D0',background:'#FEF2F2',
+                  color:'#EF4444',cursor:'pointer',fontSize:10,fontFamily:'inherit'}}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Modal open={modal.open} onClose={()=>setModal({open:false,initial:null})}
+        title={modal.initial?`Modifier — ${modal.initial.name}`:`Nouveau ${tab==='teams'?'équipe':'poste'}`}
+        width={500}>
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+            <Field label="Nom *"><input value={f.name} onChange={e=>set('name',e.target.value)} style={inputSt} placeholder="Ex: Sécurité" autoFocus/></Field>
+            <Field label="Description"><input value={f.desc||''} onChange={e=>set('desc',e.target.value)} style={inputSt} placeholder="Description courte"/></Field>
+          </div>
+          <Field label="Icône">
+            <div style={{display:'flex',gap:5,flexWrap:'wrap',marginTop:4}}>
+              {icons.map(ic=>(
+                <button key={ic} onClick={()=>set('icon',ic)} style={{width:32,height:32,borderRadius:7,
+                  border:`2px solid ${f.icon===ic?'#C5753A':'#E4E0D8'}`,
+                  background:f.icon===ic?'#FFF4EC':'#fff',cursor:'pointer',fontSize:15}}>{ic}</button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Couleur">
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:4}}>
+              {clrs.map(c=>(
+                <button key={c} onClick={()=>set('color',c)} style={{width:26,height:26,borderRadius:6,
+                  background:c,border:`3px solid ${f.color===c?'#1E2235':'transparent'}`,cursor:'pointer'}}/>
+              ))}
+            </div>
+          </Field>
+          <div style={{display:'flex',gap:10,paddingTop:12,borderTop:'1px solid #F0EDE8'}}>
+            <Btn onClick={save} variant="primary" style={{flex:1,justifyContent:'center'}}>
+              ✓ {modal.initial?'Enregistrer':'Créer'}
+            </Btn>
+            <Btn onClick={()=>setModal({open:false,initial:null})}>Annuler</Btn>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+// ── APP ROOT ──────────────────────────────────────────────
+const App=()=>{
+  const [user,setUser]=useState(()=>{
+    try{const s=localStorage.getItem('spirit_session');return s?JSON.parse(s):null;}
+    catch(e){return null;}
+  });
+  const [view,setView]=useState('mon-planning');
+  const [mpPerson,setMpPerson]=useState(null);
+
+  // Données persistées
+  const [staff,setStaff]         =useState(()=>load('staff',INIT_STAFF));
+  const [teams,setTeams]         =useState(()=>load('teams',INIT_TEAMS));
+  const [functions,setFunctions] =useState(()=>load('functions',INIT_FUNCTIONS));
+  const [schedules,setSchedules] =useState(()=>load('schedules',createDefaultSchedules()));
+  const [leaves,setLeaves]       =useState(()=>load('leaves',INIT_LEAVES));
+
+  // Persistance automatique
+  useEffect(()=>save('staff',staff),[staff]);
+  useEffect(()=>save('teams',teams),[teams]);
+  useEffect(()=>save('functions',functions),[functions]);
+  useEffect(()=>save('schedules',schedules),[schedules]);
+  useEffect(()=>save('leaves',leaves),[leaves]);
+
+  const login=(u)=>{
+    setUser(u);
+    localStorage.setItem('spirit_session',JSON.stringify(u));
+    const defaultView=u.staff_id?'mon-planning':u.role==='admin'?'planning':'mon-planning';
+    setView(defaultView);
+    if(u.staff_id)setMpPerson(u.staff_id);
+  };
+
+  const goToMyPlanning=(pid)=>{
+    setMpPerson(pid);
+    setView('mon-planning');
+  };
+
+  const handleSetView=(v)=>{
+    setView(v);
+    if(v==='mon-planning'&&user?.staff_id)setMpPerson(user.staff_id);
+  };
+
+  if(!user)return <Login onLogin={login}/>;
+
+  const ctx={user,staff,setStaff,teams,setTeams,functions,setFunctions,
+    schedules,setSchedules,leaves,setLeaves};
+
+  const views={
+    'planning':     <PlanningView/>,
+    'mon-planning': <MonPlanningView initialPerson={mpPerson}/>,
+    'equipe':       <EquipeView goToMyPlanning={goToMyPlanning}/>,
+    'conges':       <CongesView/>,
+    'releves':      <RelevesView/>,
+    'config':       <ConfigView/>,
+  };
+
+  return(
+    <AppCtx.Provider value={ctx}>
+      <div style={{display:'flex',minHeight:'100vh'}}>
+        <Sidebar view={view} setView={handleSetView} leaves={leaves} user={user}/>
+        <main style={{marginLeft:220,flex:1,display:'flex',flexDirection:'column',
+          minHeight:'100vh',background:'#F5F3EF'}}>
+          {views[view]||views['mon-planning']}
+        </main>
+      </div>
+    </AppCtx.Provider>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
