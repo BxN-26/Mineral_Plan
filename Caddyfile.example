@@ -1,0 +1,32 @@
+# Caddyfile.example — Mineral Spirit v2
+# Remplacer "planning.example.com" par votre domaine réel
+# et copier ce fichier en "Caddyfile" dans le répertoire courant.
+
+planning.example.com {
+    # Journalisation
+    log {
+        output file /var/log/caddy/spirit.log
+        format json
+    }
+
+    # En-têtes de sécurité
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Proxy de l'API vers le serveur Express
+    handle /api/* {
+        reverse_proxy localhost:3000
+    }
+
+    # Fichiers statiques du build Vite (frontend/dist/)
+    handle {
+        root * /home/serveur/Mineral_Plan/frontend/dist
+        try_files {path} /index.html
+        file_server
+    }
+}

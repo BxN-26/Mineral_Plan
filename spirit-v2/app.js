@@ -1,0 +1,91 @@
+'use strict';
+require('dotenv').config();
+
+const express      = require('express');
+const helmet       = require('helmet');
+const cors         = require('cors');
+const cookieParser = require('cookie-parser');
+const path         = require('path');
+
+const { initSchema } = require('./db/database');
+
+// Routes
+const authRouter      = require('./routes/auth');
+const staffRouter     = require('./routes/staff');
+const teamsRouter     = require('./routes/teams');
+const functionsRouter = require('./routes/functions');
+const leavesRouter    = require('./routes/leaves');
+const schedulesRouter = require('./routes/schedules');
+const settingsRouter  = require('./routes/settings');
+const { router: notificationsRouter } = require('./routes/notifications');
+const statsRouter     = require('./routes/stats');
+const costsRouter     = require('./routes/costs');
+const swapsRouter     = require('./routes/swaps');
+
+// ── Initialisation DB ─────────────────────────────────────────
+initSchema();
+
+// ── App ───────────────────────────────────────────────────────
+const app = express();
+
+app.use(helmet({
+  contentSecurityPolicy: false, // géré par Caddy en prod
+}));
+
+app.use(cors({
+  origin:      process.env.CLIENT_URL || 'http://localhost:5173',
+  credentials: true,
+}));
+
+app.use(express.json());
+app.use(cookieParser());
+
+// Service des fichiers statiques du build Vite (production)
+const distPath = path.join(__dirname, '../frontend/dist');
+app.use(express.static(distPath, {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  },
+}));
+
+// Servir les uploads (avatars, etc.)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ── Routes API ────────────────────────────────────────────────
+app.use('/api/auth',      authRouter);
+app.use('/api/staff',     staffRouter);
+app.use('/api/teams',     teamsRouter);
+app.use('/api/functions', functionsRouter);
+app.use('/api/leaves',    leavesRouter);
+app.use('/api/schedules', schedulesRouter);
+app.use('/api/settings',       settingsRouter);
+app.use('/api/notifications',  notificationsRouter);
+app.use('/api/stats',          statsRouter);
+app.use('/api/costs',          costsRouter);
+app.use('/api/swaps',          swapsRouter);
+
+// ── SPA fallback (renvoie index.html pour les routes React) ──
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(distPath, 'index.html'), err => {
+    if (err) res.status(404).json({ error: 'Not found' });
+  });
+});
+
+// ── Gestionnaire d'erreurs global ─────────────────────────────
+app.use((err, req, res, _next) => {
+  console.error('[ERROR]', err.message);
+  const status = err.status || 500;
+  res.status(status).json({ error: err.message || 'Erreur serveur' });
+});
+
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, () => {
+  console.log(`[spirit-api] Serveur démarré sur http://localhost:${PORT}`);
+  console.log(`[spirit-api] ENV: ${process.env.NODE_ENV || 'development'}`);
+});
+
+module.exports = app;

@@ -1,0 +1,30 @@
+# Dépendances
+node_modules/
+frontend/node_modules/
+spirit-v2/node_modules/
+
+# Build Vite
+frontend/dist/
+
+# Variables d'environnement
+spirit-v2/.env
+.env
+
+# Base de données SQLite
+spirit-v2/db/spirit.db
+spirit-v2/db/spirit.db-wal
+spirit-v2/db/spirit.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+
+# Clée Caddy éventuellement présente
+Caddyfile
+
+# Avatars uploadés (données utilisateurs, non versionnées)
+spirit-v2/uploads/
+
+# Éditeurs
+.DS_Store
+.vscode/settings.json

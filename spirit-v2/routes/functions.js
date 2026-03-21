@@ -33,6 +33,12 @@ router.put('/:id', ...ADMIN, (req, res) => {
   res.json({ message: 'Fonction mise à jour' });
 });
 
+// ── DELETE /api/functions/:id ────────────────────────────────
+router.delete('/:id', ...ADMIN, (req, res) => {
+  db_.run('UPDATE functions SET active=0 WHERE id=?', [req.params.id]);
+  res.json({ message: 'Fonction désactivée' });
+});
+
 // ── GET /api/functions/:id/staff ─────────────────────────────
 // Salariés ayant cette fonction
 router.get('/:id/staff', AUTH, (req, res) => {
@@ -203,7 +209,7 @@ router.post('/schedule/:week/:functionId/slots/bulk', ...ADMIN, (req, res) => {
         [sc.id, s.staff_id, s.day_of_week, s.hour_start, s.hour_end||s.hour_start+1, s.sub_role||null, s.note||null]
       );
     }
-    db_.run('UPDATE schedules SET updated_at=datetime("now") WHERE id=?', [sc.id]);
+    db_.run("UPDATE schedules SET updated_at=datetime('now') WHERE id=?", [sc.id]);
   });
 
   auditLog(req, 'BULK_SAVE_SLOTS', 'schedule_slots', sc.id, null, { count: slots?.length, function_id: functionId });

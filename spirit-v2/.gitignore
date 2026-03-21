@@ -1,0 +1,6 @@
+node_modules/
+.env
+db/spirit.db
+db/spirit.db-wal
+db/spirit.db-shm
+*.log
