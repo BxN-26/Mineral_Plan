@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS staff (
   contract_h   REAL    NOT NULL DEFAULT 0,
   -- Taux horaire de base (peut être surchargé par fonction)
   hourly_rate  REAL    NOT NULL DEFAULT 0,
+  -- Taux de charges patronales (ex: 0.45 = 45%)
+  charge_rate  REAL    NOT NULL DEFAULT 0.45,
   color        TEXT    NOT NULL DEFAULT '#8B8880',
   avatar_url   TEXT,
   note         TEXT,

@@ -71,7 +71,7 @@ router.get('/', ...MGR, (req, res) => {
   const leavesWeek = db_.all(
     `SELECT lt.slug, lt.label, lt.color, COUNT(*) as count
      FROM leaves l
-     JOIN leave_types lt ON lt.id = l.leave_type_id
+     JOIN leave_types lt ON lt.id = l.type_id
      WHERE l.start_date <= ? AND l.end_date >= ?
        AND l.status IN ('approved','approved_n1','approved_n2')
      GROUP BY lt.slug`,
