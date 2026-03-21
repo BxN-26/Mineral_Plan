@@ -4,7 +4,16 @@ import { useAuth } from '../context/AuthContext';
 
 const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const HOURS   = Array.from({ length: 14 }, (_, i) => i + 8);
+
+const DAY_START = 7;
+const DAY_END   = 22;
+const HOUR_H    = 56;  // 14px × 4 quarts
+const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;
+const HOUR_LABELS = Array.from({ length: DAY_END - DAY_START + 1 }, (_, i) => DAY_START + i);
+const SLOT_H    = 14;
+
+const timeToY  = (t) => (t - DAY_START) * HOUR_H;
+const fmtTime  = (t) => { const h = Math.floor(t); const m = Math.round((t - h) * 60); return `${h}h${m === 0 ? '' : String(m).padStart(2, '0')}`; };
 
 function weekStart(offset) {
   const now  = new Date();
@@ -15,9 +24,9 @@ function weekStart(offset) {
 }
 
 const MonPlanningView = () => {
-  const { user }                          = useAuth();
+  const { user }                                           = useAuth();
   const { staff, functions, schedules, loadWeekSchedules } = useApp();
-  const [wk, setWk]                       = useState(0);
+  const [wk, setWk]                                        = useState(0);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
 
@@ -30,42 +39,36 @@ const MonPlanningView = () => {
 
   const weekLabel = `${dates[0].getDate()} – ${dates[6].getDate()} ${dates[6].toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
 
-  // Charger le planning si besoin
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
 
-  // Trouver le salarié correspondant à l'utilisateur connecté
   const myStaff = useMemo(() => {
     if (!user?.staff_id) return null;
     return staff.find(s => s.id === user.staff_id) || null;
   }, [user, staff]);
 
-  // Construire le planning personnel (toutes fonctions confondues)
-  const mySchedule = useMemo(() => {
+  // Construire les créneaux personnels sous forme de spans par jour
+  // { day: [{ fn, start, end }] }
+  const mySpans = useMemo(() => {
+    const out = Array.from({ length: 7 }, () => []);
+    if (!myStaff) return out;
     const weekData = schedules[currentWeek] || {};
-    const result   = {}; // { day: { hour: [fnSlug] } }
-    for (let d = 0; d < 7; d++) for (const h of HOURS) result[`${d}-${h}`] = [];
-
-    if (!myStaff) return result;
-
     for (const fn of functions) {
-      const grid = weekData[fn.slug] || {};
       for (let d = 0; d < 7; d++) {
-        for (const h of HOURS) {
-          if ((grid[d]?.[h] || []).includes(myStaff.id)) {
-            result[`${d}-${h}`].push(fn);
-          }
+        const daySpans = weekData[fn.slug]?.[d] ?? weekData[fn.slug]?.[String(d)] ?? [];
+        for (const sp of daySpans) {
+          if (sp.staffId === myStaff.id) out[d].push({ fn, start: sp.start, end: sp.end });
         }
       }
     }
-    return result;
+    return out;
   }, [myStaff, functions, schedules, currentWeek]);
 
   // Total d'heures planifiées cette semaine
   const totalH = useMemo(() => {
-    let count = 0;
-    for (const fns of Object.values(mySchedule)) if (fns.length > 0) count++;
-    return count;
-  }, [mySchedule]);
+    let t = 0;
+    for (const day of mySpans) for (const sp of day) t += sp.end - sp.start;
+    return Math.round(t * 100) / 100;
+  }, [mySpans]);
 
   if (!myStaff) {
     return (
@@ -85,18 +88,13 @@ const MonPlanningView = () => {
           <div style={{ fontWeight: 700, fontSize: 16, color: '#1E2235' }}>Mon planning</div>
           <div style={{ fontSize: 11, color: '#8B8880' }}>{weekLabel}</div>
         </div>
-
-        {/* Badge salarié */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: `${myStaff.color}15`, border: `1.5px solid ${myStaff.color}30`, borderRadius: 8 }}>
-          <div style={{ width: 26, height: 26, borderRadius: '50%', background: myStaff.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800 }}>
-            {myStaff.initials}
-          </div>
+          <div style={{ width: 26, height: 26, borderRadius: '50%', background: myStaff.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800 }}>{myStaff.initials}</div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#1E2235' }}>{myStaff.firstname} {myStaff.lastname}</div>
             <div style={{ fontSize: 10, color: '#9B9890' }}>{totalH}h planifiées cette&nbsp;semaine</div>
           </div>
         </div>
-
         <div style={{ display: 'flex', gap: 3, marginLeft: 'auto' }}>
           <button onClick={() => setWk(w => w - 1)} style={navBtn}>◀</button>
           <button onClick={() => setWk(0)}           style={navBtn}>Auj.</button>
@@ -104,47 +102,61 @@ const MonPlanningView = () => {
         </div>
       </div>
 
-      {/* Grille */}
+      {/* Grille agenda */}
       <div style={{ flex: 1, overflow: 'auto', background: '#FAFAF8' }}>
+        {/* Header jours */}
         <div style={{ display: 'grid', gridTemplateColumns: '44px repeat(7,1fr)', position: 'sticky', top: 0, zIndex: 10, background: '#F5F3EF', borderBottom: '2px solid #E4E0D8' }}>
           <div />
           {DAYS.map((day, di) => {
-            const date    = dates[di];
-            const isToday = date.toDateString() === new Date().toDateString();
+            const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
             return (
-              <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday ? '#FFF4EC' : di >= 5 ? '#F9F7F4' : 'transparent', borderLeft: '1px solid #E4E0D8' }}>
-                <div style={{ fontSize: 9, fontWeight: 600, color: isToday ? '#C5753A' : '#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
-                <div style={{ fontSize: 15, fontWeight: isToday ? 800 : 600, color: isToday ? '#C5753A' : '#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
+              <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '1px solid #E4E0D8' }}>
+                <div style={{ fontSize: 9, fontWeight: 600, color: isToday?'#C5753A':'#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
+                <div style={{ fontSize: 15, fontWeight: isToday?800:600, color: isToday?'#C5753A':'#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
               </div>
             );
           })}
         </div>
 
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup><col style={{ width: 44 }} />{DAYS.map((_, i) => <col key={i} />)}</colgroup>
-          <tbody>
-            {HOURS.map(h => (
-              <tr key={h}>
-                <td style={{ padding: '0 5px', textAlign: 'right', fontSize: 9, color: '#C0BCB5', verticalAlign: 'top', paddingTop: 4, borderTop: '1px solid #ECEAE4', position: 'sticky', left: 0, background: '#F5F3EF', zIndex: 5 }}>{h}h</td>
-                {DAYS.map((_, di) => {
-                  const fns = mySchedule[`${di}-${h}`] || [];
+        {/* Corps */}
+        <div style={{ display: 'flex' }}>
+          {/* Axe horaire */}
+          <div style={{ width: 44, flexShrink: 0, position: 'relative', height: TOTAL_H, background: '#F5F3EF', borderRight: '1px solid #E4E0D8' }}>
+            {HOUR_LABELS.slice(0, -1).map(h => (
+              <div key={h} style={{ position: 'absolute', top: (h - DAY_START) * HOUR_H - 7, right: 6, fontSize: 9, color: '#B0ACA5', whiteSpace: 'nowrap' }}>{h}h</div>
+            ))}
+          </div>
+
+          {/* Colonnes */}
+          {DAYS.map((_, di) => {
+            const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
+            const daySpans = mySpans[di] || [];
+            return (
+              <div key={di} style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isToday?'#FFFCF9':di>=5?'#FDFBF8':'#fff', borderLeft: '1px solid #E8E5DF' }}>
+                {HOUR_LABELS.slice(0, -1).map(h => (
+                  <div key={h} style={{ position: 'absolute', left: 0, right: 0, top: (h - DAY_START) * HOUR_H, borderTop: '1px solid #F0EDE8', pointerEvents: 'none' }}>
+                    {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
+                  </div>
+                ))}
+                {daySpans.map((sp, i) => {
+                  const top = timeToY(sp.start);
+                  const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
                   return (
-                    <td key={di} style={{ verticalAlign: 'top', padding: '2px 3px', borderLeft: '1px solid #E4E0D8', borderTop: '1px solid #ECEAE4', background: fns.length > 0 ? `${myStaff.color}0D` : di >= 5 ? '#FDFBF8' : '#fff', minHeight: 26 }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                        {fns.map(fn => (
-                          <div key={fn.slug} style={{ display: 'flex', alignItems: 'center', gap: 2, background: fn.bg_color || '#F5F5F5', border: `1px solid ${fn.color}30`, borderRadius: 4, padding: '1px 4px' }}>
-                            <span style={{ fontSize: 9 }}>{fn.icon}</span>
-                            <span style={{ fontSize: 9, fontWeight: 600, color: fn.color }}>{fn.short_name || fn.name}</span>
-                          </div>
-                        ))}
+                    <div key={i} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: `${myStaff.color}18`, border: `1.5px solid ${myStaff.color}50`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                        {sp.fn && <span style={{ fontSize: 9 }}>{sp.fn.icon}</span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: sp.fn?.color || myStaff.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sp.fn?.short_name || sp.fn?.name}</span>
                       </div>
-                    </td>
+                      {(sp.end - sp.start) >= 0.5 && (
+                        <div style={{ fontSize: 9, color: '#9B9890', paddingLeft: 2 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
+                      )}
+                    </div>
                   );
                 })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

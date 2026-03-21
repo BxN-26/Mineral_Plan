@@ -58,7 +58,7 @@ export const Field = ({ label, children }) => (
   </div>
 );
 
-export const Modal = ({ open, onClose, title, children, width = 520 }) => {
+export const Modal = ({ open = true, onClose, title, children, width = 520 }) => {
   if (!open) return null;
   return (
     <div style={{
@@ -88,18 +88,22 @@ export const Modal = ({ open, onClose, title, children, width = 520 }) => {
   );
 };
 
-export const PageHeader = ({ title, sub, actions }) => (
-  <div style={{
-    padding: '18px 24px 14px', borderBottom: '1px solid #ECEAE4', background: '#fff',
-    display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
-  }}>
-    <div style={{ flex: 1 }}>
-      <div style={{ fontWeight: 700, fontSize: 18, color: '#1E2235' }}>{title}</div>
-      {sub && <div style={{ fontSize: 12, color: '#8B8880', marginTop: 2 }}>{sub}</div>}
+export const PageHeader = ({ title, sub, subtitle, actions, children }) => {
+  const label = sub || subtitle;
+  const btns  = children || actions;
+  return (
+    <div style={{
+      padding: '18px 24px 14px', borderBottom: '1px solid #ECEAE4', background: '#fff',
+      display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0,
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 700, fontSize: 18, color: '#1E2235' }}>{title}</div>
+        {label && <div style={{ fontSize: 12, color: '#8B8880', marginTop: 2 }}>{label}</div>}
+      </div>
+      {btns && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{btns}</div>}
     </div>
-    {actions && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions}</div>}
-  </div>
-);
+  );
+};
 
 export const Spinner = () => (
   <div style={{

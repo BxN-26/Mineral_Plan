@@ -13,6 +13,8 @@ import StatsView from './views/StatsView';
 import CostsView from './views/CostsView';
 import MonProfilView from './views/MonProfilView';
 import SwapView from './views/SwapView';
+import TeamPlanningView from './views/TeamPlanningView';
+import GeneralPlanningView from './views/GeneralPlanningView';
 import { Spinner } from './components/common';
 import api from './api/client';
 
@@ -30,8 +32,10 @@ const VIEW_COMPONENTS = {
   'config':       ConfigView,
   'stats':        StatsView,
   'costs':        CostsView,
-  'profil':       MonProfilView,
-  'echanges':     SwapView,
+  'profil':         MonProfilView,
+  'echanges':       SwapView,
+  'planning-equipe': TeamPlanningView,
+  'planning-general': GeneralPlanningView,
 };
 
 /* ─── Shell interne (après authentification) ─────────────────── */
@@ -39,6 +43,7 @@ function AppShell() {
   const { user } = useAuth();
 
   const [view,       setView]       = useState('mon-planning');
+  const [planningFocus, setPlanningFocus] = useState(null); // { week, staffId } pour deep-link notif
   const [staff,      setStaff]      = useState([]);
   const [teams,      setTeams]      = useState([]);
   const [functions,  setFunctions]  = useState([]);
@@ -122,6 +127,8 @@ function AppShell() {
     reloadStaff, reloadTeams, reloadFunctions, reloadLeaves, loadWeekSchedules,
     /* navigation */
     view, setView,
+    /* deep-link planning */
+    planningFocus, setPlanningFocus,
   };
 
   return (

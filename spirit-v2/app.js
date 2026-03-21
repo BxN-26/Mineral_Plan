@@ -21,6 +21,8 @@ const { router: notificationsRouter } = require('./routes/notifications');
 const statsRouter     = require('./routes/stats');
 const costsRouter     = require('./routes/costs');
 const swapsRouter     = require('./routes/swaps');
+const templatesRouter   = require('./routes/templates');
+const courseSlotsRouter = require('./routes/course-slots');
 
 // ── Initialisation DB ─────────────────────────────────────────
 initSchema();
@@ -65,6 +67,8 @@ app.use('/api/notifications',  notificationsRouter);
 app.use('/api/stats',          statsRouter);
 app.use('/api/costs',          costsRouter);
 app.use('/api/swaps',          swapsRouter);
+app.use('/api/templates',      templatesRouter);
+app.use('/api/course-slots',   courseSlotsRouter);
 
 // ── SPA fallback (renvoie index.html pour les routes React) ──
 app.get('*', (req, res, next) => {

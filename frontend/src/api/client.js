@@ -32,7 +32,8 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    if (status === 401 && code === 'TOKEN_EXPIRED') {
+    // Tenter un refresh pour tout 401 (cookie expiré/absent OU TOKEN_EXPIRED)
+    if (status === 401 && (code === 'TOKEN_EXPIRED' || !code)) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           refreshQueue.push(error => error ? reject(error) : resolve(api(original)));

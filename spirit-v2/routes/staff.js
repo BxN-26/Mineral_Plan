@@ -1,16 +1,20 @@
 'use strict';
-const router = require('express').Router();
-const path   = require('path');
-const fs     = require('fs');
-const multer = require('multer');
-const sharp  = require('sharp');
+const router  = require('express').Router();
+const path    = require('path');
+const fs      = require('fs');
+const bcrypt  = require('bcryptjs');
+const multer  = require('multer');
+const sharp   = require('sharp');
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
 
-/** Enrichit chaque staff avec ses fonctions (slugs) */
+const PERM_TO_ROLE  = { standard: 'staff', bureau: 'manager', direction: 'admin' };
+const ROLE_TO_PERM  = { staff: 'standard', viewer: 'standard', manager: 'bureau', rh: 'bureau', admin: 'direction', superadmin: 'direction' };
+
+/** Enrichit chaque staff avec ses fonctions (slugs) et ses équipes */
 function withFunctions(staffRows) {
   return staffRows.map(s => {
     const fns = db_.all(
@@ -22,11 +26,22 @@ function withFunctions(staffRows) {
       [s.id]
     );
     const primaryFn = fns.find(f => f.is_primary);
+    const teams = db_.all(
+      `SELECT t.id, t.name, t.slug, t.color, t.bg_color, t.icon, st.is_primary
+       FROM staff_teams st JOIN teams t ON t.id = st.team_id
+       WHERE st.staff_id = ? AND t.active = 1 ORDER BY st.is_primary DESC, t.sort_order`,
+      [s.id]
+    );
+    const linkedUser = db_.get('SELECT role FROM users WHERE staff_id = ? AND active = 1', [s.id]);
     return {
       ...s,
       functions:        fns.map(f => f.slug),
       functions_detail: fns,
       primary_function: primaryFn?.slug || fns[0]?.slug || null,
+      team_ids:         teams.map(t => t.id),
+      teams_detail:     teams,
+      user_role:        linkedUser?.role || null,
+      permission_level: ROLE_TO_PERM[linkedUser?.role] || 'standard',
     };
   });
 }
@@ -73,12 +88,20 @@ router.get('/:id', AUTH, (req, res) => {
 router.post('/', ...ADMIN, (req, res) => {
   const {
     firstname, lastname = '', initials, email, phone,
-    team_id, type = 'salarie', contract_h = 0, hourly_rate = 0,
+    team_id, team_ids,
+    type = 'salarie', contract_h = 0, hourly_rate = 0,
     color = '#6366F1', note, hire_date, cp_balance = 0, rtt_balance = 0,
     manager_id, functions: fns = [], primary_function,
+    permission_level, initial_password,
   } = req.body;
 
   if (!firstname) return res.status(400).json({ error: 'Prénom requis' });
+
+  // Déduire la liste d'équipes (multi ou simple)
+  const teamList = Array.isArray(team_ids) && team_ids.length
+    ? team_ids.map(Number)
+    : team_id ? [Number(team_id)] : [];
+  const primaryTeamId = teamList[0] || null;
 
   const r = db_.run(
     `INSERT INTO staff
@@ -87,10 +110,18 @@ router.post('/', ...ADMIN, (req, res) => {
         cp_balance, rtt_balance, manager_id, active)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     [firstname, lastname, initials || firstname.slice(0, 2).toUpperCase(), email || null,
-     phone || null, team_id || null, type, contract_h, hourly_rate, color, note || null,
+     phone || null, primaryTeamId, type, contract_h, hourly_rate, color, note || null,
      hire_date || null, cp_balance, rtt_balance, manager_id || null]
   );
   const staffId = r.lastInsertRowid;
+
+  // Assigner les équipes
+  for (let i = 0; i < teamList.length; i++) {
+    db_.run(
+      'INSERT OR IGNORE INTO staff_teams (staff_id, team_id, is_primary) VALUES (?, ?, ?)',
+      [staffId, teamList[i], i === 0 ? 1 : 0]
+    );
+  }
 
   // Assigner les fonctions
   for (const slug of fns) {
@@ -105,6 +136,22 @@ router.post('/', ...ADMIN, (req, res) => {
   }
 
   auditLog(req, 'STAFF_CREATE', 'staff', staffId, null, { firstname, email });
+
+  // Créer/mettre à jour le compte utilisateur lié
+  if (permission_level || initial_password) {
+    const role    = PERM_TO_ROLE[permission_level] || 'staff';
+    const existU  = db_.get('SELECT id FROM users WHERE staff_id = ?', [staffId]);
+    if (existU) {
+      db_.run('UPDATE users SET role = ? WHERE id = ?', [role, existU.id]);
+    } else if (initial_password && email) {
+      const hash = bcrypt.hashSync(initial_password, 12);
+      db_.run(
+        'INSERT OR IGNORE INTO users (email, password, role, staff_id, active) VALUES (?,?,?,?,1)',
+        [email.toLowerCase().trim(), hash, role, staffId]
+      );
+    }
+  }
+
   res.status(201).json({ id: staffId });
 });
 
@@ -112,12 +159,22 @@ router.post('/', ...ADMIN, (req, res) => {
 router.put('/:id', ...ADMIN, (req, res) => {
   const {
     firstname, lastname, initials, email, phone,
-    team_id, type, contract_h, hourly_rate, charge_rate, color, note, hire_date,
+    team_id, team_ids,
+    type, contract_h, hourly_rate, charge_rate, color, note, hire_date,
     cp_balance, rtt_balance, manager_id, functions: fns, primary_function,
+    active,
   } = req.body;
 
   const old = db_.get('SELECT * FROM staff WHERE id = ?', [req.params.id]);
   if (!old) return res.status(404).json({ error: 'Salarié introuvable' });
+
+  // Déduire équipe primaire pour team_id (colonne de compatibilité)
+  let newTeamId = old.team_id;
+  if (Array.isArray(team_ids)) {
+    newTeamId = team_ids.length > 0 ? Number(team_ids[0]) : null;
+  } else if (team_id !== undefined) {
+    newTeamId = team_id || null;
+  }
 
   db_.run(
     `UPDATE staff SET
@@ -126,7 +183,7 @@ router.put('/:id', ...ADMIN, (req, res) => {
        initials      = COALESCE(?, initials),
        email         = COALESCE(?, email),
        phone         = COALESCE(?, phone),
-       team_id       = COALESCE(?, team_id),
+       team_id       = ?,
        type          = COALESCE(?, type),
        contract_h    = COALESCE(?, contract_h),
        hourly_rate   = COALESCE(?, hourly_rate),
@@ -137,12 +194,24 @@ router.put('/:id', ...ADMIN, (req, res) => {
        cp_balance    = COALESCE(?, cp_balance),
        rtt_balance   = COALESCE(?, rtt_balance),
        manager_id    = COALESCE(?, manager_id),
+       active        = COALESCE(?, active),
        updated_at    = datetime('now')
      WHERE id = ?`,
-    [firstname, lastname, initials, email, phone, team_id, type,
+    [firstname, lastname, initials, email, phone, newTeamId, type,
      contract_h, hourly_rate, charge_rate ?? null, color, note, hire_date,
-     cp_balance, rtt_balance, manager_id, req.params.id]
+     cp_balance, rtt_balance, manager_id, active ?? null, req.params.id]
   );
+
+  // Mettre à jour les équipes si fournies
+  if (Array.isArray(team_ids)) {
+    db_.run('DELETE FROM staff_teams WHERE staff_id = ?', [req.params.id]);
+    for (let i = 0; i < team_ids.length; i++) {
+      db_.run(
+        'INSERT OR IGNORE INTO staff_teams (staff_id, team_id, is_primary) VALUES (?, ?, ?)',
+        [req.params.id, Number(team_ids[i]), i === 0 ? 1 : 0]
+      );
+    }
+  }
 
   // Mettre à jour les fonctions si fournies
   if (Array.isArray(fns)) {
@@ -161,6 +230,17 @@ router.put('/:id', ...ADMIN, (req, res) => {
   }
 
   auditLog(req, 'STAFF_UPDATE', 'staff', req.params.id, old, req.body);
+
+  // Mettre à jour le rôle du compte lié si permission_level fourni
+  const { permission_level } = req.body;
+  if (permission_level !== undefined) {
+    const role   = PERM_TO_ROLE[permission_level] || 'staff';
+    const existU = db_.get('SELECT id FROM users WHERE staff_id = ?', [req.params.id]);
+    if (existU) {
+      db_.run('UPDATE users SET role = ? WHERE id = ?', [role, existU.id]);
+    }
+  }
+
   res.json({ message: 'Salarié mis à jour' });
 });
 

@@ -3,22 +3,25 @@ import NotifBell from './NotifBell';
 
 const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClose = () => {} }) => {
   const { user, logout } = useAuth();
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
-  const isMgr   = user?.role === 'manager' || isAdmin;
-  const isRh    = user?.role === 'rh' || isAdmin;
+  const isAdmin = ['admin', 'superadmin'].includes(user?.role);
+  const isMgr   = ['manager', 'rh', 'admin', 'superadmin'].includes(user?.role);
+  const isRh    = ['rh', 'admin', 'superadmin'].includes(user?.role);
+  const isStaff = !isMgr;
   const pending  = leaves.filter(l => l.status === 'pending' || l.status === 'approved_n1').length;
 
   const nav = [
-    ...(isMgr ? [{ id: 'planning',     label: 'Planning',       icon: '📅', sub: 'Multi-fonctions' }] : []),
-    { id: 'mon-planning',               label: 'Mon Planning',   icon: '👤', sub: 'Ma vue personnelle' },
-    ...(isMgr ? [{ id: 'equipe',       label: 'Équipe',         icon: '👥', sub: 'Membres & fonctions' }] : []),
+    { id: 'mon-planning',       label: 'Mon Planning',        icon: '👤', sub: 'Ma vue personnelle' },
+    { id: 'planning-equipe',    label: 'Planning Équipe',     icon: '🗓️', sub: 'Ma / mes équipes' },
+    ...(isStaff ? [{ id: 'planning-general', label: 'Planning Général', icon: '📋', sub: 'Toutes fonctions' }] : []),
+    ...(isMgr   ? [{ id: 'planning',         label: 'Planning',          icon: '📅', sub: 'Édition multi-fonctions' }] : []),
+    ...(isMgr   ? [{ id: 'equipe',           label: 'Équipe',            icon: '👥', sub: 'Membres & fonctions' }] : []),
     { id: 'conges', label: isMgr ? 'Congés' : 'Mes congés', icon: '🏖️', sub: 'Approbation workflow', badge: isMgr && pending > 0 ? pending : 0 },
-    ...(isMgr ? [{ id: 'releves',      label: 'Relevés',        icon: '⏱️', sub: 'Heures & export' }] : []),
-    ...(isMgr || isRh ? [{ id: 'stats', label: 'Statistiques', icon: '📊', sub: 'Analyse & KPIs' }] : []),
-    ...(isAdmin ? [{ id: 'costs',      label: 'Coûts',          icon: '💶', sub: 'Masse salariale' }] : []),
-    { id: 'echanges',                   label: 'Échanges',       icon: '🔄', sub: 'Créneaux & swaps' },
-    { id: 'profil',                     label: 'Mon Profil',     icon: '🪪', sub: 'Infos & mot de passe' },
-    ...(isAdmin ? [{ id: 'config',     label: 'Configuration',  icon: '⚙️', sub: 'Équipes & fonctions' }] : []),
+    ...(isMgr   ? [{ id: 'releves',          label: 'Relevés',           icon: '⏱️', sub: 'Heures & export' }] : []),
+    ...(isRh    ? [{ id: 'stats',            label: 'Statistiques',      icon: '📊', sub: 'Analyse & KPIs' }] : []),
+    ...(isAdmin ? [{ id: 'costs',            label: 'Coûts',             icon: '💶', sub: 'Masse salariale' }] : []),
+    { id: 'echanges',           label: 'Échanges',            icon: '🔄', sub: 'Créneaux & swaps' },
+    { id: 'profil',             label: 'Mon Profil',          icon: '🪪', sub: 'Infos & mot de passe' },
+    ...(isAdmin ? [{ id: 'config',           label: 'Configuration',     icon: '⚙️', sub: 'Équipes & fonctions' }] : []),
   ];
 
   return (

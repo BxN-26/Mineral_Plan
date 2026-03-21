@@ -379,7 +379,8 @@ INSERT OR IGNORE INTO functions (name, slug, description, color, bg_color, icon,
   -- Autres
   ('Renfort général',     'renfort',        'Renfort polyvalent selon besoins',          '#06B6D4', '#ECFEFF', '⚡', 1, 11),
   ('Événementiel',        'evenement',      'Organisation et animation événements',      '#F59E0B', '#FFFBEB', '🎉', 1, 12),
-  ('Bénévolat',           'benevole',       'Missions bénévoles diverses',               '#8B5CF6', '#F5F3FF', '💜', 0, 13);
+  ('Bénévolat',           'benevole',       'Missions bénévoles diverses',               '#8B5CF6', '#F5F3FF', '💜', 0, 13),
+  ('Service Civique',     'service_civique','Mission de service civique',                '#059669', '#D1FAE5', '🌿', 0, 14);
 
 -- ── Types de congés ──────────────────────────────────────────
 INSERT OR IGNORE INTO leave_types (slug, label, short_label, color, bg_color, paid, count_method, approval_levels, min_notice_days, requires_doc) VALUES

@@ -5,10 +5,12 @@ import { Btn, Modal, Field, PageHeader } from '../components/common';
 import api from '../api/client';
 
 const STATUS_CONFIG = {
-  pending:  { label: 'En attente',  bg: '#FEF9C3', color: '#A16207', icon: '⏳' },
-  approved: { label: 'Approuvé',    bg: '#DCFCE7', color: '#15803D', icon: '✅' },
-  refused:  { label: 'Refusé',      bg: '#FEE2E2', color: '#DC2626', icon: '❌' },
-  partial:  { label: 'Partiel',     bg: '#DBEAFE', color: '#1D4ED8', icon: '🔵' },
+  pending:     { label: 'En attente',    bg: '#FEF9C3', color: '#A16207', icon: '⏳' },
+  approved_n1: { label: 'Validé N1 — en attente N2', bg: '#DBEAFE', color: '#1D4ED8', icon: '🔄' },
+  approved_n2: { label: 'Validé N2 — en attente N3', bg: '#EDE9FE', color: '#6D28D9', icon: '🔄' },
+  approved:    { label: 'Approuvé',      bg: '#DCFCE7', color: '#15803D', icon: '✅' },
+  refused:     { label: 'Refusé',        bg: '#FEE2E2', color: '#DC2626', icon: '❌' },
+  partial:     { label: 'Partiel',       bg: '#DBEAFE', color: '#1D4ED8', icon: '🔵' },
 };
 
 const CongesView = () => {
@@ -119,7 +121,7 @@ const CongesView = () => {
                 {sidLeaves.map(l => {
                   const lt  = leaveTypesMap[l.type_slug] || {};
                   const st  = STATUS_CONFIG[l.status]     || STATUS_CONFIG.pending;
-                  const canAct = isAdmin && l.status === 'pending';
+                  const canAct = isAdmin && ['pending', 'approved_n1', 'approved_n2'].includes(l.status);
                   return (
                     <div key={l.id} style={{ background: '#fff', border: '1px solid #ECEAE4', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       {/* Badge type */}

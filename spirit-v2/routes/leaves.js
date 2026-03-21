@@ -2,6 +2,7 @@
 const router = require('express').Router();
 const { db_ }                               = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { notify }                             = require('./notifications');
 
 const AUTH  = requireAuth;
 const MGR   = [requireAuth, requireRole('admin','manager','rh','superadmin')];
@@ -143,12 +144,17 @@ router.post('/', AUTH, (req, res) => {
   const leaveType = db_.get('SELECT * FROM leave_types WHERE id=?', [type_id]);
   if (!leaveType) return res.status(404).json({ error: 'Type de congé invalide' });
 
-  // Délai minimum
-  const today    = new Date();
-  const startDt  = new Date(start_date);
-  const noticeDays = Math.floor((startDt - today) / 86400000);
-  if (noticeDays < leaveType.min_notice_days)
-    return res.status(400).json({ error: `Délai minimum de ${leaveType.min_notice_days} jours requis` });
+  // Délai minimum (ignoré pour admin/manager/superadmin)
+  const isPrivileged = ['admin','superadmin','manager','rh'].includes(req.user.role);
+  if (!isPrivileged && leaveType.min_notice_days > 0) {
+    const today      = new Date();
+    const startDt    = new Date(start_date);
+    const noticeDays = Math.floor((startDt - today) / 86400000);
+    if (noticeDays < leaveType.min_notice_days)
+      return res.status(400).json({
+        error: `Délai de préavis insuffisant pour ce type de congé : merci de soumettre au moins ${leaveType.min_notice_days} jours avant la date de début.`,
+      });
+  }
 
   // Chevauchement
   const conflict = db_.get(
@@ -161,10 +167,14 @@ router.post('/', AUTH, (req, res) => {
   const days  = calcDays(start_date, end_date, leaveType.count_method);
   const levels = JSON.parse(leaveType.approval_levels || '["manager"]');
 
-  // Résolution N1 approver
+  // Résolution approvers — dédupliqués (si N2 = N1, inutile d'un 2e niveau)
   const n1 = resolveApprover(staff_id, levels[0]);
-  const n2 = levels[1] ? resolveApprover(staff_id, levels[1]) : null;
-  const n3 = levels[2] ? resolveApprover(staff_id, levels[2]) : null;
+  let   n2 = levels[1] ? resolveApprover(staff_id, levels[1]) : null;
+  let   n3 = levels[2] ? resolveApprover(staff_id, levels[2]) : null;
+  // Supprimer les niveaux redondants (même utilisateur)
+  if (n2 && n1 && n2.id === n1.id) n2 = null;
+  if (n3 && n2 && n3.id === n2.id) n3 = null;
+  if (n3 && !n2 && n1 && n3.id === n1.id) n3 = null;
 
   const r = db_.run(
     `INSERT INTO leaves
@@ -240,17 +250,84 @@ router.put('/:id/approve', AUTH, (req, res) => {
       [comment||null, leave.id]);
     nextStatus = 'approved';
 
+  } else if (['admin','superadmin'].includes(req.user.role) &&
+             ['approved_n1','approved_n2'].includes(leave.status) &&
+             !leave.n2_approver_id && !leave.n3_approver_id) {
+    // Cas de finalisation : N1 approuvé, mais pas de N2 assigné (dédup ou configuration)
+    db_.run(`UPDATE leaves SET status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
+      [leave.id]);
+    nextStatus = 'approved';
+
   } else {
     return res.status(403).json({ error: 'Vous n\'êtes pas le valideur de ce congé à cette étape' });
   }
 
-  // Si approuvé définitivement → déduire du solde
+  // Si approuvé définitivement → déduire du solde + notifier managers des créneaux impactés
   if (nextStatus === 'approved') {
     const lt = db_.get('SELECT slug FROM leave_types WHERE id=?', [leave.type_id]);
     if (lt?.slug === 'cp')
       db_.run('UPDATE staff SET cp_balance = MAX(0, cp_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
     else if (lt?.slug === 'rtt')
       db_.run('UPDATE staff SET rtt_balance = MAX(0, rtt_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
+
+    // Trouver les créneaux planifiés du salarié qui tombent dans la période de congé
+    // Utiliser T12:00:00 pour éviter les décalages de fuseau horaire (minuit local ≠ minuit UTC)
+    const leaveStart = new Date(leave.start_date + 'T12:00:00');
+    const leaveEnd   = new Date(leave.end_date   + 'T12:00:00');
+
+    // Calculer les lundis de chaque semaine chevauchant les congés
+    const weeksAffected = new Set();
+    const d = new Date(leaveStart);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // rewind to Monday
+    while (d <= leaveEnd) {
+      // Formater en YYYY-MM-DD sans passer par toISOString() (évite le décalage UTC)
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      weeksAffected.add(`${y}-${m}-${day}`);
+      d.setDate(d.getDate() + 7);
+    }
+
+    const staffRow = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+    const staffName = staffRow ? `${staffRow.firstname} ${staffRow.lastname}` : `Salarié #${leave.staff_id}`;
+
+    for (const week of weeksAffected) {
+      // Vérifier s'il y a des schedule_slots pour ce salarié cette semaine-là
+      const slots = db_.all(
+        `SELECT ss.day_of_week, f.slug AS fn_slug, f.name AS fn_name
+         FROM schedule_slots ss
+         JOIN schedules sc ON sc.id = ss.schedule_id
+         JOIN functions f  ON f.id  = sc.function_id
+         WHERE sc.week_start = ? AND ss.staff_id = ?
+         LIMIT 10`,
+        [week, leave.staff_id]
+      );
+      if (!slots.length) continue;
+
+      const dayNames = ['lun','mar','mer','jeu','ven','sam','dim'];
+      const slotsSummary = slots.map(s => `${dayNames[s.day_of_week]} (${s.fn_name})`).join(', ');
+      const meta = {
+        type: 'leave_unassigned',
+        week,
+        staffId: leave.staff_id,
+        staffName,
+        slots: slots.map(s => ({ day: s.day_of_week, fnSlug: s.fn_slug })),
+      };
+
+      // Notifier tous les managers/admins
+      const managers = db_.all(
+        "SELECT id FROM users WHERE role IN ('admin','manager','superadmin') AND active=1"
+      );
+      for (const mgr of managers) {
+        notify(
+          mgr.id, 'leave_planning',
+          `⚠️ Créneau à réattribuer — ${staffName}`,
+          `Congé approuvé du ${leave.start_date} au ${leave.end_date}. Créneaux libres : ${slotsSummary}`,
+          'leave', leave.id,
+          meta
+        );
+      }
+    }
   }
 
   auditLog(req, 'LEAVE_APPROVE', 'leaves', leave.id, null, { step: leave.approval_step });

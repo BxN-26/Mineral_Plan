@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../api/client';
+import { useApp } from '../App';
 
 const TYPE_ICON = {
-  leave:    '🏖️',
-  overtime: '⏱️',
-  approval: '✅',
-  info:     'ℹ️',
-  swap:     '🔄',
+  leave:          '🏖️',
+  leave_planning: '⚠️',
+  overtime:       '⏱️',
+  approval:       '✅',
+  info:           'ℹ️',
+  swap:           '🔄',
 };
 
 const NotifBell = () => {
+  const { setView, setPlanningFocus } = useApp();
   const [open,   setOpen]   = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -101,7 +104,7 @@ const NotifBell = () => {
       {/* Dropdown */}
       {open && (
         <div style={{
-          position: 'absolute', right: 0, top: '110%', width: 340, maxWidth: '95vw',
+          position: 'fixed', left: 136, bottom: 16, width: 340, maxWidth: 'calc(100vw - 160px)',
           background: '#fff', borderRadius: 12,
           boxShadow: '0 8px 40px rgba(0,0,0,.18)', zIndex: 9999,
           border: '1px solid #ECEAE4', overflow: 'hidden',
@@ -131,7 +134,11 @@ const NotifBell = () => {
                 Aucune notification
               </div>
             ) : (
-              notifs.map(n => (
+              notifs.map(n => {
+                let meta = null;
+                try { if (n.meta) meta = JSON.parse(n.meta); } catch (_) {}
+                const hasPlanningLink = meta?.type === 'leave_unassigned' && meta?.week;
+                return (
                 <div
                   key={n.id}
                   onClick={() => !n.read && markOne(n.id)}
@@ -153,6 +160,24 @@ const NotifBell = () => {
                         {n.body}
                       </div>
                     )}
+                    {hasPlanningLink && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          markOne(n.id);
+                          setPlanningFocus({ week: meta.week, staffId: meta.staffId, slots: meta.slots });
+                          setView('planning');
+                          setOpen(false);
+                        }}
+                        style={{
+                          marginTop: 5, padding: '3px 9px', background: '#C5753A', color: '#fff',
+                          border: 'none', borderRadius: 5, cursor: 'pointer', fontSize: 10,
+                          fontWeight: 700, fontFamily: 'inherit',
+                        }}
+                      >
+                        📅 Voir le planning →
+                      </button>
+                    )}
                     <div style={{ fontSize: 10, color: '#9B9890', marginTop: 3 }}>
                       {timeSince(n.created_at)}
                     </div>
@@ -163,7 +188,8 @@ const NotifBell = () => {
                     title="Supprimer"
                   >✕</button>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

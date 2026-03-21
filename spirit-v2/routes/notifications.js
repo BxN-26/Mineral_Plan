@@ -4,15 +4,17 @@ const { db_ } = require('../db/database');
 const { requireAuth } = require('../middleware/auth');
 
 // ── Helpers (exportés pour les autres routes qui créent des notifs) ──
-function notify(userId, type, title, body = '', relatedType = null, relatedId = null) {
+function notify(userId, type, title, body = '', relatedType = null, relatedId = null, meta = null) {
   if (!userId) return;
   try {
     db_.run(
-      `INSERT INTO notifications (user_id, type, title, body, related_type, related_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [userId, type, title, body, relatedType, relatedId]
+      `INSERT INTO notifications (user_id, type, title, body, related_type, related_id, meta)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [userId, type, title, body, relatedType, relatedId, meta ? JSON.stringify(meta) : null]
     );
-  } catch (_) {}
+  } catch (err) {
+    console.error('[notify] Erreur insertion notification:', err.message, { userId, type, title });
+  }
 }
 
 /** Notifie tous les managers/admins */
