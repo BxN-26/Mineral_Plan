@@ -73,13 +73,17 @@ const AvatarImg = ({ s, size = 30, editable = false, onUpdate, className }) => {
         </div>
       )}
 
-      {/* Overlay édition */}
-      {editable && (hover || loading) && (
+      {/* Overlay édition — toujours dans le DOM (opacité contrôlée),
+          sinon mouseleave détruit le label avant que onChange se déclenche */}
+      {editable && (
         <label style={{
           position: 'absolute', inset: 0, borderRadius: radius,
           background: 'rgba(0,0,0,.5)', display: 'flex',
           alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', fontSize: size * 0.3,
+          opacity: (hover || loading) ? 1 : 0,
+          transition: 'opacity .15s',
+          pointerEvents: (hover || loading) ? 'auto' : 'none',
         }}>
           {loading ? '⏳' : '📷'}
           <input
