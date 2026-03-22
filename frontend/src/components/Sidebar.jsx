@@ -37,13 +37,9 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
       {/* Logo */}
       <div style={{ padding: '20px 16px 14px', borderBottom: '1px solid rgba(255,255,255,.07)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 9,
-            background: 'linear-gradient(135deg,#C5753A,#E8A06A)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0,
-          }}>⛰️</div>
+          <img src="/logo_mineral_plan.png" alt="Minéral Plan." style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
           <div>
-            <div style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>minéral Spirit</div>
+            <div style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>Minéral Plan.</div>
             <div style={{ color: 'rgba(255,255,255,.3)', fontSize: 9, textTransform: 'uppercase', letterSpacing: '.5px' }}>
               {isAdmin ? 'Admin' : isMgr ? 'Manager' : 'Salarié'}
             </div>
@@ -52,7 +48,23 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
       </div>
 
       {/* Navigation */}
-      <nav style={{ flex: 1, padding: '10px 8px', overflowY: 'auto' }}>
+      <nav style={{ flex: 1, padding: '10px 8px', overflowY: 'auto', position: 'relative' }}>
+
+        {/* Filigrane propriété */}
+        <div style={{
+          position: 'absolute', bottom: 24, left: '50%',
+          transform: 'translateX(-50%) rotate(-12deg)',
+          pointerEvents: 'none', userSelect: 'none',
+          opacity: 0.07, zIndex: 0, width: 150,
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+        }}>
+          <img
+            src="/logo_mineral_noir_et_blanc.png"
+            alt=""
+            style={{ width: 150, filter: 'invert(1)' }}
+          />
+        </div>
+
         {nav.map(item => {
           const active = view === item.id;
           return (
@@ -99,6 +111,9 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
         }}>
           Déconnexion →
         </button>
+        <div style={{ fontSize: 8, color: 'rgba(255, 255, 255, 0.94)', textAlign: 'center', marginTop: 6, letterSpacing: '1px' }}>
+          © {new Date().getFullYear()} Minéral Spirit
+        </div>
       </div>
     </div>
   );

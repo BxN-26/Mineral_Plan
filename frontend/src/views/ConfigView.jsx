@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -7,6 +7,7 @@ import api from '../api/client';
 
 /* ─── Onglets disponibles ── */
 const TABS = [
+  { id: 'organigramme', label: '🏗️ Organigramme' },
   { id: 'equipes',   label: '🏠 Équipes' },
   { id: 'fonctions', label: '🔧 Fonctions' },
   { id: 'conges',    label: '🏖️ Congés' },
@@ -18,7 +19,7 @@ const TABS = [
 const ConfigView = () => {
   const { user }                                      = useAuth();
   const { teams, functions, settings, setSettings, reloadTeams, reloadFunctions } = useApp();
-  const [tab, setTab]                                  = useState('equipes');
+  const [tab, setTab]                                  = useState('organigramme');
   const isAdmin = ['admin', 'superadmin'].includes(user?.role);
 
   if (!isAdmin) {
@@ -45,6 +46,7 @@ const ConfigView = () => {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 18px' }}>
+        {tab === 'organigramme' && <OrgTab settings={settings} setSettings={setSettings} />}
         {tab === 'equipes'   && <TeamsConfig    teams={teams}     reload={reloadTeams} />}
         {tab === 'fonctions' && <FunctionsConfig functions={functions} reload={reloadFunctions} />}
         {tab === 'conges'    && <CongesConfig    settings={settings} setSettings={setSettings} />}
@@ -704,5 +706,329 @@ const FunctionForm = ({ initial, err, onSave, onCancel }) => {
 };
 
 const inp = { padding: '6px 8px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#F5F3EF', fontSize: 12, width: '100%' };
+
+/* ─── Nœud d'organigramme (récursif) ───────────────────────── */
+const OrgTree = ({ node, childrenMap, depth = 0 }) => {
+  const kids = childrenMap[node.id] || [];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        background: depth === 0 ? '#FFF4EC' : depth === 1 ? '#F8F7F5' : '#fff',
+        border: `1.5px solid ${depth === 0 ? '#F0D4BB' : '#ECEAE4'}`,
+        borderRadius: 10, padding: '8px 12px',
+        boxShadow: depth === 0 ? '0 2px 8px rgba(197,117,58,.10)' : 'none',
+        minWidth: 160, maxWidth: 220,
+      }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%',
+          background: node.color || '#8B8880', color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, fontWeight: 700, flexShrink: 0,
+        }}>{node.initials}</div>
+        <div style={{ overflow: 'hidden' }}>
+          <div style={{ fontWeight: 600, fontSize: 12, color: '#1E2235', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {node.firstname} {node.lastname}
+          </div>
+          <div style={{ fontSize: 10, color: '#8B8880', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {node.primary_function || node.type}
+          </div>
+        </div>
+      </div>
+      {kids.length > 0 && (
+        <div style={{
+          marginLeft: 22, paddingLeft: 14,
+          borderLeft: '2px solid #ECEAE4',
+          marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+          {kids.map(child => (
+            <div key={child.id} style={{ position: 'relative', paddingTop: 4 }}>
+              <div style={{ position: 'absolute', top: 20, left: -14, width: 14, height: 2, background: '#ECEAE4' }} />
+              <OrgTree node={child} childrenMap={childrenMap} depth={depth + 1} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── Éditeur de chaîne d'approbation ──────────────────────── */
+const ALL_APPROVAL_LEVELS = [
+  { key: 'manager',   label: 'Manager N+1', color: '#6366F1' },
+  { key: 'rh',        label: 'RH',          color: '#22C55E' },
+  { key: 'direction', label: 'Direction',    color: '#C5753A' },
+];
+
+const ApprovalChainEditor = ({ levels, onChange }) => {
+  const toggle = key => {
+    if (levels.includes(key)) {
+      if (levels.length === 1) return;
+      onChange(ALL_APPROVAL_LEVELS.map(l => l.key).filter(k => levels.includes(k) && k !== key));
+    } else {
+      onChange(ALL_APPROVAL_LEVELS.map(l => l.key).filter(k => levels.includes(k) || k === key));
+    }
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+      {ALL_APPROVAL_LEVELS.map((lvl, i) => {
+        const active    = levels.includes(lvl.key);
+        const step      = levels.indexOf(lvl.key) + 1;
+        const prevActive = i > 0 && levels.includes(ALL_APPROVAL_LEVELS[i - 1].key);
+        return (
+          <span key={lvl.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {active && prevActive && (
+              <span style={{ color: '#C0BCB5', fontSize: 14, userSelect: 'none' }}>→</span>
+            )}
+            <button
+              onClick={() => toggle(lvl.key)}
+              title={active && levels.length === 1 ? 'Au moins un niveau est requis' : undefined}
+              style={{
+                padding: '4px 10px', borderRadius: 6,
+                cursor: active && levels.length === 1 ? 'not-allowed' : 'pointer',
+                border: `1.5px solid ${active ? lvl.color : '#ECEAE4'}`,
+                background: active ? `${lvl.color}18` : '#F8F7F5',
+                color: active ? lvl.color : '#B0AFA8',
+                fontFamily: 'inherit', fontSize: 11, fontWeight: active ? 700 : 400,
+                opacity: active && levels.length === 1 ? 0.65 : 1,
+                transition: 'all .15s',
+              }}
+            >
+              {active && <span style={{ marginRight: 3, fontSize: 9 }}>{step}.</span>}
+              {lvl.label}
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+/* ─── Onglet Organigramme ──────────────────────────────────── */
+const OrgTab = ({ settings, setSettings }) => {
+  const { map, save } = useSettings(settings, setSettings);
+  const [staff,      setStaff]      = useState([]);
+  const [leaveTypes, setLeaveTypes] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [savingMgr,  setSavingMgr]  = useState({});
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/staff'),
+      api.get('/leave-types'),
+    ]).then(([sr, lr]) => {
+      setStaff(sr.data || []);
+      setLeaveTypes(lr.data || []);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  const staffMap = useMemo(
+    () => Object.fromEntries(staff.map(s => [s.id, s])),
+    [staff]
+  );
+
+  const childrenMap = useMemo(() => {
+    const m = {};
+    staff.forEach(s => { if (!m[s.id]) m[s.id] = []; });
+    staff.forEach(s => {
+      if (s.manager_id && staffMap[s.manager_id]) {
+        if (!m[s.manager_id]) m[s.manager_id] = [];
+        m[s.manager_id].push(s);
+      }
+    });
+    return m;
+  }, [staff, staffMap]);
+
+  const roots = useMemo(
+    () => staff.filter(s => !s.manager_id || !staffMap[s.manager_id]),
+    [staff, staffMap]
+  );
+
+  const updateManager = async (staffId, managerId) => {
+    setSavingMgr(p => ({ ...p, [staffId]: true }));
+    try {
+      await api.put(`/staff/${staffId}`, { manager_id: managerId || null });
+      setStaff(prev => prev.map(s => s.id === staffId ? { ...s, manager_id: managerId || null } : s));
+    } finally {
+      setSavingMgr(p => ({ ...p, [staffId]: false }));
+    }
+  };
+
+  const updateLeaveApproval = async (ltId, levels) => {
+    // Optimistic update
+    setLeaveTypes(prev => prev.map(lt => lt.id === ltId ? { ...lt, approval_levels: levels } : lt));
+    try {
+      await api.put(`/leave-types/${ltId}/approval`, { approval_levels: levels });
+    } catch {
+      const lr = await api.get('/leave-types');
+      setLeaveTypes(lr.data || []);
+    }
+  };
+
+  if (loading) return (
+    <div style={{ padding: 60, textAlign: 'center', color: '#9B9890', fontSize: 13 }}>
+      Chargement de l'organigramme…
+    </div>
+  );
+
+  const swapLevel = map['swap_approval_level'] || 'manager';
+
+  return (
+    <div>
+      {/* ── Vue organigramme ── */}
+      <SectionTitle>🌳 Vue de l'organigramme</SectionTitle>
+      <div style={{
+        background: '#fff', border: '1px solid #ECEAE4', borderRadius: 12,
+        padding: 20, marginBottom: 16, overflowX: 'auto',
+      }}>
+        {roots.length === 0 ? (
+          <div style={{ color: '#9B9890', fontSize: 13, textAlign: 'center', padding: 20 }}>
+            Aucun salarié trouvé
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            {roots.map(r => <OrgTree key={r.id} node={r} childrenMap={childrenMap} depth={0} />)}
+          </div>
+        )}
+      </div>
+
+      {/* ── Hiérarchie — éditeur N+1 / N+2 / N+3 ── */}
+      <SectionTitle>👤 Référents hiérarchiques (N+1, N+2, N+3)</SectionTitle>
+      <div style={{
+        background: '#fff', border: '1px solid #ECEAE4', borderRadius: 12,
+        marginBottom: 16, overflow: 'hidden',
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: '#F8F7F5', borderBottom: '1px solid #ECEAE4' }}>
+              {['Salarié', 'N+1 — Référent direct', 'N+2', 'N+3'].map(h => (
+                <th key={h} style={{
+                  textAlign: 'left', padding: '10px 16px',
+                  fontSize: 11, fontWeight: 700, color: '#6B6860',
+                  textTransform: 'uppercase', letterSpacing: '.5px',
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {staff.map((s, i) => {
+              const n1 = staffMap[s.manager_id] || null;
+              const n2 = (n1 && n1.id !== s.id) ? (staffMap[n1.manager_id] || null) : null;
+              const n3 = (n2 && n2.id !== s.id && n2.id !== n1?.id) ? (staffMap[n2.manager_id] || null) : null;
+              return (
+                <tr key={s.id} style={{ borderBottom: i < staff.length - 1 ? '1px solid #F0EFEB' : 'none' }}>
+                  <td style={{ padding: '10px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%',
+                        background: s.color || '#8B8880', color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 10, fontWeight: 700, flexShrink: 0,
+                      }}>{s.initials}</div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{s.firstname} {s.lastname}</div>
+                        <div style={{ fontSize: 11, color: '#8B8880' }}>{s.primary_function || s.type}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '10px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <select
+                        value={s.manager_id || ''}
+                        onChange={e => updateManager(s.id, e.target.value ? Number(e.target.value) : null)}
+                        disabled={savingMgr[s.id]}
+                        style={{ ...inputSt, fontSize: 12, padding: '5px 8px', maxWidth: 200 }}
+                      >
+                        <option value="">— Aucun —</option>
+                        {staff.filter(m => m.id !== s.id).map(m => (
+                          <option key={m.id} value={m.id}>{m.firstname} {m.lastname}</option>
+                        ))}
+                      </select>
+                      {savingMgr[s.id] && <span style={{ fontSize: 11, color: '#C5753A' }}>…</span>}
+                    </div>
+                  </td>
+                  {[n2, n3].map((nx, j) => (
+                    <td key={j} style={{ padding: '10px 16px' }}>
+                      {nx ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{
+                            width: 22, height: 22, borderRadius: '50%',
+                            background: nx.color || '#8B8880', color: '#fff',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 9, fontWeight: 700, flexShrink: 0,
+                          }}>{nx.initials}</div>
+                          <span style={{ fontSize: 12 }}>{nx.firstname} {nx.lastname}</span>
+                        </div>
+                      ) : <span style={{ fontSize: 12, color: '#C0BCB5' }}>—</span>}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Approbation congés par type ── */}
+      <SectionTitle>🏖️ Chaîne d'approbation des congés (par type)</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        {leaveTypes.map(lt => {
+          const levels = Array.isArray(lt.approval_levels)
+            ? lt.approval_levels
+            : (() => { try { return JSON.parse(lt.approval_levels || '["manager"]'); } catch { return ['manager']; } })();
+          return (
+            <SettingCard
+              key={lt.id}
+              icon={
+                <span style={{
+                  display: 'inline-block', width: 12, height: 12,
+                  borderRadius: 3, background: lt.color, marginTop: 6, flexShrink: 0,
+                }} />
+              }
+              title={lt.label}
+              desc="Niveaux hiérarchiques requis pour valider une demande de ce type"
+            >
+              <ApprovalChainEditor
+                levels={levels}
+                onChange={newLevels => updateLeaveApproval(lt.id, newLevels)}
+              />
+            </SettingCard>
+          );
+        })}
+      </div>
+
+      {/* ── Approbation échanges ── */}
+      <SectionTitle>🔄 Approbation des échanges de créneaux</SectionTitle>
+      <SettingCard
+        icon="🔄"
+        title="Niveau requis pour approuver un échange"
+        desc="Quel profil doit valider les demandes d'échange de créneaux de planning ?"
+      >
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+          {[
+            { v: 'manager',   l: 'Manager N+1',  d: 'Le manager direct de chaque demandeur' },
+            { v: 'rh',        l: 'RH / Admin',   d: 'Tout utilisateur avec rôle RH ou Admin' },
+            { v: 'direction', l: 'Direction',     d: 'Uniquement les administrateurs' },
+          ].map(opt => (
+            <button key={opt.v} onClick={() => save('swap_approval_level', opt.v)}
+              style={{
+                padding: '8px 14px', borderRadius: 8, border: '1.5px solid',
+                borderColor: swapLevel === opt.v ? '#C5753A' : '#ECEAE4',
+                background: swapLevel === opt.v ? '#FFF4EC' : '#F8F7F5',
+                color: swapLevel === opt.v ? '#C5753A' : '#1E2235',
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                fontWeight: swapLevel === opt.v ? 700 : 400, transition: 'all .15s',
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{opt.l}</div>
+              <div style={{ fontSize: 11, color: '#6B6860', marginTop: 2 }}>{opt.d}</div>
+            </button>
+          ))}
+        </div>
+      </SettingCard>
+    </div>
+  );
+};
 
 export default ConfigView;

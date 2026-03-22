@@ -111,7 +111,7 @@ export const Spinner = () => (
     justifyContent: 'center', background: '#181C2E',
   }}>
     <div style={{ textAlign: 'center', color: 'rgba(255,255,255,.5)' }}>
-      <div style={{ fontSize: 32, marginBottom: 12 }}>⛰️</div>
+      <img src="/logo_mineral_plan.png" alt="minéral Spirit" style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', marginBottom: 12, opacity: 0.85 }} />
       <div style={{ fontSize: 14 }}>Chargement…</div>
     </div>
   </div>

@@ -100,13 +100,16 @@ console.log('[seed] Staff-Functions insérés ✓');
 
 // ── USERS ─────────────────────────────────────────────────────
 const INIT_USERS = [
-  { email: 'admin@mineral-spirit.fr',     password: 'Spirit2025!', role: 'superadmin', staffEmail: null },
-  { email: 'marion@mineral-spirit.fr',    password: 'Marion2025',  role: 'manager',    staffEmail: 'marion@mineral-spirit.fr' },
-  { email: 'josephine@mineral-spirit.fr', password: 'Jose2025',    role: 'staff',      staffEmail: 'josephine@mineral-spirit.fr' },
-  { email: 'eva@mineral-spirit.fr',       password: 'Eva2025',     role: 'staff',      staffEmail: 'eva@mineral-spirit.fr' },
-  { email: 'brigitte@mineral-spirit.fr',  password: 'Brig2025',    role: 'staff',      staffEmail: 'brigitte@mineral-spirit.fr' },
-  { email: 'marine@mineral-spirit.fr',    password: 'Marine2025',  role: 'manager',    staffEmail: 'marine@mineral-spirit.fr' },
-  { email: 'mateo@email.fr',              password: 'Mateo2025',   role: 'staff',      staffEmail: 'mateo@email.fr' },
+  // Note : le compte superadmin (développeur) est créé automatiquement par la
+  // migration first_install_accounts dans database.js via les variables .env.
+  // Ce seed crée uniquement les données de démonstration / spécifiques au club.
+  { email: 'admin@mineral-spirit.fr',     password: 'Spirit2025!', role: 'admin',   staffEmail: null },
+  { email: 'marion@mineral-spirit.fr',    password: 'Marion2025',  role: 'manager', staffEmail: 'marion@mineral-spirit.fr' },
+  { email: 'josephine@mineral-spirit.fr', password: 'Jose2025',    role: 'staff',   staffEmail: 'josephine@mineral-spirit.fr' },
+  { email: 'eva@mineral-spirit.fr',       password: 'Eva2025',     role: 'staff',   staffEmail: 'eva@mineral-spirit.fr' },
+  { email: 'brigitte@mineral-spirit.fr',  password: 'Brig2025',    role: 'staff',   staffEmail: 'brigitte@mineral-spirit.fr' },
+  { email: 'marine@mineral-spirit.fr',    password: 'Marine2025',  role: 'manager', staffEmail: 'marine@mineral-spirit.fr' },
+  { email: 'mateo@email.fr',              password: 'Mateo2025',   role: 'staff',   staffEmail: 'mateo@email.fr' },
 ];
 
 for (const u of INIT_USERS) {
@@ -138,8 +141,8 @@ const cpTypeId  = db_.get("SELECT id FROM leave_types WHERE slug='cp'")?.id;
 const rttTypeId = db_.get("SELECT id FROM leave_types WHERE slug='rtt'")?.id;
 const forTypeId = db_.get("SELECT id FROM leave_types WHERE slug='formation'")?.id;
 
-// Approver N1 = manager de Marion (admin user)
-const adminUser = db_.get("SELECT id FROM users WHERE role='superadmin' LIMIT 1");
+// Approver N1 = compte admin ou superadmin (premier trouvé)
+const adminUser = db_.get("SELECT id FROM users WHERE role IN ('admin','superadmin') LIMIT 1");
 
 function seedLeave(staffHtmlId, typeId, start, end, days, status) {
   const sid = staffMap[staffHtmlId];

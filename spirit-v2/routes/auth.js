@@ -41,7 +41,7 @@ router.post('/logout', (req, res) => {
 // ── GET /api/auth/me ──────────────────────────────────────────
 router.get('/me', requireAuth, (req, res) => {
   const user = db_.get(
-    'SELECT id, email, role, staff_id, last_login FROM users WHERE id = ? AND active = 1',
+    'SELECT id, email, role, staff_id, last_login, must_change_password FROM users WHERE id = ? AND active = 1',
     [req.user.id]
   );
   if (!user) return res.status(401).json({ error: 'Compte introuvable' });

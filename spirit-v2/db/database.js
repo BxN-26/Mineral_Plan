@@ -294,7 +294,7 @@ function getDb() {
     seed.run('leave_min_notice_days',    '2',            'number',  'Nombre de jours minimum de préavis requis avant la date de début du congé', 'conges');
     seed.run('leave_default_cp_balance', '25',           'number',  'Solde initial en jours de CP attribué lors de la création d\'un nouveau salarié', 'conges');
     seed.run('leave_default_rtt_balance','5',            'number',  'Solde initial en jours de RTT attribué lors de la création d\'un nouveau salarié', 'conges');
-    seed.run('leave_count_method',       'working_days', 'select',  'Méthode de décompte des congés : jours ouvrés ou calendaires', 'conges');
+    seed.run('leave_count_method',       'working_days', 'string',  'Méthode de décompte des congés : jours ouvrés ou calendaires', 'conges');
     // Groupe : planning
     seed.run('planning_day_start', '7',  'number', 'Heure de début d\'affichage du planning (0-23)', 'planning');
     seed.run('planning_day_end',   '22', 'number', 'Heure de fin d\'affichage du planning (0-23)', 'planning');
@@ -302,7 +302,7 @@ function getDb() {
     seed.run('rh_default_charge_rate', '45', 'number', 'Taux de charges patronales par défaut (%) appliqué aux nouveaux salariés', 'rh');
     seed.run('rh_default_contract_h',  '35', 'number', 'Heures hebdomadaires par défaut pour les nouveaux contrats', 'rh');
     // Groupe : system (thème)
-    seed.run('ui_theme', 'light', 'select', 'Thème visuel de l\'application (clair ou sombre)', 'system');
+    seed.run('ui_theme', 'light', 'string', 'Thème visuel de l\'application (clair ou sombre)', 'system');
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('config_settings_seeds')").run();
   }
 
@@ -377,6 +377,64 @@ function getDb() {
     seed.run('planning_min_rest_enabled',       'false', 'boolean', 'Activer le contrôle du repos minimum entre deux prises de poste', 'planning');
     seed.run('planning_min_rest_hours',         '11',    'number',  'Durée minimale de repos entre la fin d\'un poste et le début du suivant (en heures)', 'planning');
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('planning_constraints')").run();
+  }
+
+  // ── Migration : paramètre niveau d'approbation des échanges ────────────────
+  const swapApprovalDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='swap_approval_level_seed'").get();
+  if (!swapApprovalDone) {
+    _db.prepare(
+      "INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)"
+    ).run('swap_approval_level', 'manager', 'string',
+      'Niveau hiérarchique requis pour approuver les échanges de créneaux', 'organigramme');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('swap_approval_level_seed')").run();
+  }
+
+  // ── Migration : comptes première installation (superadmin + admin) ───────────
+  // Crée les deux comptes système uniquement si absents.
+  // Utilise les variables d'environnement SUPERADMIN_* et ADMIN_* du .env.
+  // Le superadmin est le compte développeur (secret, invisible pour les admins).
+  // L'admin est le compte opérateur du club (must_change_password=1).
+  const firstInstallDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='first_install_accounts'").get();
+  if (!firstInstallDone) {
+    const bcrypt   = require('bcryptjs');
+    const saEmail  = (process.env.SUPERADMIN_EMAIL         || 'dev@spirit-app.internal').toLowerCase().trim();
+    const saPass   =  process.env.SUPERADMIN_PASSWORD      || 'ChangeMe2025!Dev';
+    const adEmail  = (process.env.ADMIN_EMAIL              || 'admin@spirit-app.local').toLowerCase().trim();
+    const adPass   =  process.env.ADMIN_INITIAL_PASSWORD   || 'Admin2025!';
+
+    const saHash = bcrypt.hashSync(saPass, 12);
+    const adHash = bcrypt.hashSync(adPass, 12);
+
+    // Superadmin : aucun staff_id, must_change_password=0
+    const existSa = _db.prepare('SELECT id FROM users WHERE email = ?').get(saEmail);
+    if (!existSa) {
+      _db.prepare(
+        'INSERT INTO users (email, password, role, staff_id, active, must_change_password) VALUES (?, ?, ?, NULL, 1, 0)'
+      ).run(saEmail, saHash, 'superadmin');
+    }
+
+    // Admin : aucun staff_id, must_change_password=1
+    const existAd = _db.prepare('SELECT id FROM users WHERE email = ?').get(adEmail);
+    if (!existAd) {
+      _db.prepare(
+        'INSERT INTO users (email, password, role, staff_id, active, must_change_password) VALUES (?, ?, ?, NULL, 1, 1)'
+      ).run(adEmail, adHash, 'admin');
+    }
+
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('first_install_accounts')").run();
+  }
+
+  // ── Migration : corriger les anciens comptes superadmin hérités du seed ──────
+  // L'ancien seed créait admin@mineral-spirit.fr comme 'superadmin'.
+  // Ce rôle est désormais réservé au compte développeur (SUPERADMIN_EMAIL).
+  // Tout compte 'superadmin' dont l'email ≠ SUPERADMIN_EMAIL est reclassé 'admin'.
+  const fixLegacySaDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='fix_legacy_superadmin'").get();
+  if (!fixLegacySaDone) {
+    const devEmail = (process.env.SUPERADMIN_EMAIL || 'dev@spirit-app.internal').toLowerCase().trim();
+    _db.prepare(
+      "UPDATE users SET role = 'admin' WHERE role = 'superadmin' AND lower(email) != ?"
+    ).run(devEmail);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('fix_legacy_superadmin')").run();
   }
 
   return _db;

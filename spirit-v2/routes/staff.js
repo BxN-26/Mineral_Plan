@@ -180,6 +180,11 @@ router.put('/:id', ...ADMIN, (req, res) => {
   const old = db_.get('SELECT * FROM staff WHERE id = ?', [req.params.id]);
   if (!old) return res.status(404).json({ error: 'Salarié introuvable' });
 
+  // manager_id peut être explicitement mis à null (retirer le responsable)
+  const finalManagerId = 'manager_id' in req.body
+    ? (manager_id ? Number(manager_id) : null)
+    : old.manager_id;
+
   // Déduire équipe primaire pour team_id (colonne de compatibilité)
   let newTeamId = old.team_id;
   if (Array.isArray(team_ids)) {
@@ -206,13 +211,13 @@ router.put('/:id', ...ADMIN, (req, res) => {
        hire_date     = COALESCE(?, hire_date),
        cp_balance    = COALESCE(?, cp_balance),
        rtt_balance   = COALESCE(?, rtt_balance),
-       manager_id    = COALESCE(?, manager_id),
+       manager_id    = ?,
        active        = COALESCE(?, active),
        updated_at    = datetime('now')
      WHERE id = ?`,
     [firstname, lastname, initials, email, phone, newTeamId, type,
      contract_base ?? null, contract_h, hourly_rate, charge_rate ?? null, color, note, hire_date,
-     cp_balance, rtt_balance, manager_id, active ?? null, req.params.id]
+     cp_balance, rtt_balance, finalManagerId, active ?? null, req.params.id]
   );
 
   // Mettre à jour les équipes si fournies

@@ -30,13 +30,34 @@ const LoginView = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#181C2E', padding: 16 }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#181C2E', padding: 16, position: 'relative', overflow: 'hidden' }}>
+
+      {/* Filigrane propriété */}
+      <div style={{
+        position: 'absolute', bottom: 40, right: 30,
+        transform: 'rotate(-12deg)',
+        transformOrigin: 'bottom left',
+        pointerEvents: 'none', userSelect: 'none',
+        opacity: 0.07, width: 340, zIndex: 0,
+      }}>
+        <img src="/logo_mineral_noir_et_blanc.png" alt="" style={{ width: '100%', filter: 'invert(1)' }} />
+      </div>
+
+      {/* Copyright bas de page */}
+      <div style={{
+        position: 'absolute', bottom: 14, left: 0, right: 0,
+        textAlign: 'center', fontSize: 10,
+        color: 'rgba(255,255,255,.12)', letterSpacing: '1px',
+        pointerEvents: 'none', userSelect: 'none',
+      }}>
+        © {new Date().getFullYear()} Minéral Spirit — Tous droits réservés
+      </div>
       <div className="fade-in" style={{ width: 400, background: '#fff', borderRadius: 16, padding: 36, boxShadow: '0 24px 80px rgba(0,0,0,.4)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 28 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#C5753A,#E8A06A)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>⛰️</div>
+          <img src="/logo_mineral_plan.png" alt="minéral Spirit" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
           <div>
-            <div style={{ fontWeight: 800, fontSize: 20, color: '#1E2235' }}>minéral Spirit</div>
-            <div style={{ fontSize: 12, color: '#8B8880' }}>Gestion du personnel v2</div>
+            <div style={{ fontWeight: 800, fontSize: 20, color: '#1E2235' }}>Minéral Plan.</div>
+            <div style={{ fontSize: 12, color: '#8B8880' }}>Gestion du personnel & Plannings</div>
           </div>
         </div>
 
@@ -66,17 +87,21 @@ const LoginView = () => {
         </form>
 
         <div style={{ marginTop: 24 }}>
-          <div style={{ fontSize: 10, color: '#C0BCB5', textAlign: 'center', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-            Accès rapide — démonstration
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            {PRESETS.map(p => (
-              <button key={p.email} onClick={() => { setEmail(p.email); setPass(p.pass); }}
-                style={{ padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${p.color}30`, background: `${p.color}10`, color: p.color, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {import.meta.env.DEV && (
+            <>
+              <div style={{ fontSize: 10, color: '#C0BCB5', textAlign: 'center', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+                Accès rapide — démonstration
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {PRESETS.map(p => (
+                  <button key={p.email} onClick={() => { setEmail(p.email); setPass(p.pass); }}
+                    style={{ padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${p.color}30`, background: `${p.color}10`, color: p.color, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

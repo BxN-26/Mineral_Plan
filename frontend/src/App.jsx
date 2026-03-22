@@ -173,7 +173,7 @@ function AppShell() {
                 aria-label="Ouvrir le menu"
               >☰</button>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg,#C5753A,#E8A06A)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>⛰️</div>
+                <img src="/logo_mineral_plan.png" alt="minéral Spirit" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
                 <span style={{ color: '#fff', fontWeight: 800, fontSize: 13 }}>minéral Spirit</span>
               </div>
               <div style={{ marginLeft: 'auto' }}>
