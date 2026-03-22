@@ -139,13 +139,23 @@ if [ -z "$SKIP_ENV" ]; then
     error "Le mot de passe admin initial est obligatoire."
   fi
 
-  # VAPID keys pour Web Push (optionnel — laissez vide pour désactiver)
+  # VAPID keys pour Web Push — générées automatiquement
   echo ""
-  info "── Notifications Web Push (optionnel) ───────────────────────────────"
-  read -r -p "  VAPID Public Key (laisser vide pour désactiver les push) : " VAPID_PUBLIC
+  info "── Notifications Web Push ───────────────────────────────────────────"
+  read -r -p "  Email de contact VAPID [${AD_EMAIL}] : " VAPID_EMAIL
+  VAPID_EMAIL="${VAPID_EMAIL:-${AD_EMAIL}}"
+  # Génération des clés VAPID via web-push (déjà installé)
+  VAPID_KEYS=$(cd "$BACKEND_DIR" && node -e "
+    const wp = require('web-push');
+    const k = wp.generateVAPIDKeys();
+    process.stdout.write(k.publicKey + '\n' + k.privateKey);
+  " 2>/dev/null)
+  VAPID_PUBLIC=$(echo "$VAPID_KEYS" | head -1)
+  VAPID_PRIVATE=$(echo "$VAPID_KEYS" | tail -1)
   if [ -n "$VAPID_PUBLIC" ]; then
-    read -r -p "  VAPID Private Key : " VAPID_PRIVATE
-    read -r -p "  Email VAPID (ex: push@monclub.fr) : " VAPID_EMAIL
+    success "Clés VAPID générées automatiquement."
+  else
+    warn "Impossible de générer les clés VAPID (web-push non disponible). Les notifications push seront désactivées."
   fi
 
   # Écriture du .env
@@ -169,7 +179,7 @@ if [ -z "$SKIP_ENV" ]; then
       echo "# ── Web Push (VAPID) ─────────────────────────────────────────────"
       echo "VAPID_PUBLIC_KEY=$VAPID_PUBLIC"
       echo "VAPID_PRIVATE_KEY=$VAPID_PRIVATE"
-      echo "VAPID_EMAIL=$VAPID_EMAIL"
+      echo "VAPID_EMAIL=mailto:${VAPID_EMAIL}"
     fi
   } > "$ENV_FILE"
 
