@@ -30,9 +30,12 @@ const AvatarImg = ({ s, size = 30, editable = false, onUpdate, className }) => {
     try {
       const fd = new FormData();
       fd.append('avatar', file);
-      // Ne pas forcer Content-Type : le navigateur ajoute automatiquement
-      // le boundary requis pour que multer puisse parser le multipart
-      const res = await api.post(`/staff/${s.id}/avatar`, fd);
+      // Content-Type: null annule le défaut 'application/json' de l'instance axios.
+      // Le navigateur/XHR peut alors définir automatiquement
+      // 'multipart/form-data; boundary=...' requis par multer.
+      const res = await api.post(`/staff/${s.id}/avatar`, fd, {
+        headers: { 'Content-Type': null },
+      });
       onUpdate?.(res.data);
     } catch (err) {
       console.error('Erreur upload avatar', err);
