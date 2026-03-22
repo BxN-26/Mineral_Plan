@@ -30,9 +30,9 @@ const AvatarImg = ({ s, size = 30, editable = false, onUpdate, className }) => {
     try {
       const fd = new FormData();
       fd.append('avatar', file);
-      const res = await api.post(`/staff/${s.id}/avatar`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      // Ne pas forcer Content-Type : le navigateur ajoute automatiquement
+      // le boundary requis pour que multer puisse parser le multipart
+      const res = await api.post(`/staff/${s.id}/avatar`, fd);
       onUpdate?.(res.data);
     } catch (err) {
       console.error('Erreur upload avatar', err);
