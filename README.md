@@ -1,4 +1,4 @@
-# Mineral Spirit — Planning v2
+# Mineral Plan. — Planning e gestion d'équipes
 
 Application de plannings transversaux, orientée gestion de salle d'escalade.
 
