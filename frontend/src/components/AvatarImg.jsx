@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../api/client';
 
 /**
@@ -16,6 +16,9 @@ const AvatarImg = ({ s, size = 30, editable = false, onUpdate, className }) => {
   const [hover,    setHover]    = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [imgError, setImgError] = useState(false);
+
+  // Réinitialiser l'erreur d'image quand l'URL change (nouvel upload)
+  useEffect(() => { setImgError(false); }, [s?.avatar_url]);
 
   const showImg = s?.avatar_url && !imgError;
   const radius  = size >= 60 ? 14 : '50%';

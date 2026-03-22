@@ -303,7 +303,9 @@ router.post('/:id/avatar', AUTH, upload.single('avatar'), async (req, res) => {
 
   // Compresser + retailler en carré 300×300, max ~120 Ko
   const filename = `${staffId}_${Date.now()}.webp`;
-  const dest     = path.join(__dirname, '..', 'uploads', 'avatars', filename);
+  const avatarsDir = path.join(__dirname, '..', 'uploads', 'avatars');
+  if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+  const dest     = path.join(avatarsDir, filename);
   await sharp(req.file.buffer)
     .resize(300, 300, { fit: 'cover', position: 'center' })
     .webp({ quality: 80 })
