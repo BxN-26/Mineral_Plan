@@ -129,6 +129,14 @@ if [ -z "$SKIP_ENV" ]; then
 
   echo ""
   info "── Compte admin (opérateur du club — devra changer son mot de passe à la 1re connexion) ──"
+  read -r -p "  Prénom de l'administrateur : " AD_FIRSTNAME
+  if [ -z "$AD_FIRSTNAME" ]; then
+    error "Le prénom de l'administrateur est obligatoire."
+  fi
+  read -r -p "  Nom de l'administrateur : " AD_LASTNAME
+  if [ -z "$AD_LASTNAME" ]; then
+    error "Le nom de l'administrateur est obligatoire."
+  fi
   read -r -p "  Email admin : " AD_EMAIL
   if [ -z "$AD_EMAIL" ]; then
     error "L'email admin est obligatoire."
@@ -172,6 +180,8 @@ if [ -z "$SKIP_ENV" ]; then
     echo "# ── Comptes créés au premier démarrage ───────────────────────────"
     echo "SUPERADMIN_EMAIL=$SA_EMAIL"
     echo "SUPERADMIN_PASSWORD=$SA_PASS"
+    echo "ADMIN_FIRSTNAME=$AD_FIRSTNAME"
+    echo "ADMIN_LASTNAME=$AD_LASTNAME"
     echo "ADMIN_EMAIL=$AD_EMAIL"
     echo "ADMIN_INITIAL_PASSWORD=$AD_PASS"
     if [ -n "$VAPID_PUBLIC" ]; then

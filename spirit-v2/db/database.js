@@ -425,15 +425,51 @@ function getDb() {
       ).run(saEmail, saHash, 'superadmin');
     }
 
-    // Admin : aucun staff_id, must_change_password=1
+    // Admin : avec fiche salarié si ADMIN_FIRSTNAME/LASTNAME renseignés
+    const adFirstname = (process.env.ADMIN_FIRSTNAME || '').trim();
+    const adLastname  = (process.env.ADMIN_LASTNAME  || '').trim();
     const existAd = _db.prepare('SELECT id FROM users WHERE email = ?').get(adEmail);
     if (!existAd) {
+      let adStaffId = null;
+      if (adFirstname && adLastname) {
+        const initials = (adFirstname[0] + adLastname[0]).toUpperCase();
+        const staffRes = _db.prepare(
+          'INSERT OR IGNORE INTO staff (firstname, lastname, initials, email, type, active) VALUES (?, ?, ?, ?, ?, 1)'
+        ).run(adFirstname, adLastname, initials, adEmail, 'salarie');
+        adStaffId = staffRes.lastInsertRowid || _db.prepare('SELECT id FROM staff WHERE lower(email)=?').get(adEmail.toLowerCase())?.id || null;
+      }
       _db.prepare(
-        'INSERT INTO users (email, password, role, staff_id, active, must_change_password) VALUES (?, ?, ?, NULL, 1, 1)'
-      ).run(adEmail, adHash, 'admin');
+        'INSERT INTO users (email, password, role, staff_id, active, must_change_password) VALUES (?, ?, ?, ?, 1, 1)'
+      ).run(adEmail, adHash, 'admin', adStaffId);
     }
 
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('first_install_accounts')").run();
+  }
+
+  // ── Migration : lier la fiche salarié de l'admin (installations existantes) ─
+  // Pour les serveurs déjà installés avec ADMIN_FIRSTNAME/LASTNAME ajoutés au .env.
+  const adminStaffLinkDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='admin_staff_link'").get();
+  if (!adminStaffLinkDone) {
+    const adEmail2    = (process.env.ADMIN_EMAIL      || 'admin@spirit-app.local').toLowerCase().trim();
+    const adFirstname2 = (process.env.ADMIN_FIRSTNAME || '').trim();
+    const adLastname2  = (process.env.ADMIN_LASTNAME  || '').trim();
+    if (adFirstname2 && adLastname2) {
+      const adminUser = _db.prepare('SELECT id, staff_id FROM users WHERE lower(email)=?').get(adEmail2);
+      if (adminUser && !adminUser.staff_id) {
+        let staffRecord = _db.prepare('SELECT id FROM staff WHERE lower(email)=?').get(adEmail2);
+        if (!staffRecord) {
+          const initials = (adFirstname2[0] + adLastname2[0]).toUpperCase();
+          const res = _db.prepare(
+            'INSERT OR IGNORE INTO staff (firstname, lastname, initials, email, type, active) VALUES (?, ?, ?, ?, ?, 1)'
+          ).run(adFirstname2, adLastname2, initials, adEmail2, 'salarie');
+          staffRecord = { id: res.lastInsertRowid };
+        }
+        if (staffRecord?.id) {
+          _db.prepare('UPDATE users SET staff_id=? WHERE id=?').run(staffRecord.id, adminUser.id);
+        }
+      }
+    }
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('admin_staff_link')").run();
   }
 
   // ── Migration : corriger les anciens comptes superadmin hérités du seed ──────
