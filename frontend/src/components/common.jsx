@@ -1,15 +1,9 @@
 // ── Composants de base partagés ────────────────────────────────
 // Extraits et fidèles au design de spirit-staff-v3.html
+import AvatarImg from './AvatarImg';
 
-export const Avatar = ({ s, size = 30 }) => (
-  <div style={{
-    width: size, height: size, borderRadius: '50%', background: s.color, color: '#fff',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: size * .32, fontWeight: 700, flexShrink: 0,
-  }}>
-    {s.initials}
-  </div>
-);
+/** Affiche la photo si disponible, sinon les initiales colorées */
+export const Avatar = ({ s, size = 30 }) => <AvatarImg s={s} size={size} />;
 
 export const Tag = ({ color, bg, children, style: extra = {} }) => (
   <span style={{

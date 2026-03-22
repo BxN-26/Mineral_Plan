@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
+import AvatarImg from '../components/AvatarImg';
 
 const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -89,7 +90,7 @@ const MonPlanningView = () => {
           <div style={{ fontSize: 11, color: '#8B8880' }}>{weekLabel}</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: `${myStaff.color}15`, border: `1.5px solid ${myStaff.color}30`, borderRadius: 8 }}>
-          <div style={{ width: 26, height: 26, borderRadius: '50%', background: myStaff.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800 }}>{myStaff.initials}</div>
+          <AvatarImg s={myStaff} size={26} />
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#1E2235' }}>{myStaff.firstname} {myStaff.lastname}</div>
             <div style={{ fontSize: 10, color: '#9B9890' }}>{totalH}h planifiées cette&nbsp;semaine</div>

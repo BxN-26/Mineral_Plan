@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { Btn, Modal, Field, PageHeader } from '../components/common';
+import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
 
 const STATUS_CONFIG = {
@@ -113,7 +114,7 @@ const CongesView = () => {
             <div key={sid} style={{ marginBottom: 16 }}>
               {isAdmin && s && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800 }}>{s.initials}</div>
+                  <AvatarImg s={s} size={24} />
                   <span style={{ fontWeight: 700, fontSize: 13, color: '#1E2235' }}>{s.firstname} {s.lastname}</span>
                 </div>
               )}

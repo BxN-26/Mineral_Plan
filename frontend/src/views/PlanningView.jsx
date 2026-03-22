@@ -55,9 +55,8 @@ const cloneSpans = (spans) => {
   return out;
 };
 
-const Avatar = ({ s, size = 28 }) => (
-  <div style={{ width: size, height: size, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * .32, fontWeight: 700, flexShrink: 0 }}>{s.initials}</div>
-);
+import AvatarImg from '../components/AvatarImg';
+const Avatar = ({ s, size = 28 }) => <AvatarImg s={s} size={size} />;
 
 const totalHoursForStaff = (spans, staffId) => {
   let t = 0;

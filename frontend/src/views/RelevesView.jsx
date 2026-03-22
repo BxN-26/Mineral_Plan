@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { PageHeader, Btn } from '../components/common';
+import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
 import { computeFiscalYear } from '../utils/fiscal';
 
@@ -317,7 +318,7 @@ const RelevesView = () => {
               return (
                 <div key={s.id} style={{ display: 'grid', gridTemplateColumns: '180px 70px repeat(7,1fr)', borderBottom: '1px solid #F0EDE8' }}>
                   <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 20, height: 20, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 8, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.initials[0]}</div>
+                    <AvatarImg s={s} size={20} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#1E2235' }}>{s.firstname}</span>
                   </div>
                   <div style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 13, color: tot > 0 ? '#1E2235' : '#C0BCB5' }}>{fmtH(tot)}</div>
@@ -350,7 +351,7 @@ const RelevesView = () => {
               return (
                 <div key={s.id} style={{ background: '#fff', borderRadius: 10, border: '1px solid #ECEAE4', padding: '10px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.initials}</div>
+                    <AvatarImg s={s} size={28} />
                     <span style={{ fontWeight: 700, fontSize: 14, color: '#1E2235', flex: 1 }}>{s.firstname} {s.lastname}</span>
                     <span style={{ fontWeight: 800, fontSize: 16, color: tot > 0 ? s.color : '#C0BCB5' }}>{fmtH(tot)}</span>
                   </div>
@@ -392,7 +393,7 @@ const RelevesView = () => {
                   return (
                     <div key={s.id} style={{ display: 'grid', gridTemplateColumns: `180px 70px repeat(${(aggData.weeks_in_period||[]).length},1fr)`, borderBottom: '1px solid #F0EDE8', minWidth: 500 }}>
                       <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 8, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.initials[0]}</div>
+                        <AvatarImg s={s} size={20} />
                         <span style={{ fontSize: 12, fontWeight: 600, color: '#1E2235' }}>{s.firstname}</span>
                       </div>
                       <div style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 13, color: tot > 0 ? '#1E2235' : '#C0BCB5' }}>{fmtH(tot)}</div>
@@ -430,7 +431,7 @@ const RelevesView = () => {
                   return (
                     <div key={s.id} style={{ display: 'grid', gridTemplateColumns: `180px 70px repeat(${(aggData.by_period||[]).length},1fr)`, borderBottom: '1px solid #F0EDE8', minWidth: 700 }}>
                       <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 20, height: 20, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 8, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.initials[0]}</div>
+                        <AvatarImg s={s} size={20} />
                         <span style={{ fontSize: 12, fontWeight: 600, color: '#1E2235' }}>{s.firstname}</span>
                       </div>
                       <div style={{ padding: '8px 6px', textAlign: 'center', fontWeight: 700, fontSize: 13, color: tot > 0 ? '#1E2235' : '#C0BCB5' }}>{fmtH(tot)}</div>
@@ -511,7 +512,7 @@ const RelevesView = () => {
                       const balColor = s.balance > 0 ? '#16A34A' : s.balance < 0 ? '#DC2626' : '#6366F1';
                       return (
                         <div key={s.id} style={{ padding: '12px 14px', borderBottom: '1px solid #F0EDE8', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.initials}</div>
+                          <AvatarImg s={s} size={32} />
                           <div style={{ flex: 1, minWidth: 120 }}>
                             <div style={{ fontWeight: 600, fontSize: 13, color: '#1E2235' }}>{s.firstname} {s.lastname}</div>
                             <div style={{ fontSize: 11, color: '#9B9890' }}>
@@ -585,9 +586,7 @@ const RelevesView = () => {
               const lt = leaveTypesMap[l.type_slug] || {};
               return (
                 <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid #F0EDE8', flexWrap: isMobile ? 'wrap' : undefined }}>
-                  {s && (
-                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.initials}</div>
-                  )}
+                  {s && <AvatarImg s={s} size={26} />}
                   <div style={{ flex: 1, fontWeight: 600, fontSize: 13, color: '#1E2235', minWidth: isMobile ? 120 : undefined }}>
                     {s ? `${s.firstname} ${s.lastname}` : `salarié #${l.staff_id}`}
                   </div>
