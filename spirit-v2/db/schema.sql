@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS users (
   staff_id     INTEGER UNIQUE REFERENCES staff(id) ON DELETE SET NULL,
   -- Périmètre de management (équipes dont il gère les congés)
   managed_team_ids TEXT,  -- CSV d'ids
+  must_change_password INTEGER NOT NULL DEFAULT 0,
   active       INTEGER NOT NULL DEFAULT 1,
   last_login   TEXT,
   created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -410,9 +411,6 @@ INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUE
   ('overlap_alert',       'true',            'boolean', 'Alerte superposition de plannings',   'planning'),
   ('app_version',         '2.0.0',           'string',  'Version application',                 'system');
 
--- ── Utilisateur superadmin par défaut ────────────────────────
--- MDP: Spirit2025! (bcrypt $2b$12$...)
-INSERT OR IGNORE INTO users (email, password, role) VALUES
-  ('admin@mineral-spirit.fr',
-   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMadfYTgS8GKJKGBpWKuBmTBuS',
-   'superadmin');
+-- Les comptes superadmin et admin sont créés dynamiquement par
+-- la migration 'first_install_accounts' dans db/database.js,
+-- à partir des variables SUPERADMIN_* et ADMIN_* du fichier .env.

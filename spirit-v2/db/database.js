@@ -34,6 +34,18 @@ function getDb() {
       CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY);
     `);
 
+    // ── Bootstrap schéma (nouvelle installation BDD vierge) ─────
+    // Sur une installation fraîche, les tables de base (staff, users…)
+    // n'existent pas encore. On applique schema.sql AVANT les migrations
+    // qui supposent que ces tables existent.
+    const usersTableExists = _db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+    ).get();
+    if (!usersTableExists) {
+      const schemaSql = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
+      _db.exec(schemaSql);
+    }
+
     // Migrations ALTER TABLE (idempotentes via _migrations)
     const migrations = [
       ["staff_charge_rate",         "ALTER TABLE staff ADD COLUMN charge_rate REAL NOT NULL DEFAULT 0.45"],
