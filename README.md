@@ -1,106 +1,159 @@
-# Mineral Spirit — Planning v2
+# Minéral Spirit — Gestion du personnel v2
 
-Application de plannings transversaux, orientée gestion de salle d'escalade.
+Application web de gestion du personnel pour salle d'escalade : plannings, congés, équipes, fonctions, relevés d'heures, notifications, coûts RH.
 
-**Stack** : Express 4 · better-sqlite3 · JWT (httpOnly cookies) · React 18 · Vite 5 · Caddy
+**Stack** : Node.js 22 · Express 4 · SQLite (better-sqlite3) · JWT httpOnly cookies · React 18 · Vite 5 · Caddy
+
+> **Branche** : `release/v1.0-beta` — version production (base vierge, pas de données de démonstration)  
+> Pour le développement avec données de démo, utilisez la branche `main`.
 
 ---
 
-## Installation
+## Installation rapide (un seul script)
 
-### 1. Backend
+```bash
+git clone https://github.com/BxN-26/Mineral_Plan.git
+cd Mineral_Plan
+git checkout release/v1.0-beta
+bash install.sh
+```
+
+Le script `install.sh` :
+- Vérifie / installe Node.js 22
+- Génère interactivement le fichier `.env` (secrets JWT, comptes, domaine)
+- Installe les dépendances et compile le frontend
+- Crée et active un service systemd
+- Installe et configure Caddy (HTTPS automatique, optionnel)
+
+Au **premier démarrage**, les migrations créent automatiquement :
+- Toutes les tables de la base de données
+- Les équipes, fonctions et types de congés par défaut
+- Les comptes **superadmin** et **admin** depuis vos variables `.env`
+
+---
+
+## Installation manuelle
+
+### Prérequis
+
+- Node.js 22+
+- npm 10+
+- (optionnel) Caddy pour le HTTPS
+
+### 1. Configuration
 
 ```bash
 cd spirit-v2
-cp .env.example .env          # éditer selon votre environnement
-npm install
-node db/seed.js               # données initiales + comptes démo
-npm run dev                   # démarrage en mode développement (port 3000)
+cp .env.example .env
+# Éditer .env — notamment JWT_SECRET, CLIENT_URL, SUPERADMIN_* et ADMIN_*
 ```
 
-### 2. Frontend (développement)
+### 2. Backend
+
+```bash
+cd spirit-v2
+npm install --omit=dev
+npm start          # démarre sur le port défini dans .env (défaut : 3000)
+```
+
+### 3. Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev                   # Vite sur http://localhost:5173 (proxy → :3000)
+npm run build      # génère frontend/dist/
 ```
 
-### 3. Build de production
+Le backend sert automatiquement `frontend/dist/` en production.
 
-```bash
-cd frontend
-npm run build                 # génère frontend/dist/
-# Puis démarrer uniquement le backend :
-cd ../spirit-v2
-npm start                     # Express sert dist/ + /api
-```
-
----
-
-## Déploiement Caddy (HTTPS)
+### 4. Déploiement Caddy (HTTPS)
 
 ```bash
 cp Caddyfile.example Caddyfile
-# Adapter le domaine et le chemin dans Caddyfile
+# Adapter le domaine dans Caddyfile
 sudo caddy start
-```
-
----
-
-## Comptes de démonstration
-
-| Email                         | Mot de passe  | Rôle          |
-|-------------------------------|---------------|---------------|
-| admin@mineral-spirit.fr       | Spirit2025!   | superadmin    |
-| marion@mineral-spirit.fr      | Marion2025    | manager       |
-| josephine@mineral-spirit.fr   | Jose2025      | employee      |
-| eva@mineral-spirit.fr         | Eva2025       | employee      |
-| brigitte@mineral-spirit.fr    | Brig2025      | employee      |
-| marine@mineral-spirit.fr      | Marine2025    | employee      |
-| mateo@email.fr                | Mateo2025     | employee      |
-
----
-
-## Structure du projet
-
-```
-spirit-v2/          ← Backend Express + SQLite
-  app.js            ← Assembly Express
-  db/
-    schema.sql      ← Schéma de la base
-    database.js     ← Singleton better-sqlite3
-    seed.js         ← Données initiales (idempotent)
-  middleware/
-    auth.js         ← JWT httpOnly cookies, requireAuth, requireRole
-  routes/
-    auth.js         ← login / logout / me / refresh
-    staff.js        ← CRUD salariés
-    teams.js        ← CRUD équipes
-    functions.js    ← CRUD fonctions + staff-view
-    leaves.js       ← Workflow congés N1/N2/N3
-    schedules.js    ← Planning hebdomadaire
-    settings.js     ← Paramètres + types de congés
-
-frontend/           ← React 18 + Vite 5
-  src/
-    App.jsx         ← Racine, contexte global, routing
-    api/client.js   ← Axios + intercepteur refresh token
-    context/        ← AuthContext
-    components/     ← common, Sidebar, StaffForm
-    views/          ← Login, Planning, MonPlanning, Equipe,
-                       Conges, Releves, Config
 ```
 
 ---
 
 ## Variables d'environnement (`spirit-v2/.env`)
 
-| Variable       | Défaut                  | Description                        |
-|----------------|-------------------------|------------------------------------|
-| `PORT`         | `3000`                  | Port HTTP du serveur Express       |
-| `DB_PATH`      | `./db/spirit.db`        | Chemin vers la base SQLite         |
-| `JWT_SECRET`   | *(obligatoire)*         | Secret de signature des JWT        |
-| `JWT_EXPIRES`  | `15m`                   | Durée de vie du token d'accès      |
-| `CLIENT_URL`   | `http://localhost:5173` | URL du frontend (CORS)             |
-| `NODE_ENV`     | `development`           | `production` active les cookies secure |
+| Variable                 | Défaut                   | Description                                          |
+|--------------------------|--------------------------|------------------------------------------------------|
+| `PORT`                   | `3000`                   | Port HTTP Express                                    |
+| `NODE_ENV`               | `production`             | Active les cookies `Secure` en production            |
+| `CLIENT_URL`             | *(obligatoire)*          | URL publique de l'app (CORS + headers)               |
+| `DB_PATH`                | `./db/spirit.db`         | Chemin vers la base SQLite                           |
+| `JWT_SECRET`             | *(obligatoire)*          | Secret de signature des tokens d'accès               |
+| `JWT_REFRESH_SECRET`     | *(obligatoire)*          | Secret distinct pour les tokens de rafraîchissement  |
+| `SUPERADMIN_EMAIL`       | `dev@spirit-app.internal`| Email du compte développeur (invisible pour l'admin) |
+| `SUPERADMIN_PASSWORD`    | *(obligatoire)*          | Mot de passe du superadmin                           |
+| `ADMIN_EMAIL`            | *(obligatoire)*          | Email du compte opérateur du club                    |
+| `ADMIN_INITIAL_PASSWORD` | *(obligatoire)*          | Mot de passe initial admin (changement forcé à la 1re connexion) |
+| `VAPID_PUBLIC_KEY`       | —                        | Clé VAPID publique pour les notifications push       |
+| `VAPID_PRIVATE_KEY`      | —                        | Clé VAPID privée                                     |
+| `VAPID_EMAIL`            | —                        | Email VAPID contact                                  |
+
+---
+
+## Structure du projet
+
+```
+spirit-v2/                  ← Backend Express + SQLite
+  app.js                    ← Point d'entrée Express
+  db/
+    schema.sql              ← Schéma complet (tables + données par défaut)
+    database.js             ← Singleton better-sqlite3 + système de migrations
+    seed.js                 ← Désactivé en prod (réservé au dev sur branche main)
+  middleware/
+    auth.js                 ← JWT httpOnly cookies, requireAuth, requireRole
+  routes/
+    auth.js                 ← Login / logout / refresh / profil
+    staff.js                ← CRUD salariés
+    teams.js                ← CRUD équipes
+    functions.js            ← CRUD fonctions
+    leaves.js               ← Workflow congés N1/N2/N3
+    schedules.js            ← Planning hebdomadaire
+    settings.js             ← Paramètres application
+    leave-types.js          ← Types de congés / absences
+    notifications.js        ← Notifications et Web Push
+    stats.js                ← Statistiques RH
+    costs.js                ← Analyse des coûts salariaux
+    swaps.js                ← Échanges de créneaux
+    templates.js            ← Modèles de planning
+
+frontend/                   ← React 18 + Vite 5
+  src/
+    App.jsx                 ← Racine, contexte global, routing
+    api/client.js           ← Axios + intercepteur refresh token
+    context/AuthContext.jsx ← Contexte authentification
+    components/             ← Sidebar, common, StaffForm, etc.
+    views/                  ← Login, Planning, Congés, Équipe, Config…
+
+Doc_techniques/             ← Documentation technique et utilisateur
+  description_technique.md
+  manuel_utilisateur.md
+  pdf/
+
+install.sh                  ← Installateur une commande
+Caddyfile.example           ← Exemple configuration Caddy (HTTPS)
+```
+
+---
+
+## Rôles utilisateurs
+
+| Rôle         | Accès                                                         |
+|--------------|---------------------------------------------------------------|
+| `superadmin` | Compte développeur — accès total, invisible pour les admins   |
+| `admin`      | Opérateur du club — gestion complète (staff, config, RH)      |
+| `rh`         | Gestion des congés et relevés d'heures                        |
+| `manager`    | Validation congés pour ses équipes, consultation plannings    |
+| `staff`      | Consultation planning personnel, demande de congés            |
+| `viewer`     | Lecture seule                                                 |
+
+---
+
+## Licence
+
+Voir [LICENSE](LICENSE).

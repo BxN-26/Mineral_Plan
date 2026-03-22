@@ -410,9 +410,8 @@ INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUE
   ('overlap_alert',       'true',            'boolean', 'Alerte superposition de plannings',   'planning'),
   ('app_version',         '2.0.0',           'string',  'Version application',                 'system');
 
--- ── Utilisateur superadmin par défaut ────────────────────────
--- MDP: Spirit2025! (bcrypt $2b$12$...)
-INSERT OR IGNORE INTO users (email, password, role) VALUES
-  ('admin@mineral-spirit.fr',
-   '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMadfYTgS8GKJKGBpWKuBmTBuS',
-   'superadmin');
+-- ── Comptes initiaux ─────────────────────────────────────────
+-- Les comptes superadmin et admin sont créés automatiquement au premier
+-- démarrage par la migration "first_install_accounts" dans database.js,
+-- à partir des variables d'environnement SUPERADMIN_* et ADMIN_* du .env.
+-- Aucun compte hardcodé ici pour des raisons de sécurité.
