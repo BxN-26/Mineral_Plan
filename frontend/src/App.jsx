@@ -17,6 +17,9 @@ import TeamPlanningView from './views/TeamPlanningView';
 import GeneralPlanningView from './views/GeneralPlanningView';
 import { Spinner } from './components/common';
 import api from './api/client';
+import { usePushNotifications } from './hooks/usePushNotifications';
+import ForceChangePassword from './components/ForceChangePassword';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 /* ─── Contexte global de l'app ──────────────────────────────── */
 const AppCtx = createContext(null);
@@ -41,6 +44,8 @@ const VIEW_COMPONENTS = {
 /* ─── Shell interne (après authentification) ─────────────────── */
 function AppShell() {
   const { user } = useAuth();
+
+  const { colors } = useTheme();
 
   const [view,       setView]       = useState('mon-planning');
   const [planningFocus, setPlanningFocus] = useState(null); // { week, staffId } pour deep-link notif
@@ -98,6 +103,12 @@ function AppShell() {
   const reloadFunctions = useCallback(async () => { const r = await api.get('/functions'); setFunctions(Array.isArray(r.data) ? r.data : []); }, []);
   const reloadLeaves    = useCallback(async () => { const r = await api.get('/leaves');    setLeaves(Array.isArray(r.data)    ? r.data : []); }, []);
 
+  /* Push notifications */
+  const pushEnabled = Array.isArray(settings)
+    ? settings.some(s => s.key === 'push_notifications_enabled' && s.value === 'true')
+    : false;
+  const { pushStatus, subscribe } = usePushNotifications(dataReady && !!user && pushEnabled);
+
   /* Chargement planning d'une semaine */
   const loadWeekSchedules = useCallback(async (weekStart) => {
     if (schedules[weekStart]) return; // déjà chargé
@@ -133,7 +144,7 @@ function AppShell() {
 
   return (
     <AppCtx.Provider value={ctx}>
-      <div style={{ display: 'flex', height: '100vh', fontFamily: "'Inter','Segou UI',system-ui,sans-serif", background: '#F5F3EF', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', height: '100vh', fontFamily: "'Inter','Segou UI',system-ui,sans-serif", background: colors.bgPage, overflow: 'hidden' }}>
         {/* Overlay sombre mobile */}
         {isMobile && sidebarOpen && (
           <div
@@ -170,6 +181,10 @@ function AppShell() {
               </div>
             </div>
           )}
+          {/* Bannière push notifications */}
+          {pushStatus === 'prompt' && (
+            <PushBanner onAccept={subscribe} />
+          )}
           <ViewComp />
         </main>
       </div>
@@ -177,12 +192,42 @@ function AppShell() {
   );
 }
 
+/* ─── Bannière invitation push ────────────────────────────────── */
+function PushBanner({ onAccept }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div style={{
+      background: '#1E2235', color: '#fff', padding: '10px 16px',
+      display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+      fontSize: 13,
+    }}>
+      <span style={{ fontSize: 20 }}>🔔</span>
+      <span style={{ flex: 1 }}>Activez les notifications pour être alerté en temps réel (congés validés, planning…)</span>
+      <button
+        onClick={() => { onAccept(); setDismissed(true); }}
+        style={{
+          background: '#C5753A', color: '#fff', border: 'none', borderRadius: 6,
+          padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+        }}
+      >Activer</button>
+      <button
+        onClick={() => setDismissed(true)}
+        style={{ background: 'none', border: 'none', color: '#9B9890', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: '0 4px' }}
+        aria-label="Fermer"
+      >×</button>
+    </div>
+  );
+}
+
 /* ─── Racine ──────────────────────────────────────────────────── */
 export default function App() {
   return (
-    <AuthProvider>
-      <AppRouter />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppRouter />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
@@ -196,5 +241,9 @@ function AppRouter() {
   );
 
   if (!user) return <LoginView />;
+
+  // Première connexion : changement de mot de passe obligatoire (modal bloquante)
+  if (user.must_change_password) return <ForceChangePassword />;
+
   return <AppShell />;
 }

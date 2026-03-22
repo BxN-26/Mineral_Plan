@@ -476,7 +476,7 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
 
 /* ═══════════════════════════════════════════════════════════════ */
 const PlanningView = () => {
-  const { staff, functions, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus } = useApp();
+  const { staff, functions, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
   const isMobile  = useIsMobile();
   const [wk,       setWk]      = useState(0);
   const [activeFn, setActiveFn] = useState(() => functions[0]?.slug || '');
@@ -489,6 +489,23 @@ const PlanningView = () => {
   const [ghost,   setGhost]   = useState(null);
   const colRefs   = useRef({});
   const saveTimer = useRef(null);
+
+  // ── Contraintes horaires (depuis settings) ───────────────────
+  const constraintMap = useMemo(
+    () => Object.fromEntries((settings || []).map(s => [s.key, s.value])),
+    [settings]
+  );
+  const maxAmpEnabled = constraintMap['planning_max_amplitude_enabled'] === 'true';
+  const maxAmpH       = parseFloat(constraintMap['planning_max_amplitude_hours'] || '12');
+  const minRestEnabled= constraintMap['planning_min_rest_enabled'] === 'true';
+  const minRestH      = parseFloat(constraintMap['planning_min_rest_hours'] || '11');
+
+  const [constraintWarn, setConstraintWarn] = useState(null);
+  useEffect(() => {
+    if (!constraintWarn) return;
+    const t = setTimeout(() => setConstraintWarn(null), 6000);
+    return () => clearTimeout(t);
+  }, [constraintWarn]);
 
   // ── Templates & cours (chargés localement) ───────────────────
   const [showTemplates,  setShowTemplates]  = useState(false);
@@ -543,6 +560,70 @@ const PlanningView = () => {
   }, [schedules, currentWeek, functions]);
 
   const fnStaff = staff.filter(s => s.functions?.includes(activeFn));
+
+  // ── Vérification des contraintes horaires ────────────────────
+  // Retourne un tableau de messages de violation (vide = OK)
+  const checkConstraints = useCallback((staffId, dayIndex, newStart, newEnd, excludeOrigSpan = null) => {
+    const violations = [];
+
+    // 1. Amplitude journalière max
+    if (maxAmpEnabled) {
+      // Tous les créneaux du salarié ce jour (toutes fonctions), sauf celui en cours de déplacement
+      const daySlots = allSpans[dayIndex]
+        .filter(sp => sp.staffId === staffId)
+        .filter(sp => excludeOrigSpan
+          ? !(sp.fn?.slug === activeFn && sp.start === excludeOrigSpan.start)
+          : true
+        );
+      const allStarts = [...daySlots.map(sp => sp.start), newStart];
+      const allEnds   = [...daySlots.map(sp => sp.end),   newEnd];
+      const amplitude = Math.max(...allEnds) - Math.min(...allStarts);
+      if (amplitude > maxAmpH) {
+        const s0 = Math.min(...allStarts);
+        const e0 = Math.max(...allEnds);
+        violations.push(
+          `Amplitude journalière dépassée : ${fmtTime(s0)} → ${fmtTime(e0)} = ${amplitude.toFixed(1)}h (maximum : ${maxAmpH}h)`
+        );
+      }
+    }
+
+    // 2. Repos minimum entre deux postes
+    if (minRestEnabled) {
+      const newStartAbs = dayIndex * 24 + newStart;
+      const newEndAbs   = dayIndex * 24 + newEnd;
+      for (let d = 0; d < 7; d++) {
+        for (const sp of allSpans[d]) {
+          if (sp.staffId !== staffId) continue;
+          // Exclure le créneau déplacé
+          if (excludeOrigSpan && sp.fn?.slug === activeFn && sp.start === excludeOrigSpan.start) continue;
+          const spStartAbs = d * 24 + sp.start;
+          const spEndAbs   = d * 24 + sp.end;
+          // Repos entre fin du créneau existant et début du nouveau
+          if (spEndAbs <= newStartAbs) {
+            const gap = newStartAbs - spEndAbs;
+            if (gap < minRestH) {
+              const dayName = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'][d];
+              violations.push(
+                `Repos insuffisant : ${gap.toFixed(1)}h depuis la fin de poste à ${fmtTime(sp.end)} (${dayName}) — minimum requis : ${minRestH}h`
+              );
+            }
+          }
+          // Repos entre fin du nouveau et début d'un créneau existant
+          if (newEndAbs <= spStartAbs) {
+            const gap = spStartAbs - newEndAbs;
+            if (gap < minRestH) {
+              const dayName = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'][d];
+              violations.push(
+                `Repos insuffisant : ${gap.toFixed(1)}h avant la prise de poste à ${fmtTime(sp.start)} (${dayName}) — minimum requis : ${minRestH}h`
+              );
+            }
+          }
+        }
+      }
+    }
+
+    return violations;
+  }, [allSpans, activeFn, maxAmpEnabled, maxAmpH, minRestEnabled, minRestH]);
 
   // ── Sauvegarde debounced ──────────────────────────────────────
   const debounceSave = useCallback((fnSlug, newSpans) => {
@@ -600,10 +681,14 @@ const PlanningView = () => {
     const end          = match ? match.hour_end   : Math.min(DAY_END, dropTime + 1);
     const courseSlotId = match ? match.id         : null;
 
+    // ── Vérification des contraintes ──
+    const violations = checkConstraints(staffId, dayIndex, start, end);
+    if (violations.length > 0) { setConstraintWarn(violations); return; }
+
     const next = cloneSpans(spans);
     next[dayIndex] = [...next[dayIndex], { staffId, start, end, courseSlotId }];
     updateSpans(next);
-  }, [mode, spans, updateSpans, getYFromClientY, courseSlots, activeFn]);
+  }, [mode, spans, updateSpans, getYFromClientY, courseSlots, activeFn, checkConstraints, setConstraintWarn]);
 
   // ── Déplacement d'un bloc existant ───────────────────────────
   const onMoveStart = useCallback((e, span, dayIndex) => {
@@ -644,6 +729,9 @@ const PlanningView = () => {
       if (cur.type === 'resize') {
         const dy = e.clientY - cur.origY;
         const ne = Math.round(Math.max(cur.span.start + 0.25, Math.min(DAY_END, cur.origEnd + dy / HOUR_H)) * 4) / 4;
+        // Vérification contraintes (exclure la position d'origine)
+        const viol = checkConstraints(cur.staffId, cur.dayIndex, cur.span.start, ne, cur.span);
+        if (viol.length > 0) { setConstraintWarn(viol); return; }
         const nx = cloneSpans(spans);
         const i  = nx[cur.dayIndex].findIndex(s => s.staffId === cur.span.staffId && s.start === cur.span.start);
         if (i !== -1) { nx[cur.dayIndex][i] = { ...nx[cur.dayIndex][i], end: ne }; updateSpans(nx); }
@@ -651,6 +739,9 @@ const PlanningView = () => {
         const dy  = e.clientY - cur.origY;
         const dur = cur.origEnd - cur.origStart;
         const ns  = Math.round(Math.max(DAY_START, Math.min(DAY_END - dur, cur.origStart + dy / HOUR_H)) * 4) / 4;
+        // Vérification contraintes (exclure la position d'origine)
+        const viol = checkConstraints(cur.staffId, cur.dayIndex, ns, ns + dur, cur.span);
+        if (viol.length > 0) { setConstraintWarn(viol); return; }
         const nx  = cloneSpans(spans);
         const i   = nx[cur.dayIndex].findIndex(s => s.staffId === cur.span.staffId && s.start === cur.span.start);
         if (i !== -1) { nx[cur.dayIndex][i] = { ...nx[cur.dayIndex][i], start: ns, end: ns + dur }; updateSpans(nx); }
@@ -659,7 +750,7 @@ const PlanningView = () => {
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup',   onUp);
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [spans, updateSpans]);
+  }, [spans, updateSpans, checkConstraints, setConstraintWarn]);
 
   /* ─── Vue globale — colonne lecture seule ─────────────────── */
   const AllSpansColumn = ({ dayIndex, isToday, isWeekend }) => {
@@ -877,6 +968,26 @@ const PlanningView = () => {
           onClose={() => setShowCourseModal(false)}
           onChanged={loadCourseSlots}
         />
+      )}
+
+      {/* Toast contraintes horaires */}
+      {constraintWarn && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 999, background: '#1E2235', color: '#fff', borderRadius: 10,
+          padding: '12px 18px', fontSize: 12, maxWidth: 500, width: 'calc(100% - 48px)',
+          boxShadow: '0 4px 24px rgba(0,0,0,.3)', display: 'flex', alignItems: 'flex-start', gap: 10,
+        }}>
+          <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>⚠️</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>Assignation refusée — contrainte horaire</div>
+            {constraintWarn.map((v, i) => (
+              <div key={i} style={{ color: '#FCA5A5', marginBottom: i < constraintWarn.length - 1 ? 3 : 0, lineHeight: 1.4 }}>• {v}</div>
+            ))}
+          </div>
+          <button onClick={() => setConstraintWarn(null)}
+            style={{ background: 'none', border: 'none', color: '#9B9890', cursor: 'pointer', fontSize: 16, padding: '0 0 0 6px', flexShrink: 0 }}>✕</button>
+        </div>
       )}
 
       {/* Overlay de drop (captures drag depuis panneau) */}

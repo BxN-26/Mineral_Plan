@@ -36,8 +36,9 @@ function getDb() {
 
     // Migrations ALTER TABLE (idempotentes via _migrations)
     const migrations = [
-      ["staff_charge_rate",   "ALTER TABLE staff ADD COLUMN charge_rate REAL NOT NULL DEFAULT 0.45"],
-      ["staff_avatar_url_idx","CREATE INDEX IF NOT EXISTS idx_staff_avatar ON staff(id) WHERE avatar_url IS NOT NULL"],
+      ["staff_charge_rate",         "ALTER TABLE staff ADD COLUMN charge_rate REAL NOT NULL DEFAULT 0.45"],
+      ["staff_avatar_url_idx",      "CREATE INDEX IF NOT EXISTS idx_staff_avatar ON staff(id) WHERE avatar_url IS NOT NULL"],
+      ["users_must_change_password","ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, sql] of migrations) {
       const done = _db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(name);
@@ -261,6 +262,50 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('schedule_slots_task_type')").run();
   }
 
+  // ── Migration : table push_subscriptions ─────────────────────
+  const pushSubDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='push_subscriptions_table'").get();
+  if (!pushSubDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint   TEXT    NOT NULL UNIQUE,
+        p256dh     TEXT    NOT NULL,
+        auth       TEXT    NOT NULL,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_pushsub_user ON push_subscriptions(user_id);
+    `);
+    // Seed du paramètre push_notifications_enabled dans settings
+    _db.prepare(
+      "INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)"
+    ).run('push_notifications_enabled', 'false', 'boolean', 'Activer les notifications push (Web Push)', 'system');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('push_subscriptions_table')").run();
+  }
+
+  // ── Migration : seeds paramètres configurables ────────────────
+  const configSeedsDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='config_settings_seeds'").get();
+  if (!configSeedsDone) {
+    const seed = _db.prepare(
+      "INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)"
+    );
+    // Groupe : congés
+    seed.run('leave_min_notice_enabled', 'false',        'boolean', 'Activer le délai minimum de préavis pour les demandes de congés', 'conges');
+    seed.run('leave_min_notice_days',    '2',            'number',  'Nombre de jours minimum de préavis requis avant la date de début du congé', 'conges');
+    seed.run('leave_default_cp_balance', '25',           'number',  'Solde initial en jours de CP attribué lors de la création d\'un nouveau salarié', 'conges');
+    seed.run('leave_default_rtt_balance','5',            'number',  'Solde initial en jours de RTT attribué lors de la création d\'un nouveau salarié', 'conges');
+    seed.run('leave_count_method',       'working_days', 'select',  'Méthode de décompte des congés : jours ouvrés ou calendaires', 'conges');
+    // Groupe : planning
+    seed.run('planning_day_start', '7',  'number', 'Heure de début d\'affichage du planning (0-23)', 'planning');
+    seed.run('planning_day_end',   '22', 'number', 'Heure de fin d\'affichage du planning (0-23)', 'planning');
+    // Groupe : rh
+    seed.run('rh_default_charge_rate', '45', 'number', 'Taux de charges patronales par défaut (%) appliqué aux nouveaux salariés', 'rh');
+    seed.run('rh_default_contract_h',  '35', 'number', 'Heures hebdomadaires par défaut pour les nouveaux contrats', 'rh');
+    // Groupe : system (thème)
+    seed.run('ui_theme', 'light', 'select', 'Thème visuel de l\'application (clair ou sombre)', 'system');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('config_settings_seeds')").run();
+  }
+
   // ── Migration : colonne meta sur notifications ────────────────
   const notifMetaDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='notifications_meta_col'").get();
   if (!notifMetaDone) {
@@ -294,6 +339,44 @@ function getDb() {
       PRAGMA foreign_keys = ON;
     `);
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('notifications_type_extended')").run();
+  }
+
+  // ── Migration : colonne contract_base sur staff ───────────────
+  const contractBaseDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='staff_contract_base'").get();
+  if (!contractBaseDone) {
+    try { _db.exec("ALTER TABLE staff ADD COLUMN contract_base TEXT NOT NULL DEFAULT 'hebdomadaire'"); } catch (_) {}
+    // Les bénévoles, renforts et indépendants n'ont pas de base horaire par défaut
+    _db.exec("UPDATE staff SET contract_base = 'aucune' WHERE type IN ('benevole', 'renfort', 'independant')");
+    // Seeds de configuration des bases horaires
+    const seed = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed.run('contract_base_hebdo_enabled', 'true',                 'boolean', 'Activer la base "Horaire hebdomadaire"', 'rh');
+    seed.run('contract_base_hebdo_label',   'Horaire hebdomadaire', 'string',  'Libellé de la base "Horaire hebdomadaire"', 'rh');
+    seed.run('contract_base_annuel_enabled','true',                 'boolean', 'Activer la base "Annualisé"', 'rh');
+    seed.run('contract_base_annuel_label',  'Annualisé',            'string',  'Libellé de la base "Annualisé"', 'rh');
+    seed.run('contract_base_aucune_enabled','true',                 'boolean', 'Activer la base "Sans base horaire"', 'rh');
+    seed.run('contract_base_aucune_label',  'Sans base horaire',    'string',  'Libellé de la base "Sans base horaire"', 'rh');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('staff_contract_base')").run();
+  }
+
+  // ── Migration : seeds exercice comptable ──────────────────────
+  const fiscalSeedsDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='fiscal_year_seeds'").get();
+  if (!fiscalSeedsDone) {
+    const seed = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed.run('fiscal_year_type',        'calendar', 'string', 'Type d\'exercice : "calendar" (1 jan→31 déc) ou "custom" (date personnalisée)', 'conges');
+    seed.run('fiscal_year_start_month', '9',        'number', 'Mois de début de l\'exercice personnalisé (1=janvier, 9=septembre)', 'conges');
+    seed.run('fiscal_year_start_day',   '1',        'number', 'Jour de début de l\'exercice personnalisé', 'conges');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('fiscal_year_seeds')").run();
+  }
+
+  // ── Migration : contraintes horaires planning ─────────────────
+  const planningConstraintsDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='planning_constraints'").get();
+  if (!planningConstraintsDone) {
+    const seed = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed.run('planning_max_amplitude_enabled', 'false', 'boolean', 'Activer la limite d\'amplitude journalière (heure début → heure fin dans la journée)', 'planning');
+    seed.run('planning_max_amplitude_hours',   '12',    'number',  'Amplitude journalière maximale autorisée (en heures)', 'planning');
+    seed.run('planning_min_rest_enabled',       'false', 'boolean', 'Activer le contrôle du repos minimum entre deux prises de poste', 'planning');
+    seed.run('planning_min_rest_hours',         '11',    'number',  'Durée minimale de repos entre la fin d\'un poste et le début du suivant (en heures)', 'planning');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('planning_constraints')").run();
   }
 
   return _db;

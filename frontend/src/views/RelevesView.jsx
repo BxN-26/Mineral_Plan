@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import { PageHeader, Btn } from '../components/common';
 import api from '../api/client';
+import { computeFiscalYear } from '../utils/fiscal';
 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -72,33 +73,51 @@ function countByFn(staffId, weekData) {
 
 /* ── Composant ─────────────────────────────────────────────────── */
 const RelevesView = () => {
-  const { staff, functions, schedules, leaves, leaveTypes } = useApp();
+  const { staff, functions, schedules, leaves, leaveTypes, settings } = useApp();
   const isMobile = useIsMobile();
 
-  const [wk,         setWk]        = useState(0);
-  const [mode,       setMode]      = useState('heures');
-  const [search,     setSearch]    = useState('');
-  const [period,     setPeriod]    = useState('week');
-  const [viewMonth,  setViewMonth] = useState(currentMonthStr);
-  const [viewYear,   setViewYear]  = useState(() => String(new Date().getFullYear()));
-  const [aggData,    setAggData]   = useState(null);
-  const [aggLoading, setAggLoading] = useState(false);
+  const [wk,            setWk]           = useState(0);
+  const [mode,          setMode]         = useState('heures');
+  const [search,        setSearch]       = useState('');
+  const [period,        setPeriod]       = useState('week');
+  const [viewMonth,     setViewMonth]    = useState(currentMonthStr);
+  const [viewYear,      setViewYear]     = useState(() => String(new Date().getFullYear()));
+  const [fiscalOffset,  setFiscalOffset] = useState(0);
+  const [aggData,       setAggData]      = useState(null);
+  const [aggLoading,    setAggLoading]   = useState(false);
+  const [balanceData,   setBalanceData]  = useState(null);
+  const [balanceLoading,setBalanceLoading] = useState(false);
+  const [balFiscalOff,  setBalFiscalOff] = useState(0);
+
+  const fiscalYear    = useMemo(() => computeFiscalYear(settings, new Date(), fiscalOffset),  [settings, fiscalOffset]);
+  const balFiscalYear = useMemo(() => computeFiscalYear(settings, new Date(), balFiscalOff),  [settings, balFiscalOff]);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const weekData    = schedules[currentWeek] || {};
 
-  /* Chargement données agrégées mois/année */
+  /* Chargement données agrégées mois/année/exercice */
   useEffect(() => {
-    if (period === 'week') { setAggData(null); return; }
-    const q = period === 'month'
-      ? `period=month&month=${viewMonth}`
-      : `period=year&year=${viewYear}`;
+    if (period === 'week' || mode === 'balance') { setAggData(null); return; }
+    let q;
+    if (period === 'month')  q = `period=month&month=${viewMonth}`;
+    else if (period === 'year')   q = `period=year&year=${viewYear}`;
+    else if (period === 'fiscal') q = `period=fiscal&start=${fiscalYear.start}&end=${fiscalYear.end}`;
     setAggLoading(true);
     api.get(`/stats?${q}`)
       .then(r => setAggData(r.data))
       .catch(console.error)
       .finally(() => setAggLoading(false));
-  }, [period, viewMonth, viewYear]);
+  }, [period, viewMonth, viewYear, fiscalYear, mode]);
+
+  /* Chargement balance */
+  useEffect(() => {
+    if (mode !== 'balance') return;
+    setBalanceLoading(true);
+    api.get(`/stats/balance?start=${balFiscalYear.start}&end=${balFiscalYear.end}`)
+      .then(r => setBalanceData(r.data))
+      .catch(console.error)
+      .finally(() => setBalanceLoading(false));
+  }, [mode, balFiscalYear]);
 
   const leaveTypesMap = useMemo(
     () => Object.fromEntries(leaveTypes.map(lt => [lt.slug, lt])),
@@ -114,9 +133,10 @@ const RelevesView = () => {
 
   const weekLabel  = `${dates[0].getDate()} – ${dates[6].getDate()} ${dates[6].toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
   const periodLabel =
-    period === 'week'  ? weekLabel :
-    period === 'month' ? fmtMonthLabel(viewMonth) :
-                         `Année ${viewYear}`;
+    period === 'week'   ? weekLabel :
+    period === 'month'  ? fmtMonthLabel(viewMonth) :
+    period === 'fiscal' ? fiscalYear.label :
+                          `Année ${viewYear}`;
 
   const filteredStaff = useMemo(() => {
     const q = search.toLowerCase();
@@ -144,6 +164,15 @@ const RelevesView = () => {
         return ls <= end && le >= start;
       });
     }
+    if (period === 'fiscal') {
+      const start = new Date(fiscalYear.start + 'T00:00:00');
+      const end   = new Date(fiscalYear.end   + 'T23:59:59');
+      return leaves.filter(l => {
+        const ls = new Date(l.start_date + 'T00:00:00');
+        const le = new Date(l.end_date   + 'T23:59:59');
+        return ls <= end && le >= start;
+      });
+    }
     // year
     const start = new Date(viewYear + '-01-01T00:00:00');
     const end   = new Date(viewYear + '-12-31T23:59:59');
@@ -152,7 +181,7 @@ const RelevesView = () => {
       const le = new Date(l.end_date   + 'T23:59:59');
       return ls <= end && le >= start;
     });
-  }, [period, leaves, currentWeek, viewMonth, viewYear]);
+  }, [period, leaves, currentWeek, viewMonth, viewYear, fiscalYear]);
 
   /* ─── Export CSV ───────────────────────────────────────── */
   const exportCSV = () => {
@@ -174,15 +203,18 @@ const RelevesView = () => {
         rows.push([`${s.firstname} ${s.lastname}`, fmtH(tot), ...cols.map(w => fmtH(sbp[w] || 0))]);
       }
       filename = `releves_${viewMonth}.csv`;
-    } else if (period === 'year' && aggData) {
+    } else if ((period === 'year' || period === 'fiscal') && aggData) {
       const cols = aggData.by_period || [];
-      rows = [['Salarié', 'Total année', ...cols.map(p => p.label)]];
+      const label = period === 'fiscal' ? fiscalYear.label : `Année ${viewYear}`;
+      rows = [['Salarié', `Total (${label})`, ...cols.map(p => p.label)]];
       for (const s of filteredStaff) {
         const sbp = aggData.staff_by_period?.[s.id] || {};
         const tot = Object.values(sbp).reduce((a, h) => a + h, 0);
         rows.push([`${s.firstname} ${s.lastname}`, fmtH(tot), ...cols.map(p => fmtH(sbp[p.key] || 0))]);
       }
-      filename = `releves_${viewYear}.csv`;
+      filename = period === 'fiscal'
+        ? `releves_exercice_${fiscalYear.start.slice(0,4)}_${fiscalYear.end.slice(0,4)}.csv`
+        : `releves_${viewYear}.csv`;
     } else {
       return;
     }
@@ -203,21 +235,23 @@ const RelevesView = () => {
 
       {/* Toolbar */}
       <div style={{ padding: isMobile ? '6px 10px' : '8px 18px', borderBottom: '1px solid #ECEAE4', background: '#fff', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* Mode heures/congés */}
+        {/* Mode heures/congés/balance */}
         <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2 }}>
-          {[['heures', isMobile ? '⏱' : '⏱ Heures'], ['conges', isMobile ? '🌴' : '🌴 Congés']].map(([v, l]) => (
+          {[['heures', isMobile ? '⏱' : '⏱ Heures'], ['conges', isMobile ? '🌴' : '🌴 Congés'], ['balance', isMobile ? '⚖️' : '⚖️ Balance']].map(([v, l]) => (
             <button key={v} onClick={() => setMode(v)}
-              style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: mode === v ? '#fff' : 'transparent', color: mode === v ? '#1E2235' : '#9B9890', fontWeight: mode === v ? 600 : 400, fontSize: 11, boxShadow: mode === v ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{l}</button>
+              style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: mode === v ? '#fff' : 'transparent', color: mode === v ? (v === 'balance' ? '#C5753A' : '#1E2235') : '#9B9890', fontWeight: mode === v ? 600 : 400, fontSize: 11, boxShadow: mode === v ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{l}</button>
           ))}
         </div>
 
-        {/* Sélecteur de période */}
-        <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2 }}>
-          {[['week','Sem.'],['month','Mois'],['year','Année']].map(([v, l]) => (
-            <button key={v} onClick={() => setPeriod(v)}
-              style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: period === v ? '#C5753A' : 'transparent', color: period === v ? '#fff' : '#9B9890', fontWeight: period === v ? 700 : 400, fontSize: 11, transition: 'all .15s' }}>{l}</button>
-          ))}
-        </div>
+        {/* Sélecteur de période — caché en mode balance */}
+        {mode !== 'balance' && (
+          <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2 }}>
+            {[['week','Sem.'],['month','Mois'],['year','Année'],['fiscal','Exercice']].map(([v, l]) => (
+              <button key={v} onClick={() => setPeriod(v)}
+                style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: period === v ? '#C5753A' : 'transparent', color: period === v ? '#fff' : '#9B9890', fontWeight: period === v ? 700 : 400, fontSize: 11, transition: 'all .15s' }}>{l}</button>
+            ))}
+          </div>
+        )}
 
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Filtrer…"
           style={{ padding: '5px 10px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#F5F3EF', fontSize: 12, outline: 'none', flex: isMobile ? 1 : undefined, minWidth: isMobile ? 0 : 150 }} />
@@ -237,11 +271,18 @@ const RelevesView = () => {
             <button onClick={() => setViewMonth(m => addMonths(m, 1))}  style={navBtn}>▶</button>
           </div>
         )}
-        {period === 'year' && (
+        {period === 'year' && mode !== 'balance' && (
           <div style={{ display: 'flex', gap: 3, marginLeft: isMobile ? undefined : 'auto' }}>
-            <button onClick={() => setViewYear(y => String(parseInt(y) - 1))} style={navBtn}>◀</button>
+            <button onClick={() => setViewYear(y => String(parseInt(y) - 1))} style={navBtn}>◄</button>
             <button onClick={() => setViewYear(String(new Date().getFullYear()))} style={navBtn}>{isMobile ? '●' : 'Auj.'}</button>
-            <button onClick={() => setViewYear(y => String(parseInt(y) + 1))}  style={navBtn}>▶</button>
+            <button onClick={() => setViewYear(y => String(parseInt(y) + 1))}  style={navBtn}>►</button>
+          </div>
+        )}
+        {period === 'fiscal' && mode !== 'balance' && (
+          <div style={{ display: 'flex', gap: 3, marginLeft: isMobile ? undefined : 'auto' }}>
+            <button onClick={() => setFiscalOffset(o => o - 1)} style={navBtn}>◄</button>
+            <button onClick={() => setFiscalOffset(0)}          style={navBtn}>{isMobile ? '●' : 'En cours'}</button>
+            <button onClick={() => setFiscalOffset(o => o + 1)} style={navBtn}>►</button>
           </div>
         )}
 
@@ -370,8 +411,8 @@ const RelevesView = () => {
             )
         )}
 
-        {/* ── MODE HEURES — ANNÉE (tableau par mois) ── */}
-        {mode === 'heures' && period === 'year' && (
+        {/* ── MODE HEURES — ANNÉE / EXERCICE (tableau par mois) ── */}
+        {mode === 'heures' && (period === 'year' || period === 'fiscal') && (
           aggLoading
             ? <div style={{ textAlign: 'center', padding: 48, color: '#9B9890' }}>Chargement…</div>
             : aggData && (
@@ -406,6 +447,128 @@ const RelevesView = () => {
                 })}
               </div>
             )
+        )}
+
+        {/* ── MODE BALANCE ── */}
+        {mode === 'balance' && (
+          <div>
+            {/* Navigateur exercice balance */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              <button onClick={() => setBalFiscalOff(o => o - 1)} style={navBtn}>◀</button>
+              <span style={{ fontWeight: 700, fontSize: 14, color: '#1E2235' }}>⚖️ {balFiscalYear.label}</span>
+              <button onClick={() => setBalFiscalOff(o => o + 1)} style={navBtn}>▶</button>
+              <button onClick={() => setBalFiscalOff(0)} style={{ ...navBtn, fontSize: 10 }}>En cours</button>
+              {balanceData && (
+                <span style={{ fontSize: 11, color: '#9B9890', marginLeft: 8 }}>{balanceData.weeks_count} semaines</span>
+              )}
+            </div>
+
+            {balanceLoading && <div style={{ textAlign: 'center', padding: 40, color: '#9B9890' }}>Chargement…</div>}
+
+            {!balanceLoading && balanceData && (() => {
+              const withContract    = balanceData.staff.filter(s => s.contract_base !== 'aucune');
+              const withoutContract = balanceData.staff.filter(s => s.contract_base === 'aucune' && s.planned_h > 0);
+              const total_contracted = withContract.reduce((a, s) => a + (s.contracted_h || 0), 0);
+              const total_planned    = withContract.reduce((a, s) => a + s.planned_h, 0);
+              const total_balance    = +(total_planned - total_contracted).toFixed(1);
+              const underCount       = withContract.filter(s => s.balance < 0).length;
+              return (
+                <>
+                  {/* KPIs */}
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+                    <div style={{ background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #ECEAE4', flex: 1, minWidth: 140 }}>
+                      <div style={{ fontSize: 11, color: '#9B9890', textTransform: 'uppercase', letterSpacing: '.4px' }}>Heures théoriques</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: '#1E2235', marginTop: 2 }}>{fmtH(total_contracted)}</div>
+                    </div>
+                    <div style={{ background: '#fff', borderRadius: 10, padding: '12px 16px', border: '1px solid #ECEAE4', flex: 1, minWidth: 140 }}>
+                      <div style={{ fontSize: 11, color: '#9B9890', textTransform: 'uppercase', letterSpacing: '.4px' }}>Heures planifiées</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: '#C5753A', marginTop: 2 }}>{fmtH(total_planned)}</div>
+                    </div>
+                    <div style={{ background: '#fff', borderRadius: 10, padding: '12px 16px', border: `1px solid ${total_balance >= 0 ? '#A7F3D0' : '#FCA5A5'}`, flex: 1, minWidth: 140 }}>
+                      <div style={{ fontSize: 11, color: '#9B9890', textTransform: 'uppercase', letterSpacing: '.4px' }}>Balance globale</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: total_balance >= 0 ? '#16A34A' : '#DC2626', marginTop: 2 }}>
+                        {total_balance > 0 ? '+' : ''}{fmtH(Math.abs(total_balance))}
+                      </div>
+                    </div>
+                    {underCount > 0 && (
+                      <div style={{ background: '#FFF7ED', borderRadius: 10, padding: '12px 16px', border: '1px solid #FED7AA', flex: 1, minWidth: 140 }}>
+                        <div style={{ fontSize: 11, color: '#92400E', textTransform: 'uppercase', letterSpacing: '.4px' }}>Sous-planifiés</div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#C5753A', marginTop: 2 }}>{underCount} pers.</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tableau principal */}
+                  <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #ECEAE4', overflow: 'hidden', marginBottom: 16 }}>
+                    <div style={{ padding: '10px 14px', background: '#F5F3EF', borderBottom: '2px solid #E4E0D8', fontSize: 11, fontWeight: 700, color: '#9B9890', textTransform: 'uppercase' }}>
+                      Personnel avec base horaire contractuelle
+                    </div>
+                    {withContract.length === 0 && (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#9B9890', fontSize: 13 }}>Aucun salarié avec base horaire contractuelle</div>
+                    )}
+                    {withContract.map(s => {
+                      const pct      = s.contracted_h > 0 ? Math.min(100, (s.planned_h / s.contracted_h) * 100) : 0;
+                      const balColor = s.balance > 0 ? '#16A34A' : s.balance < 0 ? '#DC2626' : '#6366F1';
+                      return (
+                        <div key={s.id} style={{ padding: '12px 14px', borderBottom: '1px solid #F0EDE8', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                          <div style={{ width: 32, height: 32, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.initials}</div>
+                          <div style={{ flex: 1, minWidth: 120 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: '#1E2235' }}>{s.firstname} {s.lastname}</div>
+                            <div style={{ fontSize: 11, color: '#9B9890' }}>
+                              {s.contract_base === 'hebdomadaire'
+                                ? `${s.contract_h}h/sem × ${balanceData.weeks_count} sem.`
+                                : `${s.contract_h}h/an`}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center', minWidth: 80 }}>
+                            <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 2 }}>Théorique</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: '#1E2235' }}>{fmtH(s.contracted_h)}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', minWidth: 80 }}>
+                            <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 2 }}>Planifié</div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: s.planned_h > 0 ? s.color : '#C0BCB5' }}>{s.planned_h > 0 ? fmtH(s.planned_h) : '—'}</div>
+                          </div>
+                          <div style={{ minWidth: 140 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: balColor }}>
+                                {s.balance > 0 ? '+' : ''}{fmtH(Math.abs(s.balance))}
+                                <span style={{ fontSize: 11, marginLeft: 4, fontWeight: 400 }}>
+                                  {s.balance > 0 ? '↑ surplus' : s.balance < 0 ? '↓ manque' : '= OK'}
+                                </span>
+                              </div>
+                            </div>
+                            <div style={{ height: 6, background: '#F0EDE8', borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', borderRadius: 3, background: balColor, width: `${pct}%`, transition: 'width .4s' }} />
+                            </div>
+                            <div style={{ fontSize: 10, color: '#9B9890', marginTop: 2 }}>{pct.toFixed(0)}% planifié</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Renforts / sans contrat */}
+                  {withoutContract.length > 0 && (
+                    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #ECEAE4', overflow: 'hidden' }}>
+                      <div style={{ padding: '10px 14px', background: '#F5F3EF', borderBottom: '2px solid #E4E0D8', fontSize: 11, fontWeight: 700, color: '#9B9890', textTransform: 'uppercase' }}>
+                        Renforts / bénévoles / vacataires planifiés
+                      </div>
+                      {withoutContract.map(s => (
+                        <div key={s.id} style={{ padding: '10px 14px', borderBottom: '1px solid #F0EDE8', display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: s.color, color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{s.initials}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: '#1E2235' }}>{s.firstname} {s.lastname}</div>
+                            <div style={{ fontSize: 11, color: '#9B9890' }}>Sans base horaire contractuelle</div>
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: s.color }}>{fmtH(s.planned_h)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
         )}
 
         {/* ── MODE CONGÉS ── */}

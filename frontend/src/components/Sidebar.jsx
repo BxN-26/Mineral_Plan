@@ -1,8 +1,10 @@
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import NotifBell from './NotifBell';
 
 const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClose = () => {} }) => {
   const { user, logout } = useAuth();
+  const { colors } = useTheme();
   const isAdmin = ['admin', 'superadmin'].includes(user?.role);
   const isMgr   = ['manager', 'rh', 'admin', 'superadmin'].includes(user?.role);
   const isRh    = ['rh', 'admin', 'superadmin'].includes(user?.role);
@@ -26,7 +28,7 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
 
   return (
     <div style={{
-      width: 220, minHeight: '100vh', background: '#181C2E',
+      width: 220, minHeight: '100vh', background: colors.sidebar,
       display: 'flex', flexDirection: 'column',
       position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 100,
       transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',

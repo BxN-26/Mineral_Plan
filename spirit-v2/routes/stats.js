@@ -22,6 +22,11 @@ router.get('/', ...MGR, (req, res) => {
     const y = year || String(new Date().getFullYear());
     periodRef = y;
     weeksToProcess = weeksInYear(y);
+  } else if (period === 'fiscal') {
+    const startStr = req.query.start || `${new Date().getFullYear()}-01-01`;
+    const endStr   = req.query.end   || `${new Date().getFullYear()}-12-31`;
+    periodRef = `${startStr}|${endStr}`;
+    weeksToProcess = weeksInDateRange(startStr, endStr);
   } else {
     periodRef = week || currentMonday();
     weeksToProcess = [periodRef];
@@ -124,6 +129,22 @@ router.get('/', ...MGR, (req, res) => {
     byPeriod = Object.values(monthMap)
       .map(({ key, label, hours, staffSet }) => ({ key, label, hours: +hours.toFixed(1), active: staffSet.size }))
       .sort((a, b) => a.key.localeCompare(b.key));
+  } else if (period === 'fiscal') {
+    // Exercice comptable : regroupe par mois, peut couvrir 2 années civiles
+    const monthMap = {};
+    for (const slot of allSlots) {
+      const d   = new Date(slot.week + 'T12:00:00');
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if (!monthMap[key]) monthMap[key] = {
+        key, hours: 0, staffSet: new Set(),
+        label: d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
+      };
+      monthMap[key].hours    += slot.hour_end - slot.hour_start;
+      monthMap[key].staffSet.add(slot.staff_id);
+    }
+    byPeriod = Object.values(monthMap)
+      .map(({ key, label, hours, staffSet }) => ({ key, label, hours: +hours.toFixed(1), active: staffSet.size }))
+      .sort((a, b) => a.key.localeCompare(b.key));
   }
 
   // ── Heures par salarié et par sous-période (pour Relevés)
@@ -141,6 +162,14 @@ router.get('/', ...MGR, (req, res) => {
       const d = new Date(slot.week + 'T12:00:00');
       if (d.getFullYear() !== yr) continue;
       const key = `${yr}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      if (!staffByPeriod[slot.staff_id]) staffByPeriod[slot.staff_id] = {};
+      staffByPeriod[slot.staff_id][key] = (staffByPeriod[slot.staff_id][key] || 0) + (slot.hour_end - slot.hour_start);
+    }
+  } else if (period === 'fiscal') {
+    staffByPeriod = {};
+    for (const slot of allSlots) {
+      const d   = new Date(slot.week + 'T12:00:00');
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
       if (!staffByPeriod[slot.staff_id]) staffByPeriod[slot.staff_id] = {};
       staffByPeriod[slot.staff_id][key] = (staffByPeriod[slot.staff_id][key] || 0) + (slot.hour_end - slot.hour_start);
     }
@@ -209,10 +238,68 @@ function weeksInYear(yearStr) {
   }
   return [...allWeeks].sort();
 }
+function weeksInDateRange(startStr, endStr) {
+  const endDate = new Date(endStr + 'T12:00:00');
+  const d       = new Date(startStr + 'T12:00:00');
+  const dow     = d.getDay();
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); // aller au lundi précédent
+  const weeks = [];
+  while (d <= endDate) {
+    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+    weeks.push(`${y}-${m}-${dd}`);
+    d.setDate(d.getDate() + 7);
+  }
+  return weeks;
+}
 function fmtWeekShort(w) {
   const d = new Date(w + 'T12:00:00');
   return `${d.getDate()}/${d.getMonth()+1}`;
 }
+
+// ── GET /api/stats/balance?start=YYYY-MM-DD&end=YYYY-MM-DD ────
+router.get('/balance', ...MGR, (req, res) => {
+  const { start, end } = req.query;
+  if (!start || !end) return res.status(400).json({ error: 'start et end requis' });
+
+  const weeks = weeksInDateRange(start, end);
+  const days  = Math.round((new Date(end + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000) + 1;
+  const weeksCount = Math.round(days / 7);
+
+  // Heures planifiées par salarié sur la période
+  const hoursByStaff = {};
+  for (const w of weeks) {
+    const slots = db_.all(
+      `SELECT ss.staff_id, ss.hour_end - ss.hour_start AS h
+       FROM schedule_slots ss
+       JOIN schedules sc ON sc.id = ss.schedule_id
+       WHERE sc.week_start = ?`, [w]
+    );
+    for (const s of slots) hoursByStaff[s.staff_id] = (hoursByStaff[s.staff_id] || 0) + s.h;
+  }
+
+  const staffList = db_.all(
+    `SELECT id, firstname, lastname, initials, color, avatar_url,
+            COALESCE(contract_base, 'hebdomadaire') AS contract_base,
+            contract_h, type
+     FROM staff WHERE active = 1 ORDER BY firstname`
+  );
+
+  const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  const staff = staffList.map(s => {
+    const planned_h = +(hoursByStaff[s.id] || 0).toFixed(2);
+    let contracted_h = null;
+    if (s.contract_base === 'hebdomadaire') contracted_h = +(s.contract_h * weeksCount).toFixed(1);
+    else if (s.contract_base === 'annualise') contracted_h = +Number(s.contract_h).toFixed(1);
+    const balance = contracted_h !== null ? +(planned_h - contracted_h).toFixed(1) : null;
+    return { id: s.id, firstname: s.firstname, lastname: s.lastname, initials: s.initials,
+             color: s.color, avatar_url: s.avatar_url, type: s.type,
+             contract_base: s.contract_base, contract_h: s.contract_h,
+             planned_h, contracted_h, balance };
+  });
+
+  res.json({ start, end, label: `${fmtD(start)} → ${fmtD(end)}`, weeks_count: weeksCount, staff });
+});
 
 module.exports = router;
 

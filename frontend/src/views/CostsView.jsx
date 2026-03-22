@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
@@ -6,6 +6,7 @@ import { PageHeader, Btn } from '../components/common';
 import AvatarImg from '../components/AvatarImg';
 import { useApp } from '../App';
 import api from '../api/client';
+import { computeFiscalYear } from '../utils/fiscal';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 function toMonday(d) {
@@ -27,9 +28,10 @@ function fmtEur(v) {
 }
 
 const PERIODS = [
-  { id: 'week',  label: 'Semaine' },
-  { id: 'month', label: 'Mois'    },
-  { id: 'year',  label: 'Année'   },
+  { id: 'week',   label: 'Semaine'  },
+  { id: 'month',  label: 'Mois'     },
+  { id: 'year',   label: 'Année'    },
+  { id: 'fiscal', label: 'Exercice' },
 ];
 
 const PERIOD_COLORS = {
@@ -40,23 +42,27 @@ const PERIOD_COLORS = {
 };
 
 export default function CostsView() {
-  const { reloadStaff } = useApp();
-  const [week,    setWeek]    = useState(toMonday(new Date()));
-  const [period,  setPeriod]  = useState('week');
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(false);
+  const { reloadStaff, settings } = useApp();
+  const [week,         setWeek]         = useState(toMonday(new Date()));
+  const [period,       setPeriod]        = useState('week');
+  const [fiscalOffset, setFiscalOffset]  = useState(0);
+  const [data,         setData]          = useState(null);
+  const [loading,      setLoading]       = useState(false);
+
+  const fiscalYear = useMemo(() => computeFiscalYear(settings, new Date(), fiscalOffset), [settings, fiscalOffset]);
 
   const load = useCallback(async (w, p) => {
     setLoading(true);
     try {
-      const r = await api.get(`/costs?week=${w}&period=${p}`);
+      const fiscal = p === 'fiscal' ? `&start=${fiscalYear.start}&end=${fiscalYear.end}` : '';
+      const r = await api.get(`/costs?week=${w}&period=${p}${fiscal}`);
       setData(r.data);
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fiscalYear]);
 
   useEffect(() => { load(week, period); }, [week, period, load]);
 
@@ -66,10 +72,12 @@ export default function CostsView() {
       const d = new Date(week + 'T12:00:00');
       d.setMonth(d.getMonth() + delta);
       setWeek(toMonday(d));
-    } else {
+    } else if (period === 'year') {
       const d = new Date(week + 'T12:00:00');
       d.setFullYear(d.getFullYear() + delta);
       setWeek(toMonday(d));
+    } else if (period === 'fiscal') {
+      setFiscalOffset(o => o + delta);
     }
   };
 

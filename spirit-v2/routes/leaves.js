@@ -3,6 +3,7 @@ const router = require('express').Router();
 const { db_ }                               = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
 const { notify }                             = require('./notifications');
+const { sendPush }                           = require('./push');
 
 const AUTH  = requireAuth;
 const MGR   = [requireAuth, requireRole('admin','manager','rh','superadmin')];
@@ -146,14 +147,30 @@ router.post('/', AUTH, (req, res) => {
 
   // Délai minimum (ignoré pour admin/manager/superadmin)
   const isPrivileged = ['admin','superadmin','manager','rh'].includes(req.user.role);
-  if (!isPrivileged && leaveType.min_notice_days > 0) {
-    const today      = new Date();
-    const startDt    = new Date(start_date);
-    const noticeDays = Math.floor((startDt - today) / 86400000);
-    if (noticeDays < leaveType.min_notice_days)
-      return res.status(400).json({
-        error: `Délai de préavis insuffisant pour ce type de congé : merci de soumettre au moins ${leaveType.min_notice_days} jours avant la date de début.`,
-      });
+  if (!isPrivileged) {
+    // 1. Règle globale configurable depuis les paramètres
+    const noticeEnabled = db_.get("SELECT value FROM settings WHERE key='leave_min_notice_enabled'");
+    const noticeDays    = db_.get("SELECT value FROM settings WHERE key='leave_min_notice_days'");
+    if (noticeEnabled?.value === 'true' && noticeDays) {
+      const globalMin  = parseInt(noticeDays.value, 10) || 0;
+      const today      = new Date();
+      const startDt    = new Date(start_date);
+      const diff       = Math.floor((startDt - today) / 86400000);
+      if (diff < globalMin)
+        return res.status(400).json({
+          error: `Délai de préavis insuffisant : merci de soumettre votre demande au moins ${globalMin} jour(s) avant la date de début.`,
+        });
+    }
+    // 2. Règle par type de congé
+    if (leaveType.min_notice_days > 0) {
+      const today      = new Date();
+      const startDt    = new Date(start_date);
+      const noticeDiff = Math.floor((startDt - today) / 86400000);
+      if (noticeDiff < leaveType.min_notice_days)
+        return res.status(400).json({
+          error: `Délai de préavis insuffisant pour ce type de congé : merci de soumettre au moins ${leaveType.min_notice_days} jours avant la date de début.`,
+        });
+    }
   }
 
   // Chevauchement
@@ -262,13 +279,23 @@ router.put('/:id/approve', AUTH, (req, res) => {
     return res.status(403).json({ error: 'Vous n\'êtes pas le valideur de ce congé à cette étape' });
   }
 
-  // Si approuvé définitivement → déduire du solde + notifier managers des créneaux impactés
+  // Si approuvé définitivement → déduire du solde + notifier managers des créneaux impactés + push salarié
   if (nextStatus === 'approved') {
-    const lt = db_.get('SELECT slug FROM leave_types WHERE id=?', [leave.type_id]);
+    const lt = db_.get('SELECT slug, label FROM leave_types WHERE id=?', [leave.type_id]);
     if (lt?.slug === 'cp')
       db_.run('UPDATE staff SET cp_balance = MAX(0, cp_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
     else if (lt?.slug === 'rtt')
       db_.run('UPDATE staff SET rtt_balance = MAX(0, rtt_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
+
+    // Push notification au salarié concerné
+    const staffUser = db_.get('SELECT id FROM users WHERE staff_id=? AND active=1', [leave.staff_id]);
+    if (staffUser) {
+      sendPush(staffUser.id, {
+        title: '✅ Congé approuvé',
+        body:  `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été validé.`,
+        url:   '/conges',
+      });
+    }
 
     // Trouver les créneaux planifiés du salarié qui tombent dans la période de congé
     // Utiliser T12:00:00 pour éviter les décalages de fuseau horaire (minuit local ≠ minuit UTC)
@@ -351,6 +378,17 @@ router.put('/:id/refuse', AUTH, (req, res) => {
            n1_reviewed_at=CASE WHEN n1_approver_id=? THEN datetime('now') ELSE n1_reviewed_at END
            WHERE id=?`,
     [uid, uid, comment||null, uid, leave.id]);
+
+  // Push notification au salarié
+  const staffUser = db_.get('SELECT id FROM users WHERE staff_id=? AND active=1', [leave.staff_id]);
+  if (staffUser) {
+    const lt = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+    sendPush(staffUser.id, {
+      title: '❌ Congé refusé',
+      body:  `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été refusé.${comment ? ' Motif : ' + comment : ''}`,
+      url:   '/conges',
+    });
+  }
 
   auditLog(req, 'LEAVE_REFUSE', 'leaves', leave.id, null, { comment });
   res.json({ message: 'Congé refusé' });

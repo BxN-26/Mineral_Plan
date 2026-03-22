@@ -27,7 +27,7 @@ router.post('/login', (req, res) => {
   issueTokens(user, res);
 
   const { password: _, ...safeUser } = user;
-  return res.json({ user: safeUser });
+  return res.json({ user: safeUser }); // must_change_password est inclus si présent
 });
 
 // ── POST /api/auth/logout ─────────────────────────────────────
@@ -89,8 +89,27 @@ router.post('/change-password', requireAuth, (req, res) => {
     return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
 
   const hash = bcrypt.hashSync(new_password, 12);
-  db_.run('UPDATE users SET password=? WHERE id=?', [hash, req.user.id]);
+  db_.run('UPDATE users SET password=?, must_change_password=0 WHERE id=?', [hash, req.user.id]);
   res.json({ message: 'Mot de passe modifié' });
+});
+
+// ── POST /api/auth/force-change-password ──────────────────────
+// Appelé sans vérifier l'ancien mot de passe, mais seulement si must_change_password=1
+router.post('/force-change-password', requireAuth, (req, res) => {
+  const { new_password } = req.body;
+  if (!new_password)
+    return res.status(400).json({ error: 'Nouveau mot de passe requis' });
+  if (new_password.length < 8)
+    return res.status(400).json({ error: 'Le mot de passe doit faire au moins 8 caractères' });
+
+  const user = db_.get('SELECT * FROM users WHERE id=? AND active=1', [req.user.id]);
+  if (!user) return res.status(404).json({ error: 'Compte introuvable' });
+  if (!user.must_change_password)
+    return res.status(403).json({ error: 'Changement de mot de passe non requis' });
+
+  const hash = bcrypt.hashSync(new_password, 12);
+  db_.run('UPDATE users SET password=?, must_change_password=0 WHERE id=?', [hash, req.user.id]);
+  res.json({ message: 'Mot de passe défini avec succès' });
 });
 
 module.exports = router;

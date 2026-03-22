@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -6,6 +6,8 @@ import {
 import { PageHeader, Btn } from '../components/common';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
+import { useApp } from '../App';
+import { computeFiscalYear } from '../utils/fiscal';
 
 /* ── Helpers date ─────────────────────────────────────────────── */
 function toMonday(d) {
@@ -90,27 +92,35 @@ export default function StatsView() {
   const [data,      setData]      = useState(null);
   const [loading,   setLoading]   = useState(false);
 
+  const { settings } = useApp();
+  const [fiscalOffset, setFiscalOffset] = useState(0);
+  const fiscalYear = useMemo(() => computeFiscalYear(settings, new Date(), fiscalOffset), [settings, fiscalOffset]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const q = period === 'week'  ? `week=${week}` :
-                period === 'month' ? `period=month&month=${viewMonth}` :
-                                     `period=year&year=${viewYear}`;
+      const q = period === 'week'   ? `week=${week}` :
+                period === 'month'  ? `period=month&month=${viewMonth}` :
+                period === 'year'   ? `period=year&year=${viewYear}` :
+                                     `period=fiscal&start=${fiscalYear.start}&end=${fiscalYear.end}`;
       const r = await api.get(`/stats?${q}`);
       setData(r.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [period, week, viewMonth, viewYear]);
+  }, [period, week, viewMonth, viewYear, fiscalYear]);
 
   useEffect(() => { load(); }, [load]);
 
   const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
-  const periodSub = period === 'week'  ? `Semaine du ${fmtWeek(week)}` :
-                    period === 'month' ? fmtMonth(viewMonth) :
-                                         `Année ${viewYear}`;
-  const avgSub    = period === 'week'  ? 'sur la semaine' :
-                    period === 'month' ? 'sur le mois' : 'sur l\'année';
+  const periodSub = period === 'week'   ? `Semaine du ${fmtWeek(week)}` :
+                    period === 'month'  ? fmtMonth(viewMonth) :
+                    period === 'fiscal' ? fiscalYear.label :
+                                          `Année ${viewYear}`;
+  const avgSub    = period === 'week'   ? 'sur la semaine' :
+                    period === 'month'  ? 'sur le mois' :
+                    period === 'fiscal' ? "sur l'exercice" :
+                                          "sur l'année";
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -120,9 +130,10 @@ export default function StatsView() {
       <div style={{ padding: '8px 24px', borderBottom: '1px solid #ECEAE4', background: '#fff', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         {/* Sélecteur de période */}
         <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2 }}>
-          <PeriodTab value="week"  active={period === 'week'}  onClick={setPeriod}>📅 Semaine</PeriodTab>
-          <PeriodTab value="month" active={period === 'month'} onClick={setPeriod}>📆 Mois</PeriodTab>
-          <PeriodTab value="year"  active={period === 'year'}  onClick={setPeriod}>🗓 Année</PeriodTab>
+          <PeriodTab value="week"   active={period === 'week'}   onClick={setPeriod}>📅 Semaine</PeriodTab>
+          <PeriodTab value="month"  active={period === 'month'}  onClick={setPeriod}>📆 Mois</PeriodTab>
+          <PeriodTab value="year"   active={period === 'year'}   onClick={setPeriod}>🗓 Année</PeriodTab>
+          <PeriodTab value="fiscal" active={period === 'fiscal'} onClick={setPeriod}>📋 Exercice</PeriodTab>
         </div>
 
         {/* Navigation selon la période */}
@@ -154,6 +165,16 @@ export default function StatsView() {
             </span>
             <Btn small onClick={() => setViewYear(y => String(parseInt(y) + 1))}>›</Btn>
             <Btn small onClick={() => setViewYear(String(new Date().getFullYear()))} variant="ghost">Cette année</Btn>
+          </div>
+        )}
+        {period === 'fiscal' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Btn small onClick={() => setFiscalOffset(o => o - 1)}>‹</Btn>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#1E2235', minWidth: 200, textAlign: 'center' }}>
+              {fiscalYear.label}
+            </span>
+            <Btn small onClick={() => setFiscalOffset(o => o + 1)}>›</Btn>
+            <Btn small onClick={() => setFiscalOffset(0)} variant="ghost">En cours</Btn>
           </div>
         )}
       </div>

@@ -17,8 +17,10 @@ router.put('/:key', ...ADMIN, (req, res) => {
   const { value } = req.body;
   if (value === undefined) return res.status(400).json({ error: 'value requis' });
   db_.run(
-    `UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = ?`,
-    [String(value), req.params.key]
+    `INSERT INTO settings(key, value, updated_at)
+     VALUES(?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [req.params.key, String(value)]
   );
   res.json({ message: 'Paramètre mis à jour' });
 });

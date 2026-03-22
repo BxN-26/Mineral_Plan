@@ -7,10 +7,8 @@ const MGR = [requireAuth, requireRole('admin','manager','superadmin','rh')];
 
 // ── GET /api/costs?week=YYYY-MM-DD&period=week|month|year ─────
 router.get('/', ...MGR, (req, res) => {
-  let { week = currentMonday(), period = 'week' } = req.query;
-
-  // Calculer la plage de dates
-  const { start, end, label } = getRange(week, period);
+  let { week = currentMonday(), period = 'week', start: qStart, end: qEnd } = req.query;
+  const { start, end, label } = getRange(week, period, qStart, qEnd);
 
   // Récupérer tous les créneaux de la plage
   const slots = db_.all(
@@ -71,24 +69,33 @@ router.get('/', ...MGR, (req, res) => {
   });
 });
 
+/** Retourne 'YYYY-MM-DD' en heure locale (sans décalage UTC). */
+function localIso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function currentMonday() {
   const now  = new Date();
   const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
   const mon  = new Date(now);
   mon.setDate(now.getDate() + diff);
-  return mon.toISOString().slice(0, 10);
+  return localIso(mon);
 }
 
-function getRange(weekStr, period) {
+function getRange(weekStr, period, qStart, qEnd) {
+  if (period === 'fiscal' && qStart && qEnd) {
+    return { start: qStart, end: qEnd,
+      label: `${fmt(new Date(qStart+'T12:00:00'))} → ${fmt(new Date(qEnd+'T12:00:00'))}` };
+  }
   const d = new Date(weekStr + 'T12:00:00');
   if (period === 'week') {
     const end = new Date(d); end.setDate(d.getDate() + 6);
-    return { start: weekStr, end: end.toISOString().slice(0,10), label: `Semaine du ${fmt(d)}` };
+    return { start: weekStr, end: localIso(end), label: `Semaine du ${fmt(d)}` };
   }
   if (period === 'month') {
-    const s = new Date(d.getFullYear(), d.getMonth(), 1);
-    const e = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-    return { start: s.toISOString().slice(0,10), end: e.toISOString().slice(0,10),
+    const s = new Date(d.getFullYear(), d.getMonth(), 1, 12, 0, 0);
+    const e = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12, 0, 0);
+    return { start: localIso(s), end: localIso(e),
       label: s.toLocaleString('fr-FR', { month: 'long', year: 'numeric' }) };
   }
   if (period === 'year') {

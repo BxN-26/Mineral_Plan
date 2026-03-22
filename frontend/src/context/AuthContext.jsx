@@ -26,13 +26,20 @@ export function AuthProvider({ children }) {
     return res.data.user;
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const res = await api.get('/auth/me');
+      setUser(res.data.user);
+    } catch (_) {}
+  }, []);
+
   const logout = useCallback(async () => {
     try { await api.post('/auth/logout'); } catch (_) {}
     setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

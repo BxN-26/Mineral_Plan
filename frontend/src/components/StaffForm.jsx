@@ -6,11 +6,15 @@ const COLORS = ['#6366F1','#EC4899','#14B8A6','#F97316','#8B5CF6','#06B6D4','#22
 const EMPTY = {
   firstname: '', lastname: '', initials: '', contract_h: 0,
   team_ids: [],
-  type: 'salarie', hourly_rate: 12, charge_rate: 0.45, color: '#6366F1',
+  type: 'salarie', contract_base: 'hebdomadaire',
+  hourly_rate: 12, charge_rate: 0.45, color: '#6366F1',
   functions: [], primary_function: '', manager_id: null,
   cp_balance: 25, rtt_balance: 5, phone: '', email: '', hire_date: '', note: '',
   permission_level: 'standard', initial_password: '',
 };
+
+// Types sans base horaire contractuelle
+const NO_HOURS_TYPES = ['benevole', 'renfort'];
 
 const toTeamIds = (s) => {
   if (Array.isArray(s?.team_ids) && s.team_ids.length) return s.team_ids.map(Number);
@@ -18,20 +22,33 @@ const toTeamIds = (s) => {
   return [];
 };
 
-const StaffForm = ({ initial, teams, functions, onSave, onClose }) => {
+const StaffForm = ({ initial, teams, functions, staff = [], onSave, onClose, onCancel }) => {
   const [f, setF] = useState(() => initial ? {
     ...EMPTY,
     ...initial,
     team_ids:         toTeamIds(initial),
     cp_balance:       initial.cp_balance  ?? 0,
     rtt_balance:      initial.rtt_balance ?? 0,
+    contract_base:    initial.contract_base || (NO_HOURS_TYPES.includes(initial.type) ? 'aucune' : 'hebdomadaire'),
     functions:        initial.functions || [],
     primary_function: initial.primary_function || '',
     manager_id:       initial.manager_id || null,
   } : { ...EMPTY });
 
   useEffect(() => {
-    setF(initial ? { ...EMPTY, ...initial, team_ids: toTeamIds(initial), cp_balance: initial.cp_balance ?? 0, rtt_balance: initial.rtt_balance ?? 0, charge_rate: initial.charge_rate ?? 0.45, functions: initial.functions || [], primary_function: initial.primary_function || '', manager_id: initial.manager_id || null, permission_level: initial.permission_level || 'standard', initial_password: '' } : { ...EMPTY });
+    setF(initial ? {
+      ...EMPTY, ...initial,
+      team_ids:         toTeamIds(initial),
+      cp_balance:       initial.cp_balance  ?? 0,
+      rtt_balance:      initial.rtt_balance ?? 0,
+      charge_rate:      initial.charge_rate ?? 0.45,
+      contract_base:    initial.contract_base || (NO_HOURS_TYPES.includes(initial.type) ? 'aucune' : 'hebdomadaire'),
+      functions:        initial.functions || [],
+      primary_function: initial.primary_function || '',
+      manager_id:       initial.manager_id || null,
+      permission_level: initial.permission_level || 'standard',
+      initial_password: '',
+    } : { ...EMPTY });
   }, [initial]);
 
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
@@ -79,15 +96,42 @@ const StaffForm = ({ initial, teams, functions, onSave, onClose }) => {
       </Field>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Type de contrat">
-          <select value={f.type} onChange={e => set('type', e.target.value)} style={inputSt}>
+        <Field label="Type de personnel">
+          <select value={f.type} onChange={e => {
+            const t = e.target.value;
+            setF(p => ({
+              ...p,
+              type: t,
+              contract_base: NO_HOURS_TYPES.includes(t) ? 'aucune'
+                           : (p.contract_base === 'aucune' ? 'hebdomadaire' : p.contract_base),
+            }));
+          }} style={inputSt}>
             <option value="salarie">Salarié(e)</option>
             <option value="renfort">Renfort / Vacation</option>
-            <option value="independant">Indépendant</option>
+            <option value="independant">Indépendant(e)</option>
             <option value="benevole">Bénévole</option>
           </select>
         </Field>
-        <Field label="Heures / sem"><input type="number" value={f.contract_h} onChange={e => set('contract_h', +e.target.value)} style={inputSt} /></Field>
+        <Field label="Base horaire">
+          <select
+            value={f.contract_base || 'aucune'}
+            onChange={e => set('contract_base', e.target.value)}
+            disabled={NO_HOURS_TYPES.includes(f.type)}
+            style={{ ...inputSt, opacity: NO_HOURS_TYPES.includes(f.type) ? 0.5 : 1 }}>
+            <option value="hebdomadaire">Horaire hebdomadaire</option>
+            <option value="annualise">Annualisé</option>
+            <option value="aucune">Sans base horaire</option>
+          </select>
+          {NO_HOURS_TYPES.includes(f.type) && (
+            <div style={{ fontSize: 11, color: '#9B9890', marginTop: 3 }}>Non applicable pour ce type de personnel</div>
+          )}
+        </Field>
+        {f.contract_base !== 'aucune' && (
+          <Field label={f.contract_base === 'annualise' ? 'Heures / an' : 'Heures / sem'}>
+            <input type="number" min="0" step="0.5" value={f.contract_h || 0}
+              onChange={e => set('contract_h', +e.target.value)} style={inputSt} />
+          </Field>
+        )}
         <Field label="Taux horaire (€)"><input type="number" step="0.5" value={f.hourly_rate} onChange={e => set('hourly_rate', +e.target.value)} style={inputSt} /></Field>
         <Field label="Taux charges (%)">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -152,22 +196,65 @@ const StaffForm = ({ initial, teams, functions, onSave, onClose }) => {
           style={{ ...inputSt, resize: 'vertical' }} placeholder="Informations complémentaires…" />
       </Field>
 
+      {/* Manager direct */}
+      <Field label="Manager direct (approbateur N1 des congés)">
+        <select
+          value={f.manager_id ?? ''}
+          onChange={e => set('manager_id', e.target.value ? Number(e.target.value) : null)}
+          style={inputSt}
+        >
+          <option value="">— Aucun manager direct —</option>
+          {staff
+            .filter(s => s.id !== initial?.id) // exclure soi-même
+            .map(s => (
+              <option key={s.id} value={s.id}>
+                {s.firstname} {s.lastname || ''}
+              </option>
+            ))}
+        </select>
+        <div style={{ fontSize: 11, color: '#9B9890', marginTop: 4 }}>
+          La personne choisie recevra les demandes de congés et les échanges de planning de ce salarié pour validation.
+        </div>
+      </Field>
+
       {/* Accès application */}
       <div style={{ borderTop: '2px solid #F0EDE8', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: '#6B6860', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>Accès application</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="Niveau d'accès">
             <select value={f.permission_level || 'standard'} onChange={e => set('permission_level', e.target.value)} style={inputSt}>
-              <option value="standard">Standard — Planning &amp; profil</option>
-              <option value="bureau">Bureau/Admin — + Équipe &amp; congés</option>
-              <option value="direction">Direction — Accès complet</option>
+              <option value="standard">Staff</option>
+              <option value="bureau">Manager</option>
+              <option value="direction">Direction</option>
             </select>
+            {f.permission_level === 'standard' || !f.permission_level ? (
+              <div style={{ fontSize: 11, color: '#16A34A', marginTop: 5, lineHeight: 1.5,
+                background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 6, padding: '5px 8px' }}>
+                <strong>Staff</strong> — Mon planning, mon profil, mes congés, échanges de créneaux.
+              </div>
+            ) : f.permission_level === 'bureau' ? (
+              <div style={{ fontSize: 11, color: '#C5753A', marginTop: 5, lineHeight: 1.5,
+                background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 6, padding: '5px 8px' }}>
+                <strong>Manager</strong> — Tout Staff + gestion de l'équipe, validation des congés N1, relevés d'heures, édition du planning.
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#DC2626', marginTop: 5, lineHeight: 1.5,
+                background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 6, padding: '5px 8px' }}>
+                <strong>Direction</strong> — Accès complet : tout Manager + statistiques, coûts, configuration de l'application.
+              </div>
+            )}
           </Field>
           {!initial ? (
             <Field label="Mot de passe initial">
               <input type="password" value={f.initial_password || ''}
                 onChange={e => set('initial_password', e.target.value)} style={inputSt}
                 placeholder="Laisser vide = pas de compte" />
+              <div style={{ fontSize: 11, color: '#6B6860', marginTop: 5, lineHeight: 1.5,
+                background: '#F8F7F5', border: '1px solid #E4E0D8', borderRadius: 6, padding: '6px 8px' }}>
+                🔑 <strong>Laisser vide</strong> : le salarié est créé dans le personnel mais <em>sans accès à l'application</em>.<br />
+                🔐 <strong>Renseigner un mot de passe</strong> : un compte est créé. À la première connexion,
+                l'application demandera obligatoirement au salarié de choisir son propre mot de passe personnel.
+              </div>
             </Field>
           ) : (
             <div style={{ paddingTop: 18 }}>
@@ -184,7 +271,7 @@ const StaffForm = ({ initial, teams, functions, onSave, onClose }) => {
         <Btn onClick={save} variant="primary" style={{ flex: 1, justifyContent: 'center' }}>
           ✓ {initial ? 'Enregistrer les modifications' : 'Créer le membre'}
         </Btn>
-        <Btn onClick={onClose}>Annuler</Btn>
+        <Btn onClick={onClose ?? onCancel}>Annuler</Btn>
       </div>
     </div>
   );

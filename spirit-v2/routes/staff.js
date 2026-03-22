@@ -86,11 +86,23 @@ router.get('/:id', AUTH, (req, res) => {
 
 // ── POST /api/staff ───────────────────────────────────────────
 router.post('/', ...ADMIN, (req, res) => {
+  // Lire les valeurs par défaut configurées
+  const defCp     = db_.get("SELECT value FROM settings WHERE key='leave_default_cp_balance'");
+  const defRtt    = db_.get("SELECT value FROM settings WHERE key='leave_default_rtt_balance'");
+  const defCharge = db_.get("SELECT value FROM settings WHERE key='rh_default_charge_rate'");
+  const defH      = db_.get("SELECT value FROM settings WHERE key='rh_default_contract_h'");
+
   const {
     firstname, lastname = '', initials, email, phone,
     team_id, team_ids,
-    type = 'salarie', contract_h = 0, hourly_rate = 0,
-    color = '#6366F1', note, hire_date, cp_balance = 0, rtt_balance = 0,
+    type = 'salarie',
+    contract_base = (type === 'benevole' || type === 'renfort') ? 'aucune' : 'hebdomadaire',
+    contract_h   = defH      ? Number(defH.value)      : 0,
+    hourly_rate  = 0,
+    charge_rate  = defCharge ? Number(defCharge.value) / 100 : 0.45,
+    color = '#6366F1', note, hire_date,
+    cp_balance   = defCp     ? Number(defCp.value)     : 25,
+    rtt_balance  = defRtt    ? Number(defRtt.value)    : 5,
     manager_id, functions: fns = [], primary_function,
     permission_level, initial_password,
   } = req.body;
@@ -106,11 +118,11 @@ router.post('/', ...ADMIN, (req, res) => {
   const r = db_.run(
     `INSERT INTO staff
        (firstname, lastname, initials, email, phone, team_id, type,
-        contract_h, hourly_rate, color, note, hire_date,
+        contract_base, contract_h, hourly_rate, color, note, hire_date,
         cp_balance, rtt_balance, manager_id, active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
     [firstname, lastname, initials || firstname.slice(0, 2).toUpperCase(), email || null,
-     phone || null, primaryTeamId, type, contract_h, hourly_rate, color, note || null,
+     phone || null, primaryTeamId, type, contract_base, contract_h, hourly_rate, color, note || null,
      hire_date || null, cp_balance, rtt_balance, manager_id || null]
   );
   const staffId = r.lastInsertRowid;
@@ -146,7 +158,7 @@ router.post('/', ...ADMIN, (req, res) => {
     } else if (initial_password && email) {
       const hash = bcrypt.hashSync(initial_password, 12);
       db_.run(
-        'INSERT OR IGNORE INTO users (email, password, role, staff_id, active) VALUES (?,?,?,?,1)',
+        'INSERT OR IGNORE INTO users (email, password, role, staff_id, active, must_change_password) VALUES (?,?,?,?,1,1)',
         [email.toLowerCase().trim(), hash, role, staffId]
       );
     }
@@ -160,7 +172,7 @@ router.put('/:id', ...ADMIN, (req, res) => {
   const {
     firstname, lastname, initials, email, phone,
     team_id, team_ids,
-    type, contract_h, hourly_rate, charge_rate, color, note, hire_date,
+    type, contract_base, contract_h, hourly_rate, charge_rate, color, note, hire_date,
     cp_balance, rtt_balance, manager_id, functions: fns, primary_function,
     active,
   } = req.body;
@@ -185,6 +197,7 @@ router.put('/:id', ...ADMIN, (req, res) => {
        phone         = COALESCE(?, phone),
        team_id       = ?,
        type          = COALESCE(?, type),
+       contract_base = COALESCE(?, contract_base),
        contract_h    = COALESCE(?, contract_h),
        hourly_rate   = COALESCE(?, hourly_rate),
        charge_rate   = COALESCE(?, charge_rate),
@@ -198,7 +211,7 @@ router.put('/:id', ...ADMIN, (req, res) => {
        updated_at    = datetime('now')
      WHERE id = ?`,
     [firstname, lastname, initials, email, phone, newTeamId, type,
-     contract_h, hourly_rate, charge_rate ?? null, color, note, hire_date,
+     contract_base ?? null, contract_h, hourly_rate, charge_rate ?? null, color, note, hire_date,
      cp_balance, rtt_balance, manager_id, active ?? null, req.params.id]
   );
 
