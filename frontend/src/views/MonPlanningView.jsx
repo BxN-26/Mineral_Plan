@@ -12,6 +12,7 @@ const HOUR_H    = 56;  // 14px × 4 quarts
 const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;
 const HOUR_LABELS = Array.from({ length: DAY_END - DAY_START + 1 }, (_, i) => DAY_START + i);
 const SLOT_H    = 14;
+const todayDayIdx = () => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; };
 
 const timeToY  = (t) => (t - DAY_START) * HOUR_H;
 const fmtTime  = (t) => { const h = Math.floor(t); const m = Math.round((t - h) * 60); return `${h}h${m === 0 ? '' : String(m).padStart(2, '0')}`; };
@@ -28,6 +29,8 @@ const MonPlanningView = () => {
   const { user }                                           = useAuth();
   const { staff, functions, schedules, loadWeekSchedules } = useApp();
   const [wk, setWk]                                        = useState(0);
+  const [dayMode, setDayMode]   = useState(() => localStorage.getItem('spirit-mon-planning-mode') === 'day');
+  const [currentDay, setCurrentDay] = useState(todayDayIdx);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
 
@@ -81,13 +84,38 @@ const MonPlanningView = () => {
     );
   }
 
+  const toggleDayMode = (val) => {
+    setDayMode(val);
+    localStorage.setItem('spirit-mon-planning-mode', val ? 'day' : 'week');
+  };
+  const prevDay = () => {
+    if (currentDay > 0) { setCurrentDay(d => d - 1); }
+    else { setCurrentDay(6); setWk(w => w - 1); }
+  };
+  const nextDay = () => {
+    if (currentDay < 6) { setCurrentDay(d => d + 1); }
+    else { setCurrentDay(0); setWk(w => w + 1); }
+  };
+
+  const toggleBtnSt = (active) => ({
+    padding: '4px 11px', borderRadius: 5, border: 'none', cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: 11, fontWeight: active ? 600 : 400,
+    background: active ? '#fff' : 'transparent',
+    color: active ? '#1E2235' : '#9B9890',
+    boxShadow: active ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
+  });
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {/* Toolbar */}
       <div style={{ padding: '10px 18px', borderBottom: '1px solid #ECEAE4', background: '#fff', display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 130 }}>
           <div style={{ fontWeight: 700, fontSize: 16, color: '#1E2235' }}>Mon planning</div>
-          <div style={{ fontSize: 11, color: '#8B8880' }}>{weekLabel}</div>
+          <div style={{ fontSize: 11, color: '#8B8880' }}>
+            {dayMode
+              ? (dates[currentDay]?.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) || '')
+              : weekLabel}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: `${myStaff.color}15`, border: `1.5px solid ${myStaff.color}30`, borderRadius: 8 }}>
           <AvatarImg s={myStaff} size={26} />
@@ -96,28 +124,44 @@ const MonPlanningView = () => {
             <div style={{ fontSize: 10, color: '#9B9890' }}>{totalH}h planifiées cette&nbsp;semaine</div>
           </div>
         </div>
+        {/* Toggle semaine / jour */}
+        <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2, flexShrink: 0 }}>
+          <button style={toggleBtnSt(!dayMode)} onClick={() => toggleDayMode(false)}>📅 Semaine</button>
+          <button style={toggleBtnSt(dayMode)}  onClick={() => toggleDayMode(true)}>📌 Jour</button>
+        </div>
         <div style={{ display: 'flex', gap: 3, marginLeft: 'auto' }}>
-          <button onClick={() => setWk(w => w - 1)} style={navBtn}>◀</button>
-          <button onClick={() => setWk(0)}           style={navBtn}>Auj.</button>
-          <button onClick={() => setWk(w => w + 1)} style={navBtn}>▶</button>
+          {dayMode ? (
+            <>
+              <button onClick={prevDay} style={navBtn}>◀</button>
+              <button onClick={nextDay} style={navBtn}>▶</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => setWk(w => w - 1)} style={navBtn}>◀</button>
+              <button onClick={() => setWk(0)}           style={navBtn}>Auj.</button>
+              <button onClick={() => setWk(w => w + 1)} style={navBtn}>▶</button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Grille agenda */}
       <div style={{ flex: 1, overflow: 'auto', background: '#FAFAF8' }}>
         {/* Header jours */}
-        <div style={{ display: 'grid', gridTemplateColumns: '44px repeat(7,1fr)', position: 'sticky', top: 0, zIndex: 10, background: '#F5F3EF', borderBottom: '2px solid #E4E0D8' }}>
-          <div />
-          {DAYS.map((day, di) => {
-            const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
-            return (
-              <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '1px solid #E4E0D8' }}>
-                <div style={{ fontSize: 9, fontWeight: 600, color: isToday?'#C5753A':'#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
-                <div style={{ fontSize: 15, fontWeight: isToday?800:600, color: isToday?'#C5753A':'#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
-              </div>
-            );
-          })}
-        </div>
+        {!dayMode && (
+          <div style={{ display: 'grid', gridTemplateColumns: '44px repeat(7,1fr)', position: 'sticky', top: 0, zIndex: 10, background: '#F5F3EF', borderBottom: '2px solid #E4E0D8' }}>
+            <div />
+            {DAYS.map((day, di) => {
+              const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
+              return (
+                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '1px solid #E4E0D8' }}>
+                  <div style={{ fontSize: 9, fontWeight: 600, color: isToday?'#C5753A':'#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
+                  <div style={{ fontSize: 15, fontWeight: isToday?800:600, color: isToday?'#C5753A':'#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Corps */}
         <div style={{ display: 'flex' }}>
@@ -128,8 +172,8 @@ const MonPlanningView = () => {
             ))}
           </div>
 
-          {/* Colonnes */}
-          {DAYS.map((_, di) => {
+          {/* Colonnes — mode semaine ou mode jour */}
+          {(dayMode ? [currentDay] : DAYS.map((_, i) => i)).map((di) => {
             const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
             const daySpans = mySpans[di] || [];
             return (

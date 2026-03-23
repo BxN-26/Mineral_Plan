@@ -23,7 +23,6 @@ function weekStart(offset) {
 
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
 const ROGrid = ({ spans, staff, functions, dates }) => {
-  const tod = todayDayIdx();
   return (
     <div style={{ display: 'flex', overflowX: 'auto' }}>
       {/* Colonne heures */}
@@ -37,7 +36,7 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
       </div>
       {/* Colonnes jours */}
       {dates.map((date, d) => {
-        const isToday = d === tod;
+        const isToday = date.toDateString() === new Date().toDateString();
         const daySpans = spans[d] || [];
         return (
           <div key={d} style={{ flex: 1, minWidth: 100, position: 'relative' }}>
@@ -110,6 +109,8 @@ const GeneralPlanningView = () => {
   const { staff, functions, schedules, loadWeekSchedules } = useApp();
   const [wk,      setWk]      = useState(0);
   const [selFns,  setSelFns]  = useState([]); // [] = toutes
+  const [dayMode, setDayMode] = useState(() => localStorage.getItem('spirit-general-planning-mode') === 'day');
+  const [currentDay, setCurrentDay] = useState(todayDayIdx);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
 
@@ -135,6 +136,26 @@ const GeneralPlanningView = () => {
   const toggleFn = (slug) => setSelFns(prev =>
     prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
   );
+
+  const toggleDayMode = (val) => {
+    setDayMode(val);
+    localStorage.setItem('spirit-general-planning-mode', val ? 'day' : 'week');
+  };
+  const prevDay = () => {
+    if (currentDay > 0) { setCurrentDay(d => d - 1); }
+    else { setCurrentDay(6); setWk(w => w - 1); }
+  };
+  const nextDay = () => {
+    if (currentDay < 6) { setCurrentDay(d => d + 1); }
+    else { setCurrentDay(0); setWk(w => w + 1); }
+  };
+
+  // Grille selon mode
+  const displayDates = dayMode ? [dates[currentDay]] : dates;
+  const displaySpans = dayMode ? [spans[currentDay] || []] : spans;
+  const dayLabel     = dates[currentDay]
+    ? dates[currentDay].toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
 
   // Spans filtrés selon fonctions actives
   const spans = useMemo(() => {
@@ -162,22 +183,45 @@ const GeneralPlanningView = () => {
     color: sel ? fn.color : '#9B9890',
     fontSize: 11, fontFamily: 'inherit', fontWeight: sel ? 700 : 400,
   });
+  const toggleBtnSt = (active) => ({
+    padding: '4px 11px', borderRadius: 5, border: 'none', cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: 11, fontWeight: active ? 600 : 400,
+    background: active ? '#fff' : 'transparent',
+    color: active ? '#1E2235' : '#9B9890',
+    boxShadow: active ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {/* En-tête */}
-      <div style={{ padding: '14px 18px 10px', borderBottom: '1px solid #ECEAE4', background: '#fff', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <div style={{ fontWeight: 700, fontSize: 17, color: '#1E2235', flex: 1 }}>Planning Général</div>
-          <span style={{ fontSize: 11, background: '#F5F3EF', color: '#6B6860', borderRadius: 20, padding: '3px 10px' }}>
+      <div style={{ padding: '12px 18px 8px', borderBottom: '1px solid #ECEAE4', background: '#fff', flexShrink: 0 }}>
+        {/* Ligne 1 : titre + toggle semaine/jour + badge + nav */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ fontWeight: 700, fontSize: 16, color: '#1E2235', marginRight: 4 }}>Planning Général</div>
+          {/* Toggle semaine / jour */}
+          <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2, flexShrink: 0 }}>
+            <button style={toggleBtnSt(!dayMode)} onClick={() => toggleDayMode(false)}>📅 Semaine</button>
+            <button style={toggleBtnSt(dayMode)}  onClick={() => toggleDayMode(true)}>📌 Jour</button>
+          </div>
+          <span style={{ fontSize: 11, background: '#F5F3EF', color: '#6B6860', borderRadius: 20, padding: '3px 10px', flexShrink: 0 }}>
             {totalSlots} créneaux
           </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setWk(w => w - 1)} style={btnSt}>‹</button>
-          <span style={{ fontWeight: 600, fontSize: 13, color: '#1E2235', flex: 1, textAlign: 'center' }}>{weekLabel}</span>
-          {wk !== 0 && <button onClick={() => setWk(0)} style={{ ...btnSt, fontSize: 11 }}>Auj.</button>}
-          <button onClick={() => setWk(w => w + 1)} style={btnSt}>›</button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
+            {dayMode ? (
+              <>
+                <button onClick={prevDay} style={btnSt}>‹</button>
+                <span style={{ fontWeight: 600, fontSize: 12, color: '#1E2235', padding: '5px 8px', whiteSpace: 'nowrap' }}>{dayLabel}</span>
+                <button onClick={nextDay} style={btnSt}>›</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setWk(w => w - 1)} style={btnSt}>‹</button>
+                <span style={{ fontWeight: 600, fontSize: 12, color: '#1E2235', padding: '5px 8px', whiteSpace: 'nowrap' }}>{weekLabel}</span>
+                {wk !== 0 && <button onClick={() => setWk(0)} style={{ ...btnSt, fontSize: 11 }}>Auj.</button>}
+                <button onClick={() => setWk(w => w + 1)} style={btnSt}>›</button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -202,7 +246,7 @@ const GeneralPlanningView = () => {
 
       {/* Grille */}
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        <ROGrid spans={spans} staff={staff.filter(s => s.active)} functions={functions} dates={dates} />
+        <ROGrid spans={displaySpans} staff={staff.filter(s => s.active)} functions={functions} dates={displayDates} />
       </div>
     </div>
   );

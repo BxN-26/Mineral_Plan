@@ -41,6 +41,14 @@ function useIsMobile() {
   return v;
 }
 
+function useIsTouch() {
+  const [v, set] = useState(() => window.innerWidth < 1024);
+  useEffect(() => { const h = () => set(window.innerWidth < 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
+  return v;
+}
+
+const todayDayIdx = () => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; };
+
 function weekStart(offset) {
   const now = new Date();
   const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
@@ -474,12 +482,118 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════ */
+/* ─── Modale tactile (bottom sheet ajout/édition) ────────────── */
+const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots, checkConstraints, onSave, onRemove, onClose }) => {
+  const isEdit = modal.type === 'edit';
+  const span   = isEdit ? modal.span : null;
+  const [staffId,  setStaffId]  = useState(isEdit ? span.staffId  : (fnStaff[0]?.id ?? null));
+  const [start,    setStart]    = useState(isEdit ? span.start    : modal.start);
+  const [end,      setEnd]      = useState(isEdit ? span.end      : modal.end);
+  const [taskType, setTaskType] = useState(isEdit ? (span.taskType || 'permanent') : 'permanent');
+  const [error,    setError]    = useState(null);
+
+  const dayCourses = courseSlots || [];
+  const matchedCourse = dayCourses.find(cs => start >= cs.hour_start && start < cs.hour_end);
+
+  const inp = { border: '1px solid #E4E0D8', borderRadius: 7, padding: '8px 10px', fontSize: 13, fontFamily: 'inherit', width: '100%', boxSizing: 'border-box', background: '#FAFAF8' };
+
+  const handleSave = () => {
+    if (!staffId) { setError('Sélectionnez un salarié'); return; }
+    if (end <= start) { setError('L\'heure de fin doit être après le début'); return; }
+    const violations = checkConstraints(staffId, dayIndex, start, end, isEdit ? span : null);
+    if (violations.length > 0) { setError(violations[0]); return; }
+    const courseSlotId = matchedCourse ? matchedCourse.id : null;
+    onSave(staffId, start, end, taskType, courseSlotId);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300 }} onTouchMove={e => e.stopPropagation()}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: '#fff', borderRadius: '18px 18px 0 0', padding: '0 18px 32px', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 -4px 28px rgba(0,0,0,.18)' }}>
+        {/* Poignée */}
+        <div style={{ textAlign: 'center', padding: '12px 0 8px' }}>
+          <div style={{ width: 38, height: 4, background: '#E4E0D8', borderRadius: 2, display: 'inline-block' }} />
+        </div>
+        <div style={{ fontWeight: 700, fontSize: 17, color: '#1E2235', marginBottom: 18 }}>
+          {isEdit ? 'Modifier le créneau' : 'Nouveau créneau'}
+        </div>
+
+        {/* Salarié */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Salarié</div>
+          <select value={staffId ?? ''} onChange={e => setStaffId(Number(e.target.value))} style={inp}>
+            {fnStaff.map(s => <option key={s.id} value={s.id}>{s.firstname || s.name} {s.lastname || ''}</option>)}
+          </select>
+        </div>
+
+        {/* Horaires */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Début</div>
+            <input type="number" min={DAY_START} max={DAY_END} step={0.25} value={start}
+              onChange={e => setStart(parseFloat(e.target.value))} style={inp} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Fin</div>
+            <input type="number" min={DAY_START} max={DAY_END} step={0.25} value={end}
+              onChange={e => setEnd(parseFloat(e.target.value))} style={inp} />
+          </div>
+        </div>
+
+        {matchedCourse && (
+          <div style={{ fontSize: 11, color: '#4A8C6E', background: '#EBF5F0', borderRadius: 6, padding: '6px 10px', marginBottom: 12 }}>
+            📚 Cours associé : {matchedCourse.group_name} ({fmtTime(matchedCourse.hour_start)}–{fmtTime(matchedCourse.hour_end)})
+          </div>
+        )}
+
+        {/* Type tâche */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 7, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Type d'activité</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {TASK_TYPE_KEYS.map(k => {
+              const tt = TASK_TYPES[k]; const sel = taskType === k;
+              return (
+                <button key={k} onClick={() => setTaskType(k)} style={{
+                  padding: '6px 12px', borderRadius: 20, border: `1.5px solid ${sel ? tt.color : '#E4E0D8'}`,
+                  background: sel ? tt.color + '22' : '#fff', color: sel ? tt.color : '#9B9890',
+                  fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', fontWeight: sel ? 700 : 400,
+                }}>
+                  {tt.icon} {tt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {error && <div style={{ color: '#DC3545', fontSize: 12, marginBottom: 12, padding: '7px 10px', background: '#FFF0F0', borderRadius: 7 }}>{error}</div>}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={handleSave} style={{ flex: 1, padding: '13px', background: '#1E2235', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {isEdit ? 'Mettre à jour' : 'Créer le créneau'}
+          </button>
+          {isEdit && (
+            <button onClick={onRemove} style={{ padding: '13px 16px', background: '#FFF0F0', color: '#DC3545', border: 'none', borderRadius: 10, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+              🗑
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════ */
 const PlanningView = () => {
   const { staff, functions, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
   const isMobile  = useIsMobile();
+  const isTouch   = useIsTouch();
   const [wk,       setWk]      = useState(0);
   const [activeFn, setActiveFn] = useState(() => functions[0]?.slug || '');
   const [mode,     setMode]    = useState('fn');
+  // États mode tactile
+  const [touchDay,   setTouchDay]   = useState(todayDayIdx);
+  const [touchModal, setTouchModal] = useState(null); // null | {type:'add',start,end} | {type:'edit',span}
+  const [dragMode,   setDragMode]   = useState(false); // basculer vers drag & drop sur tablette
   const [highlightStaffId, setHighlightStaffId] = useState(null);
 
   const panelDragStaff = useRef(null);
@@ -793,50 +907,261 @@ const PlanningView = () => {
     );
   };
 
-  /* ─── MOBILE ──────────────────────────────────────────────── */
-  if (isMobile) {
+  /* ─── Navigation tactile (day) ────────────────────────────── */
+  const touchPrevDay = useCallback(() => {
+    if (touchDay > 0) { setTouchDay(d => d - 1); }
+    else { setTouchDay(6); setWk(w => w - 1); }
+  }, [touchDay]);
+  const touchNextDay = useCallback(() => {
+    if (touchDay < 6) { setTouchDay(d => d + 1); }
+    else { setTouchDay(0); setWk(w => w + 1); }
+  }, [touchDay]);
+
+  /* ─── TOUCH (mobile + tablette <1024px, sauf si dragMode) ─── */
+  if (isTouch && !dragMode) {
+    const touchDate   = dates[touchDay];
+    const isToday     = touchDate?.toDateString() === new Date().toDateString();
+    const daySpans    = (spans[touchDay] || []);
+    const dayCourses  = courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === touchDay);
+    const touchDayLabel = touchDate
+      ? touchDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+      : '';
+    const dayNavBtn = { padding: '8px 14px', background: '#F5F3EF', border: '1px solid #E4E0D8', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, color: '#1E2235' };
+
+    // Calcul des positions de spans (évite chevauchements)
+    const sorted = [...daySpans].sort((a, b) => a.start - b.start);
+    const cols = []; const placed = sorted.map(sp => {
+      let col = cols.findIndex(end => end <= sp.start);
+      if (col === -1) { cols.push(sp.end); col = cols.length - 1; } else cols[col] = sp.end;
+      return { sp, col };
+    });
+    const colCount = Math.max(1, cols.length);
+
     return (
-      <div style={{ padding: 20, textAlign: 'center', color: '#9B9890', fontSize: 13 }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>🖥️</div>
-        L'édition du planning est optimisée pour desktop.
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+        {/* Toolbar tactile */}
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid #ECEAE4', background: '#fff', flexShrink: 0 }}>
+          {/* Ligne 1: Titre + toggle drag (tablette) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#1E2235' }}>Planning</div>
+              <div style={{ fontSize: 10, color: '#9B9890' }}>{weekLabel}</div>
+            </div>
+            <div style={{ flex: 1 }} />
+            {!isMobile && (
+              <button onClick={() => setDragMode(true)} style={{
+                padding: '6px 12px', background: '#F0EDE8', border: '1px solid #E4E0D8',
+                borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11,
+                color: '#5B5855', display: 'flex', alignItems: 'center', gap: 5,
+              }}>🖱️ Mode souris</button>
+            )}
+          </div>
+          {/* Ligne 2: Chips fonctions */}
+          {mode === 'fn' && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 8 }}>
+              {functions.map(f => (
+                <button key={f.slug} onClick={() => setActiveFn(f.slug)} style={{
+                  padding: '5px 11px', borderRadius: 20, border: `1.5px solid ${activeFn===f.slug?f.color:'#E4E0D8'}`,
+                  background: activeFn===f.slug?(f.bg_color||'#F5F5F5'):'#fff',
+                  color: activeFn===f.slug?f.color:'#9B9890', cursor: 'pointer',
+                  fontSize: 11, fontWeight: activeFn===f.slug?700:400, fontFamily: 'inherit',
+                }}>{f.icon} {f.name}</button>
+              ))}
+            </div>
+          )}
+          {/* Ligne 3: Navigation jour */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={touchPrevDay} style={dayNavBtn}>‹</button>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: isToday ? '#C5753A' : '#1E2235', textTransform: 'capitalize' }}>{touchDayLabel}</div>
+            </div>
+            <button onClick={touchNextDay} style={dayNavBtn}>›</button>
+          </div>
+        </div>
+
+        {/* Avertissement contraintes */}
+        {constraintWarn && (
+          <div style={{ background: '#FFF0F0', borderBottom: '1px solid #FECACA', padding: '10px 14px', display: 'flex', alignItems: 'flex-start', gap: 8, flexShrink: 0 }}>
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              {constraintWarn.map((v, i) => <div key={i} style={{ color: '#DC3545', fontSize: 12 }}>• {v}</div>)}
+            </div>
+            <button onClick={() => setConstraintWarn(null)} style={{ background: 'none', border: 'none', color: '#9B9890', cursor: 'pointer', fontSize: 16 }}>✕</button>
+          </div>
+        )}
+
+        {/* Grille jour tactile */}
+        <div style={{ flex: 1, overflow: 'auto', background: '#FAFAF8' }}>
+          <div style={{ display: 'flex', minHeight: TOTAL_H }}>
+            {/* Axe horaire */}
+            <div style={{ width: 44, flexShrink: 0, position: 'relative', height: TOTAL_H, background: '#F5F3EF', borderRight: '1px solid #E4E0D8' }}>
+              {HOUR_LABELS.slice(0, -1).map(h => (
+                <div key={h} style={{ position: 'absolute', top: (h-DAY_START)*HOUR_H - 7, right: 6, fontSize: 9, color: '#B0ACA5', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}h</div>
+              ))}
+            </div>
+            {/* Colonne jour (tappable) */}
+            <div style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isToday?'#FFFCF9':'#fff' }}
+              onClick={e => {
+                if (mode !== 'fn') return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const y = e.clientY - rect.top;
+                const t = Math.round(Math.max(DAY_START, Math.min(DAY_END - 1, DAY_START + y / HOUR_H)) * 4) / 4;
+                // Snap sur cours si applicable
+                const match = dayCourses.find(cs => t >= cs.hour_start && t < cs.hour_end);
+                const s = match ? match.hour_start : t;
+                const en = match ? match.hour_end   : Math.min(DAY_END, t + 1);
+                setTouchModal({ type: 'add', start: s, end: en });
+              }}
+            >
+              {/* Lignes horaires */}
+              {HOUR_LABELS.slice(0, -1).map(h => (
+                <div key={h} style={{ position: 'absolute', left: 0, right: 0, top: (h-DAY_START)*HOUR_H, borderTop: '1px solid #F0EDE8', pointerEvents: 'none' }}>
+                  {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q*SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
+                </div>
+              ))}
+              {/* Cours de référence (fond) */}
+              {dayCourses.map(cs => (
+                <div key={cs.id} style={{
+                  position: 'absolute', top: timeToY(cs.hour_start), left: 0, right: 0,
+                  height: timeToY(cs.hour_end) - timeToY(cs.hour_start),
+                  background: `${cs.color}12`, borderLeft: `3px solid ${cs.color}60`,
+                  pointerEvents: 'none', zIndex: 1,
+                }}>
+                  <div style={{ fontSize: 9, color: cs.color, padding: '2px 5px', fontWeight: 600 }}>{cs.group_name}</div>
+                </div>
+              ))}
+              {/* Blocs existants */}
+              {placed.map(({ sp, col }) => {
+                const s = staff.find(x => x.id === sp.staffId);
+                if (!s) return null;
+                const top  = timeToY(sp.start);
+                const h    = Math.max(SLOT_H * 2, timeToY(sp.end) - top);
+                const w    = colCount > 1 ? `calc(${100/colCount}% - 3px)` : 'calc(100% - 4px)';
+                const left = colCount > 1 ? `calc(${col*100/colCount}% + 2px)` : '2px';
+                const tt   = sp.taskType ? TASK_TYPES[sp.taskType] : null;
+                return (
+                  <div key={`${sp.staffId}-${sp.start}`}
+                    onClick={e => { e.stopPropagation(); setTouchModal({ type: 'edit', span: sp }); }}
+                    style={{
+                      position: 'absolute', top, left, width: w, height: h,
+                      background: `${s.color}22`, border: `2px solid ${s.color}80`,
+                      borderRadius: 8, overflow: 'hidden', boxSizing: 'border-box',
+                      zIndex: 3, cursor: 'pointer', padding: '4px 7px',
+                      touchAction: 'none',
+                    }}
+                  >
+                    {tt && <div style={{ width: 3, position: 'absolute', left: 0, top: 0, bottom: 0, background: tt.color, borderRadius: '8px 0 0 8px' }} />}
+                    <div style={{ paddingLeft: tt ? 5 : 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Avatar s={s} size={16} />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: s.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.firstname || s.name}</span>
+                      </div>
+                      {(sp.end - sp.start) >= 0.5 && (
+                        <div style={{ fontSize: 10, color: '#9B9890', marginTop: 1 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Indicateur «touchez pour ajouter» (si pas de spans) — mode fn uniquement */}
+              {mode === 'fn' && daySpans.length === 0 && (
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', color: '#C0BCB5', pointerEvents: 'none' }}>
+                  <div style={{ fontSize: 28, marginBottom: 6 }}>👆</div>
+                  <div style={{ fontSize: 12 }}>Touchez la grille pour ajouter un créneau</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Modale ajout/édition */}
+        {touchModal && (
+          <TouchSpanModal
+            modal={touchModal}
+            dayIndex={touchDay}
+            fnStaff={fnStaff}
+            staff={staff}
+            activeFn={activeFn}
+            courseSlots={dayCourses}
+            checkConstraints={checkConstraints}
+            onSave={(staffId, start, end, taskType, courseSlotId) => {
+              const next = cloneSpans(spans);
+              if (touchModal.type === 'add') {
+                next[touchDay] = [...(next[touchDay] || []), { staffId, start, end, taskType, courseSlotId }];
+              } else {
+                const i = next[touchDay].findIndex(s => s.staffId === touchModal.span.staffId && s.start === touchModal.span.start);
+                if (i !== -1) next[touchDay][i] = { ...next[touchDay][i], staffId, start, end, taskType, courseSlotId };
+              }
+              updateSpans(next);
+              setTouchModal(null);
+            }}
+            onRemove={() => {
+              if (touchModal.type !== 'edit') return;
+              removeSpan(touchDay, touchModal.span);
+              setTouchModal(null);
+            }}
+            onClose={() => setTouchModal(null)}
+          />
+        )}
+
+        {/* Modal gestion des créneaux de cours */}
+        {showCourseModal && fn && (
+          <CourseSlotModal fn={fn} courseSlots={courseSlots.filter(cs => cs.fn_slug === fn.slug)}
+            onClose={() => setShowCourseModal(false)} onChanged={loadCourseSlots} />
+        )}
       </div>
     );
   }
 
-  /* ─── DESKTOP ─────────────────────────────────────────────── */
+  /* ─── DESKTOP (ou mode drag tablette) ─────────────────────── */
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', height: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {isTouch && dragMode && (
+        <div style={{ padding: '8px 18px', background: '#EBF0FE', borderBottom: '1px solid #C7D2F8', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, color: '#3B4FC4', flex: 1 }}>🖱️ Mode souris (glisser-déposer)</span>
+          <button onClick={() => setDragMode(false)} style={{ padding: '4px 12px', background: '#fff', border: '1px solid #C7D2F8', borderRadius: 6, cursor: 'pointer', fontSize: 11, color: '#3B4FC4', fontFamily: 'inherit' }}>
+            Retour mode tactile
+          </button>
+        </div>
+      )}
       {/* Toolbar */}
-      <div style={{ padding: '10px 18px', borderBottom: '1px solid #ECEAE4', background: '#fff', display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
-        <div style={{ minWidth: 130 }}>
-          <div style={{ fontWeight: 700, fontSize: 16, color: '#1E2235' }}>Planning</div>
-          <div style={{ fontSize: 11, color: '#8B8880' }}>{weekLabel}</div>
+      <div style={{ padding: '10px 18px 8px', borderBottom: '1px solid #ECEAE4', background: '#fff', flexShrink: 0 }}>
+
+        {/* Ligne 1 : titre + toggle fn/all + nav semaine */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: mode === 'fn' ? 8 : 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#1E2235', whiteSpace: 'nowrap' }}>Planning</div>
+            <div style={{ fontSize: 10, color: '#8B8880', whiteSpace: 'nowrap' }}>{weekLabel}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2, flexShrink: 0 }}>
+            {[['fn','📋 Par fonction'],['all','👥 Vue globale']].map(([v,l]) => (
+              <button key={v} onClick={() => setMode(v)} style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: mode===v?'#fff':'transparent', color: mode===v?'#1E2235':'#9B9890', fontWeight: mode===v?600:400, fontSize: 11, boxShadow: mode===v?'0 1px 3px rgba(0,0,0,.1)':'none', whiteSpace: 'nowrap' }}>{l}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
+            <Btn onClick={() => setWk(w => w-1)} small>◀</Btn>
+            <Btn onClick={() => setWk(0)} small>Auj.</Btn>
+            <Btn onClick={() => setWk(w => w+1)} small>▶</Btn>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2 }}>
-          {[['fn','📋 Par fonction'],['all','👥 Vue globale']].map(([v,l]) => (
-            <button key={v} onClick={() => setMode(v)} style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: mode===v?'#fff':'transparent', color: mode===v?'#1E2235':'#9B9890', fontWeight: mode===v?600:400, fontSize: 11, boxShadow: mode===v?'0 1px 3px rgba(0,0,0,.1)':'none' }}>{l}</button>
-          ))}
-        </div>
+
+        {/* Ligne 2 : chips fonctions + actions (seulement en mode fn) */}
         {mode === 'fn' && (
-          <div style={{ display: 'flex', gap: 4, flex: 1, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             {functions.map(f => (
-              <button key={f.slug} onClick={() => setActiveFn(f.slug)} style={{ padding: '3px 9px', borderRadius: 20, border: `1.5px solid ${activeFn===f.slug?f.color:'#E4E0D8'}`, background: activeFn===f.slug?(f.bg_color||'#F5F5F5'):'#fff', color: activeFn===f.slug?f.color:'#9B9890', cursor: 'pointer', fontSize: 10, fontWeight: activeFn===f.slug?700:400, fontFamily: 'inherit' }}>
+              <button key={f.slug} onClick={() => setActiveFn(f.slug)} style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${activeFn===f.slug?f.color:'#E4E0D8'}`, background: activeFn===f.slug?(f.bg_color||'#F5F5F5'):'#fff', color: activeFn===f.slug?f.color:'#9B9890', cursor: 'pointer', fontSize: 11, fontWeight: activeFn===f.slug?700:400, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                 {f.icon} {f.name}
               </button>
             ))}
+            {fn && (
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexShrink: 0 }}>
+                <Btn onClick={() => { setShowCourseModal(true); setShowTemplates(false); }} small title="Gérer les créneaux de cours">🎓 Cours</Btn>
+                <Btn onClick={() => setShowTemplates(v => !v)} small style={{ background: showTemplates ? '#EBF0FE' : undefined, color: showTemplates ? '#5B75DB' : undefined }}>📋 Modèles</Btn>
+              </div>
+            )}
           </div>
         )}
-        <div style={{ display: 'flex', gap: 3, flexShrink: 0, marginLeft: 'auto' }}>
-          {mode === 'fn' && fn && (
-            <>
-              <Btn onClick={() => { setShowCourseModal(true); setShowTemplates(false); }} small title="Gérer les créneaux de cours">🎓 Cours</Btn>
-              <Btn onClick={() => setShowTemplates(v => !v)} small style={{ background: showTemplates ? '#EBF0FE' : undefined, color: showTemplates ? '#5B75DB' : undefined }}>📋 Modèles</Btn>
-            </>
-          )}
-          <Btn onClick={() => setWk(w => w-1)} small>◀</Btn>
-          <Btn onClick={() => setWk(0)} small>Auj.</Btn>
-          <Btn onClick={() => setWk(w => w+1)} small>▶</Btn>
-        </div>
       </div>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

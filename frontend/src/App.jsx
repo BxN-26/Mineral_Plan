@@ -41,6 +41,22 @@ const VIEW_COMPONENTS = {
   'planning-general': GeneralPlanningView,
 };
 
+/* ─── Labels vues ───────────────────────────────────────────── */
+const VIEW_LABELS = {
+  'planning':          'Planning',
+  'mon-planning':      'Mon planning',
+  'equipe':            'Équipe',
+  'conges':            'Congés & absences',
+  'releves':           'Relevés',
+  'config':            'Configuration',
+  'stats':             'Statistiques',
+  'costs':             'Coûts',
+  'profil':            'Mon profil',
+  'echanges':          'Échanges',
+  'planning-equipe':   'Planning équipe',
+  'planning-general':  'Planning général',
+};
+
 /* ─── Shell interne (après authentification) ─────────────────── */
 function AppShell() {
   const { user } = useAuth();
@@ -58,7 +74,7 @@ function AppShell() {
   const [schedules,  setSchedules]  = useState({}); // { [week]: { [fnSlug]: grid } }
   const [dataReady,  setDataReady]  = useState(false);
   const [isMobile,    setIsMobile]    = useState(() => window.innerWidth < 768);
-  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   /* Chargement initial de toutes les données */
   const loadAll = useCallback(async () => {
@@ -88,11 +104,7 @@ function AppShell() {
   useEffect(() => { if (user) loadAll(); }, [user, loadAll]);
 
   useEffect(() => {
-    const onResize = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (!mobile) setSidebarOpen(true);
-    };
+    const onResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -145,8 +157,8 @@ function AppShell() {
   return (
     <AppCtx.Provider value={ctx}>
       <div style={{ display: 'flex', height: '100vh', fontFamily: "'Inter','Segou UI',system-ui,sans-serif", background: colors.bgPage, overflow: 'hidden' }}>
-        {/* Overlay sombre mobile */}
-        {isMobile && sidebarOpen && (
+        {/* Overlay sombre (sidebar en drawer sur toutes tailles) */}
+        {sidebarOpen && (
           <div
             onClick={() => setSidebarOpen(false)}
             style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 99 }}
@@ -159,28 +171,29 @@ function AppShell() {
         />
         <main style={{
           flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column',
-          marginLeft: isMobile ? 0 : 220,
+          marginLeft: 0,
         }}>
-          {/* Topbar hamburger visible uniquement sur mobile */}
-          {isMobile && (
-            <div style={{
-              padding: '10px 14px', background: '#181C2E',
-              display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
-            }}>
-              <button
-                onClick={() => setSidebarOpen(true)}
-                style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0 }}
-                aria-label="Ouvrir le menu"
-              >☰</button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <img src="/logo_mineral_plan.png" alt="minéral Spirit" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
-                <span style={{ color: '#fff', fontWeight: 800, fontSize: 13 }}>minéral Spirit</span>
-              </div>
-              <div style={{ marginLeft: 'auto' }}>
-                <NotifBell />
-              </div>
+          {/* Topbar permanente avec hamburger */}
+          <div style={{
+            padding: '10px 14px', background: '#181C2E',
+            display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+          }}>
+            <button
+              onClick={() => setSidebarOpen(v => !v)}
+              style={{ background: 'none', border: 'none', color: '#fff', fontSize: 22, cursor: 'pointer', lineHeight: 1, padding: 0 }}
+              aria-label="Ouvrir le menu"
+            >☰</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img src="/logo_mineral_plan.png" alt="minéral Spirit" style={{ width: 26, height: 26, borderRadius: '50%', objectFit: 'cover' }} />
+              <span style={{ color: '#fff', fontWeight: 800, fontSize: 13 }}>minéral Spirit</span>
             </div>
-          )}
+            {VIEW_LABELS[view] && (
+              <span style={{ color: '#9B9890', fontSize: 12 }}>· {VIEW_LABELS[view]}</span>
+            )}
+            <div style={{ marginLeft: 'auto' }}>
+              <NotifBell />
+            </div>
+          </div>
           {/* Bannière push notifications */}
           {pushStatus === 'prompt' && (
             <PushBanner onAccept={subscribe} />
