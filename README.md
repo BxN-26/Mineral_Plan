@@ -46,22 +46,6 @@ cp Caddyfile.example Caddyfile
 sudo caddy start
 ```
 
----
-
-## Comptes de démonstration
-
-| Email                         | Mot de passe  | Rôle          |
-|-------------------------------|---------------|---------------|
-| admin@mineral-spirit.fr       | Spirit2025!   | superadmin    |
-| marion@mineral-spirit.fr      | Marion2025    | manager       |
-| josephine@mineral-spirit.fr   | Jose2025      | employee      |
-| eva@mineral-spirit.fr         | Eva2025       | employee      |
-| brigitte@mineral-spirit.fr    | Brig2025      | employee      |
-| marine@mineral-spirit.fr      | Marine2025    | employee      |
-| mateo@email.fr                | Mateo2025     | employee      |
-
----
-
 ## Structure du projet
 
 ```
