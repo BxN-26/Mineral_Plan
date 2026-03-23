@@ -3,7 +3,7 @@ import { useApp } from '../App';
 
 const DAYS      = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAY_START = 7;
-const DAY_END   = 22;
+const DAY_END   = 24;
 const HOUR_H    = 56;
 const SLOT_H    = 14;
 const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;

@@ -46,7 +46,7 @@ const ConfigView = () => {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 18px' }}>
-        {tab === 'organigramme' && <OrgTab settings={settings} setSettings={setSettings} />}
+        {tab === 'organigramme' && <OrgTab />}
         {tab === 'equipes'   && <TeamsConfig    teams={teams}     reload={reloadTeams} />}
         {tab === 'fonctions' && <FunctionsConfig functions={functions} reload={reloadFunctions} />}
         {tab === 'conges'    && <CongesConfig    settings={settings} setSettings={setSettings} />}
@@ -127,6 +127,10 @@ const SectionTitle = ({ children }) => (
 /* ─── Onglet Congés & Absences ──────────────────────────── */
 const CongesConfig = ({ settings, setSettings }) => {
   const { map, save } = useSettings(settings, setSettings);
+  const [leaveTypes, setLeaveTypes] = useState([]);
+  useEffect(() => {
+    api.get('/leave-types').then(r => setLeaveTypes(r.data || [])).catch(() => {});
+  }, []);
 
   const noticeEnabled    = map['leave_min_notice_enabled'] === 'true';
   const noticeDays       = map['leave_min_notice_days']    || '2';
@@ -244,6 +248,36 @@ const CongesConfig = ({ settings, setSettings }) => {
         <NumInput value={rttDefault} min={0} max={30} unit="jours"
           onChange={v => save('leave_default_rtt_balance', parseInt(v, 10) || 0)} />
       </SettingCard>
+
+      <SectionTitle>Chaîne d’approbation (par type de congé)</SectionTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {leaveTypes.map(lt => {
+          const levels = Array.isArray(lt.approval_levels)
+            ? lt.approval_levels
+            : (() => { try { return JSON.parse(lt.approval_levels || '["manager"]'); } catch { return ['manager']; } })();
+          return (
+            <SettingCard
+              key={lt.id}
+              icon={<span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: lt.color, marginTop: 6, flexShrink: 0 }} />}
+              title={lt.label}
+              desc="Niveaux hiérarchiques requis pour valider une demande de ce type"
+            >
+              <ApprovalChainEditor
+                levels={levels}
+                onChange={async newLevels => {
+                  setLeaveTypes(prev => prev.map(x => x.id === lt.id ? { ...x, approval_levels: newLevels } : x));
+                  try {
+                    await api.put(`/leave-types/${lt.id}/approval`, { approval_levels: newLevels });
+                  } catch {
+                    const lr = await api.get('/leave-types');
+                    setLeaveTypes(lr.data || []);
+                  }
+                }}
+              />
+            </SettingCard>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -253,8 +287,9 @@ const CongesConfig = ({ settings, setSettings }) => {
 const PlanningConfig = ({ settings, setSettings }) => {
   const { map, save } = useSettings(settings, setSettings);
 
-  const dayStart = map['planning_day_start'] || '7';
-  const dayEnd   = map['planning_day_end']   || '22';
+  const dayStart  = map['planning_day_start'] || '7';
+  const dayEnd     = map['planning_day_end']   || '24';
+  const swapLevel  = map['swap_approval_level'] || 'manager';
 
   const maxAmpEnabled = map['planning_max_amplitude_enabled'] === 'true';
   const maxAmpHours   = map['planning_max_amplitude_hours']   || '12';
@@ -336,11 +371,36 @@ const PlanningConfig = ({ settings, setSettings }) => {
           </div>
         )}
       </SettingCard>
+
+      <SectionTitle>Approbation des échanges de créneaux</SectionTitle>
+      <SettingCard icon="🔄" title="Niveau requis pour approuver un échange"
+        desc="Quel profil doit valider les demandes d’échange de créneaux de planning ?">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+          {[
+            { v: 'manager',   l: 'Manager N+1',  d: 'Le manager direct de chaque demandeur' },
+            { v: 'rh',        l: 'RH / Admin',   d: 'Tout utilisateur avec rôle RH ou Admin' },
+            { v: 'direction', l: 'Direction',     d: 'Uniquement les administrateurs' },
+          ].map(opt => (
+            <button key={opt.v} onClick={() => save('swap_approval_level', opt.v)}
+              style={{
+                padding: '8px 14px', borderRadius: 8, border: '1.5px solid',
+                borderColor: swapLevel === opt.v ? '#C5753A' : '#ECEAE4',
+                background: swapLevel === opt.v ? '#FFF4EC' : '#F8F7F5',
+                color: swapLevel === opt.v ? '#C5753A' : '#1E2235',
+                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                fontWeight: swapLevel === opt.v ? 700 : 400, transition: 'all .15s',
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 600 }}>{opt.l}</div>
+              <div style={{ fontSize: 11, color: '#6B6860', marginTop: 2 }}>{opt.d}</div>
+            </button>
+          ))}
+        </div>
+      </SettingCard>
     </div>
   );
 };
 
-/* ─── Onglet RH & Coûts ─────────────────────────────── */
 const RhConfig = ({ settings, setSettings }) => {
   const { map, save } = useSettings(settings, setSettings);
 
@@ -805,20 +865,14 @@ const ApprovalChainEditor = ({ levels, onChange }) => {
 };
 
 /* ─── Onglet Organigramme ──────────────────────────────────── */
-const OrgTab = ({ settings, setSettings }) => {
-  const { map, save } = useSettings(settings, setSettings);
+const OrgTab = () => {
   const [staff,      setStaff]      = useState([]);
-  const [leaveTypes, setLeaveTypes] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [savingMgr,  setSavingMgr]  = useState({});
 
   useEffect(() => {
-    Promise.all([
-      api.get('/staff'),
-      api.get('/leave-types'),
-    ]).then(([sr, lr]) => {
+    api.get('/staff').then(sr => {
       setStaff(sr.data || []);
-      setLeaveTypes(lr.data || []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -855,24 +909,11 @@ const OrgTab = ({ settings, setSettings }) => {
     }
   };
 
-  const updateLeaveApproval = async (ltId, levels) => {
-    // Optimistic update
-    setLeaveTypes(prev => prev.map(lt => lt.id === ltId ? { ...lt, approval_levels: levels } : lt));
-    try {
-      await api.put(`/leave-types/${ltId}/approval`, { approval_levels: levels });
-    } catch {
-      const lr = await api.get('/leave-types');
-      setLeaveTypes(lr.data || []);
-    }
-  };
-
   if (loading) return (
     <div style={{ padding: 60, textAlign: 'center', color: '#9B9890', fontSize: 13 }}>
       Chargement de l'organigramme…
     </div>
   );
-
-  const swapLevel = map['swap_approval_level'] || 'manager';
 
   return (
     <div>
@@ -970,63 +1011,6 @@ const OrgTab = ({ settings, setSettings }) => {
         </table>
       </div>
 
-      {/* ── Approbation congés par type ── */}
-      <SectionTitle>🏖️ Chaîne d'approbation des congés (par type)</SectionTitle>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-        {leaveTypes.map(lt => {
-          const levels = Array.isArray(lt.approval_levels)
-            ? lt.approval_levels
-            : (() => { try { return JSON.parse(lt.approval_levels || '["manager"]'); } catch { return ['manager']; } })();
-          return (
-            <SettingCard
-              key={lt.id}
-              icon={
-                <span style={{
-                  display: 'inline-block', width: 12, height: 12,
-                  borderRadius: 3, background: lt.color, marginTop: 6, flexShrink: 0,
-                }} />
-              }
-              title={lt.label}
-              desc="Niveaux hiérarchiques requis pour valider une demande de ce type"
-            >
-              <ApprovalChainEditor
-                levels={levels}
-                onChange={newLevels => updateLeaveApproval(lt.id, newLevels)}
-              />
-            </SettingCard>
-          );
-        })}
-      </div>
-
-      {/* ── Approbation échanges ── */}
-      <SectionTitle>🔄 Approbation des échanges de créneaux</SectionTitle>
-      <SettingCard
-        icon="🔄"
-        title="Niveau requis pour approuver un échange"
-        desc="Quel profil doit valider les demandes d'échange de créneaux de planning ?"
-      >
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-          {[
-            { v: 'manager',   l: 'Manager N+1',  d: 'Le manager direct de chaque demandeur' },
-            { v: 'rh',        l: 'RH / Admin',   d: 'Tout utilisateur avec rôle RH ou Admin' },
-            { v: 'direction', l: 'Direction',     d: 'Uniquement les administrateurs' },
-          ].map(opt => (
-            <button key={opt.v} onClick={() => save('swap_approval_level', opt.v)}
-              style={{
-                padding: '8px 14px', borderRadius: 8, border: '1.5px solid',
-                borderColor: swapLevel === opt.v ? '#C5753A' : '#ECEAE4',
-                background: swapLevel === opt.v ? '#FFF4EC' : '#F8F7F5',
-                color: swapLevel === opt.v ? '#C5753A' : '#1E2235',
-                cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-                fontWeight: swapLevel === opt.v ? 700 : 400, transition: 'all .15s',
-              }}
-            >
-              <div style={{ fontSize: 12, fontWeight: 600 }}>{opt.l}</div>
-              <div style={{ fontSize: 11, color: '#6B6860', marginTop: 2 }}>{opt.d}</div>
-            </button>
-          ))}
-        </div>
-      </SettingCard>
     </div>
   );
 };

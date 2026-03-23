@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 const DAYS     = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH  = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const DAY_START = 7;
-const DAY_END   = 22;
+const DAY_END   = 24;
 const HOUR_H    = 56; // px par heure
 const SLOT_H    = 14; // px par quart d'heure
 const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;

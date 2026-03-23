@@ -7,7 +7,7 @@ const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'D
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 const DAY_START = 7;
-const DAY_END   = 22;
+const DAY_END   = 24;
 const HOUR_H    = 56;  // 14px × 4 quarts
 const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;
 const HOUR_LABELS = Array.from({ length: DAY_END - DAY_START + 1 }, (_, i) => DAY_START + i);

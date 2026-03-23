@@ -14,9 +14,9 @@ if (typeof document !== 'undefined' && !document.getElementById('spirit-highligh
 const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
-// Plage horaire : 7h → 22h
+// Plage horaire : 7h → 24h
 const DAY_START = 7;
-const DAY_END   = 22;
+const DAY_END   = 24;
 const SLOT_H    = 14;   // px par quart d'heure
 const HOUR_H    = SLOT_H * 4;
 const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;
