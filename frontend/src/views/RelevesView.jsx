@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
+import { useAuth } from '../context/AuthContext';
 import { PageHeader, Btn } from '../components/common';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
@@ -75,10 +76,12 @@ function countByFn(staffId, weekData) {
 /* ── Composant ─────────────────────────────────────────────────── */
 const RelevesView = () => {
   const { staff, functions, schedules, leaves, leaveTypes, settings } = useApp();
+  const { user } = useAuth();
   const isMobile = useIsMobile();
+  const isStaffRole = user?.role === 'staff';
 
   const [wk,            setWk]           = useState(0);
-  const [mode,          setMode]         = useState('heures');
+  const [mode,          setMode]         = useState(isStaffRole ? 'balance' : 'heures');
   const [search,        setSearch]       = useState('');
   const [period,        setPeriod]       = useState('week');
   const [viewMonth,     setViewMonth]    = useState(currentMonthStr);
@@ -140,9 +143,14 @@ const RelevesView = () => {
                           `Année ${viewYear}`;
 
   const filteredStaff = useMemo(() => {
+    if (isStaffRole) {
+      // Un staff ne voit que sa propre fiche
+      const own = staff.find(s => s.id === user?.staff_id);
+      return own ? [own] : [];
+    }
     const q = search.toLowerCase();
     return staff.filter(s => s.active && (!q || (`${s.firstname} ${s.lastname}`).toLowerCase().includes(q)));
-  }, [staff, search]);
+  }, [staff, search, isStaffRole, user?.staff_id]);
 
   /* ─── Congés filtrés selon la période ─────────────────── */
   const periodLeaves = useMemo(() => {
@@ -238,9 +246,10 @@ const RelevesView = () => {
       <div style={{ padding: isMobile ? '6px 10px' : '8px 18px', borderBottom: '1px solid #ECEAE4', background: '#fff', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {/* Mode heures/congés/balance */}
         <div style={{ display: 'flex', gap: 2, background: '#F5F3EF', borderRadius: 7, padding: 2 }}>
-          {[['heures', isMobile ? '⏱' : '⏱ Heures'], ['conges', isMobile ? '🌴' : '🌴 Congés'], ['balance', isMobile ? '⚖️' : '⚖️ Balance']].map(([v, l]) => (
-            <button key={v} onClick={() => setMode(v)}
-              style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: mode === v ? '#fff' : 'transparent', color: mode === v ? (v === 'balance' ? '#C5753A' : '#1E2235') : '#9B9890', fontWeight: mode === v ? 600 : 400, fontSize: 11, boxShadow: mode === v ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{l}</button>
+          {[['heures', isMobile ? '⏱' : '⏱ Heures'], ['conges', isMobile ? '🌴' : '🌴 Congés'], ['balance', isMobile ? '⚖️' : '⚖️ Balance']]
+            .map(([v, l]) => (
+              <button key={v} onClick={() => setMode(v)}
+                style={{ padding: '5px 10px', borderRadius: 5, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: mode === v ? '#fff' : 'transparent', color: mode === v ? (v === 'balance' ? '#C5753A' : '#1E2235') : '#9B9890', fontWeight: mode === v ? 600 : 400, fontSize: 11, boxShadow: mode === v ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{l}</button>
           ))}
         </div>
 
@@ -254,8 +263,11 @@ const RelevesView = () => {
           </div>
         )}
 
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Filtrer…"
-          style={{ padding: '5px 10px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#F5F3EF', fontSize: 12, outline: 'none', flex: isMobile ? 1 : undefined, minWidth: isMobile ? 0 : 150 }} />
+        {/* Barre de recherche — masquée pour staff */}
+        {!isStaffRole && (
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Filtrer…"
+            style={{ padding: '5px 10px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#F5F3EF', fontSize: 12, outline: 'none', flex: isMobile ? 1 : undefined, minWidth: isMobile ? 0 : 150 }} />
+        )}
 
         {/* Navigation selon la période */}
         {period === 'week' && (

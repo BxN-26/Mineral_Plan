@@ -19,6 +19,7 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
     ...(isMgr   ? [{ id: 'equipe',           label: 'Équipe',            icon: '👥', sub: 'Membres & fonctions' }] : []),
     { id: 'conges', label: isMgr ? 'Congés' : 'Mes congés', icon: '🏖️', sub: 'Approbation workflow', badge: isMgr && pending > 0 ? pending : 0 },
     ...(isMgr   ? [{ id: 'releves',          label: 'Relevés',           icon: '⏱️', sub: 'Heures & export' }] : []),
+    ...(!isMgr && user?.staff_id ? [{ id: 'releves', label: 'Mes relevés', icon: '⏱️', sub: 'Mes heures & balance' }] : []),
     ...(isRh    ? [{ id: 'stats',            label: 'Statistiques',      icon: '📊', sub: 'Analyse & KPIs' }] : []),
     ...(isAdmin ? [{ id: 'costs',            label: 'Coûts',             icon: '💶', sub: 'Masse salariale' }] : []),
     { id: 'echanges',           label: 'Échanges',            icon: '🔄', sub: 'Créneaux & swaps' },

@@ -3,12 +3,18 @@ const router = require('express').Router();
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 
+const STAFF_ROLE = [requireAuth]; // staff peut appeler mais filtré par staff_id
 const MGR = [requireAuth, requireRole('admin','manager','superadmin','rh')];
 
 // ── GET /api/stats?period=week&week=YYYY-MM-DD (défaut)
 //                  ?period=month&month=YYYY-MM
 //                  ?period=year&year=YYYY
-router.get('/', ...MGR, (req, res) => {
+router.get('/', requireAuth, (req, res) => {
+  const isStaff    = req.user.role === 'staff';
+  const ownStaffId = req.user.staff_id ?? null;
+  // Un staff sans staff_id lié ne peut rien voir
+  if (isStaff && !ownStaffId) return res.status(403).json({ error: 'Aucune fiche salarié liée' });
+
   const { period = 'week', week, month, year } = req.query;
 
   // Calculer les semaines à traiter
@@ -46,22 +52,25 @@ router.get('/', ...MGR, (req, res) => {
     for (const s of slots) allSlots.push({ ...s, week: w });
   }
 
-  const staffIds   = [...new Set(allSlots.map(s => s.staff_id))];
-  const totalHours = allSlots.reduce((a, s) => a + (s.hour_end - s.hour_start), 0);
-  const staffCount = db_.get('SELECT COUNT(*) AS c FROM staff WHERE active=1').c;
+  // Si rôle staff : restreindre à ses propres données
+  const visibleSlots = isStaff ? allSlots.filter(s => s.staff_id === ownStaffId) : allSlots;
+
+  const staffIds   = [...new Set(visibleSlots.map(s => s.staff_id))];
+  const totalHours = visibleSlots.reduce((a, s) => a + (s.hour_end - s.hour_start), 0);
+  const staffCount = isStaff ? 1 : db_.get('SELECT COUNT(*) AS c FROM staff WHERE active=1').c;
 
   // Heures par salarié (total periode)
   const byStaff = {};
-  for (const s of allSlots) byStaff[s.staff_id] = (byStaff[s.staff_id] || 0) + (s.hour_end - s.hour_start);
+  for (const s of visibleSlots) byStaff[s.staff_id] = (byStaff[s.staff_id] || 0) + (s.hour_end - s.hour_start);
 
   // Heures par fonction (total periode)
   const byFn = {};
-  for (const s of allSlots) byFn[s.fn_slug] = (byFn[s.fn_slug] || 0) + (s.hour_end - s.hour_start);
+  for (const s of visibleSlots) byFn[s.fn_slug] = (byFn[s.fn_slug] || 0) + (s.hour_end - s.hour_start);
 
   // Couverture par jour (week uniquement)
   const byDay = Array(7).fill(0);
   if (period === 'week') {
-    for (const s of allSlots) byDay[s.day_of_week] += (s.hour_end - s.hour_start);
+    for (const s of visibleSlots) byDay[s.day_of_week] += (s.hour_end - s.hour_start);
   }
 
   // Données salariés enrichies
@@ -69,7 +78,8 @@ router.get('/', ...MGR, (req, res) => {
     `SELECT s.id, s.firstname, s.lastname, s.initials, s.color, s.avatar_url,
             t.name AS team_name
      FROM staff s LEFT JOIN teams t ON t.id = s.team_id
-     WHERE s.active = 1 ORDER BY s.firstname`
+     WHERE s.active = 1 ${isStaff ? 'AND s.id = ?' : ''} ORDER BY s.firstname`,
+    isStaff ? [ownStaffId] : []
   );
   const staffHours = staffList.map(s => ({
     id: s.id, name: `${s.firstname} ${s.lastname}`, initials: s.initials,
@@ -104,7 +114,7 @@ router.get('/', ...MGR, (req, res) => {
 
   // ── Évolution par sous-période (pour graphique)
   let byPeriod = null;
-  if (period === 'month') {
+  if (!isStaff && period === 'month') {
     byPeriod = weeksToProcess.map(w => {
       const ws = allSlots.filter(s => s.week === w);
       return {
@@ -257,7 +267,14 @@ function fmtWeekShort(w) {
 }
 
 // ── GET /api/stats/balance?start=YYYY-MM-DD&end=YYYY-MM-DD ────
-router.get('/balance', ...MGR, (req, res) => {
+router.get('/balance', requireAuth, (req, res) => {
+  const isStaff    = req.user.role === 'staff';
+  const ownStaffId = req.user.staff_id ?? null;
+  if (isStaff && !ownStaffId) return res.status(403).json({ error: 'Aucune fiche salarié liée' });
+  // Vérifier droits : staff uniquement ses données, sinon rôle manager+
+  if (!isStaff && !['manager','rh','admin','superadmin'].includes(req.user.role))
+    return res.status(403).json({ error: 'Accès refusé' });
+
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start et end requis' });
 
@@ -281,7 +298,8 @@ router.get('/balance', ...MGR, (req, res) => {
     `SELECT id, firstname, lastname, initials, color, avatar_url,
             COALESCE(contract_base, 'hebdomadaire') AS contract_base,
             contract_h, type
-     FROM staff WHERE active = 1 ORDER BY firstname`
+     FROM staff WHERE active = 1 ${isStaff ? 'AND id = ?' : ''} ORDER BY firstname`,
+    isStaff ? [ownStaffId] : []
   );
 
   const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
