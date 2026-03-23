@@ -467,8 +467,10 @@ const RelevesView = () => {
             {balanceLoading && <div style={{ textAlign: 'center', padding: 40, color: '#9B9890' }}>Chargement…</div>}
 
             {!balanceLoading && balanceData && (() => {
-              const withContract    = balanceData.staff.filter(s => s.contract_base !== 'aucune');
-              const withoutContract = balanceData.staff.filter(s => s.contract_base === 'aucune' && s.planned_h > 0);
+              const q = search.toLowerCase();
+              const matchSearch = s => !q || `${s.firstname} ${s.lastname}`.toLowerCase().includes(q);
+              const withContract    = balanceData.staff.filter(s => s.contract_base !== 'aucune' && matchSearch(s));
+              const withoutContract = balanceData.staff.filter(s => s.contract_base === 'aucune' && s.planned_h > 0 && matchSearch(s));
               const total_contracted = withContract.reduce((a, s) => a + (s.contracted_h || 0), 0);
               const total_planned    = withContract.reduce((a, s) => a + s.planned_h, 0);
               const total_balance    = +(total_planned - total_contracted).toFixed(1);
