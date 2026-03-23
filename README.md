@@ -1,4 +1,4 @@
-# Mineral Plan. — Planning e gestion d'équipes
+# Mineral Plan. — Planning et gestion d'équipes
 
 Application de plannings transversaux, orientée gestion de salle d'escalade.
 
