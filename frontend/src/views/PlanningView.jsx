@@ -84,7 +84,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
   const left   = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
   return (
     <div
-      onMouseDown={e => mode === 'fn' && onMoveStart(e, span, dayIndex)}
+      onPointerDown={e => mode === 'fn' && onMoveStart(e, span, dayIndex)}
       style={{ position: 'absolute', top, left, width: w, height,
         background: highlighted ? `${s.color}35` : `${s.color}22`,
         border: highlighted ? '2px solid #C5753A' : `1.5px solid ${s.color}80`,
@@ -102,7 +102,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, fontWeight: 800, flexShrink: 0 }}>{s.initials[0]}</div>
           <span style={{ fontSize: 10, fontWeight: 700, color: s.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.firstname || s.name}</span>
           {mode === 'fn' && (
-            <button onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onRemove(dayIndex, span); }}
+            <button onPointerDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onRemove(dayIndex, span); }}
               style={{ marginLeft: 'auto', background: 'none', border: 'none', padding: '0 1px', cursor: 'pointer', color: s.color, opacity: .5, fontSize: 9, lineHeight: 1, flexShrink: 0 }}>✕</button>
           )}
         </div>
@@ -111,7 +111,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
         {dur >= 0.75 && mode === 'fn' && (
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div
-              onMouseDown={e => e.stopPropagation()}
+              onPointerDown={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); setShowTT(v => !v); }}
               style={{ marginTop: 1, display: 'inline-flex', alignItems: 'center', gap: 2, background: tt ? `${tt.color}18` : '#F0EDE8', border: `1px solid ${tt ? tt.color + '50' : '#E0DDD8'}`, borderRadius: 4, padding: '1px 4px', cursor: 'pointer', fontSize: 8, color: tt ? tt.color : '#9B9890', fontWeight: 600 }}
             >
@@ -119,7 +119,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
             </div>
             {showTT && (
               <div
-                onMouseDown={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
                 style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, background: '#fff', border: '1px solid #E4E0D8', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,.12)', padding: 4, minWidth: 130 }}
               >
                 <div onClick={e => { e.stopPropagation(); onTaskTypeChange(dayIndex, span, null); setShowTT(false); }} style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', borderRadius: 4, color: '#9B9890', background: !span.taskType ? '#F5F3EF' : 'transparent' }}>— Aucune</div>
@@ -135,7 +135,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
         )}
       </div>
       {mode === 'fn' && (
-        <div onMouseDown={e => { e.stopPropagation(); onResizeStart(e, span, dayIndex); }}
+        <div onPointerDown={e => { e.stopPropagation(); onResizeStart(e, span, dayIndex); }}
           style={{ height: 6, background: `${s.color}40`, cursor: 'ns-resize', borderTop: `1px solid ${s.color}50`, flexShrink: 0 }} />
       )}
     </div>
@@ -807,6 +807,7 @@ const PlanningView = () => {
   const onMoveStart = useCallback((e, span, dayIndex) => {
     if (mode !== 'fn') return;
     e.preventDefault();
+    e.currentTarget?.setPointerCapture?.(e.pointerId);
     interact.current = { type: 'move', staffId: span.staffId, dayIndex, span, origY: e.clientY, origStart: span.start, origEnd: span.end };
     setGhost({ dayIndex, start: span.start, end: span.end, staffId: span.staffId });
   }, [mode]);
@@ -814,6 +815,7 @@ const PlanningView = () => {
   // ── Resize d'un bloc ─────────────────────────────────────────
   const onResizeStart = useCallback((e, span, dayIndex) => {
     e.preventDefault();
+    e.currentTarget?.setPointerCapture?.(e.pointerId);
     interact.current = { type: 'resize', staffId: span.staffId, dayIndex, span, origY: e.clientY, origEnd: span.end };
     setGhost({ dayIndex, start: span.start, end: span.end, staffId: span.staffId });
   }, []);
@@ -860,9 +862,9 @@ const PlanningView = () => {
         if (i !== -1) { nx[cur.dayIndex][i] = { ...nx[cur.dayIndex][i], start: ns, end: ns + dur }; updateSpans(nx); }
       }
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup',   onUp);
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup',   onUp);
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
   }, [spans, updateSpans, checkConstraints, setConstraintWarn]);
 
   /* ─── Vue globale — colonne lecture seule ─────────────────── */
@@ -953,7 +955,7 @@ const PlanningView = () => {
                 padding: '6px 12px', background: '#F0EDE8', border: '1px solid #E4E0D8',
                 borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11,
                 color: '#5B5855', display: 'flex', alignItems: 'center', gap: 5,
-              }}>🖱️ Mode souris</button>
+              }}>🖱️ Souris/stylet</button>
             )}
           </div>
           {/* Ligne 2: Chips fonctions */}
@@ -1118,7 +1120,7 @@ const PlanningView = () => {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       {isTouch && dragMode && (
         <div style={{ padding: '8px 18px', background: '#EBF0FE', borderBottom: '1px solid #C7D2F8', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <span style={{ fontSize: 12, color: '#3B4FC4', flex: 1 }}>🖱️ Mode souris (glisser-déposer)</span>
+          <span style={{ fontSize: 12, color: '#3B4FC4', flex: 1 }}>🖱️ Souris/stylet (glisser-déposer)</span>
           <button onClick={() => setDragMode(false)} style={{ padding: '4px 12px', background: '#fff', border: '1px solid #C7D2F8', borderRadius: 6, cursor: 'pointer', fontSize: 11, color: '#3B4FC4', fontFamily: 'inherit' }}>
             Retour mode tactile
           </button>
