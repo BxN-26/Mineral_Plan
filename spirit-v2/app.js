@@ -25,6 +25,7 @@ const templatesRouter   = require('./routes/templates');
 const courseSlotsRouter = require('./routes/course-slots');
 const { router: pushRouter } = require('./routes/push');
 const leaveTypesRouter  = require('./routes/leave-types');
+const taskTypesRouter   = require('./routes/task-types');
 
 // ── Initialisation DB ─────────────────────────────────────────
 initSchema();
@@ -73,6 +74,7 @@ app.use('/api/templates',      templatesRouter);
 app.use('/api/course-slots',   courseSlotsRouter);
 app.use('/api/push',           pushRouter);
 app.use('/api/leave-types',    leaveTypesRouter);
+app.use('/api/task-types',     taskTypesRouter);
 
 // ── SPA fallback (renvoie index.html pour les routes React) ──
 app.get('*', (req, res, next) => {

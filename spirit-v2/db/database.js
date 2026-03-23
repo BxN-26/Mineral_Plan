@@ -391,6 +391,15 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('planning_constraints')").run();
   }
 
+  // ── Migration : paramètres affichage cours et tri planning ────
+  const planningDisplayDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='planning_display_settings'").get();
+  if (!planningDisplayDone) {
+    const seed2 = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed2.run('planning_course_slots_fns', '[]',       'json',   'Slugs de fonctions pour lesquelles afficher les créneaux de cours dans la grille', 'planning');
+    seed2.run('planning_group_by',         'function', 'string', 'Tri du planning : function | team | both', 'planning');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('planning_display_settings')").run();
+  }
+
   // ── Migration : paramètre niveau d'approbation des échanges ────────────────
   const swapApprovalDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='swap_approval_level_seed'").get();
   if (!swapApprovalDone) {
@@ -399,6 +408,29 @@ function getDb() {
     ).run('swap_approval_level', 'manager', 'string',
       'Niveau hiérarchique requis pour approuver les échanges de créneaux', 'organigramme');
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('swap_approval_level_seed')").run();
+  }
+
+  // ── Migration : table task_types ─────────────────────────────
+  const taskTypesDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='task_types_table'").get();
+  if (!taskTypesDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS task_types (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug       TEXT    NOT NULL UNIQUE,
+        label      TEXT    NOT NULL,
+        icon       TEXT    NOT NULL DEFAULT '⚙️',
+        color      TEXT    NOT NULL DEFAULT '#6B7280',
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    const seedTT = _db.prepare(
+      'INSERT OR IGNORE INTO task_types (slug, label, icon, color, sort_order) VALUES (?, ?, ?, ?, ?)'
+    );
+    seedTT.run('permanent',       'Permanence',    '🏬', '#5B75DB', 0);
+    seedTT.run('ouverture_blocs', 'Ouvert. blocs', '🪨', '#E8820C', 1);
+    seedTT.run('ouverture_voies', 'Ouvert. voies', '🧗', '#DC3545', 2);
+    seedTT.run('demontage',       'Démontage',     '🔧', '#6B7280', 3);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('task_types_table')").run();
   }
 
   // ── Migration : comptes première installation (superadmin + admin) ───────────

@@ -70,6 +70,7 @@ function AppShell() {
   const [functions,  setFunctions]  = useState([]);
   const [leaves,     setLeaves]     = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
+  const [taskTypes,  setTaskTypes]  = useState([]);
   const [settings,   setSettings]   = useState({});
   const [schedules,  setSchedules]  = useState({}); // { [week]: { [fnSlug]: grid } }
   const [dataReady,  setDataReady]  = useState(false);
@@ -80,13 +81,14 @@ function AppShell() {
   const loadAll = useCallback(async () => {
     setDataReady(false);
     try {
-      const [rs, rt, rf, rl, rlt, rset] = await Promise.all([
+      const [rs, rt, rf, rl, rlt, rset, rtt] = await Promise.all([
         api.get('/staff'),
         api.get('/teams'),
         api.get('/functions'),
         api.get('/leaves'),
         api.get('/settings/leave-types'),
         api.get('/settings'),
+        api.get('/task-types'),
       ]);
       setStaff(Array.isArray(rs.data)   ? rs.data   : []);
       setTeams(Array.isArray(rt.data)   ? rt.data   : []);
@@ -94,6 +96,7 @@ function AppShell() {
       setLeaves(Array.isArray(rl.data)  ? rl.data   : []);
       setLeaveTypes(Array.isArray(rlt.data) ? rlt.data  : []);
       setSettings(Array.isArray(rset.data) ? rset.data : rset.data ?? {});
+      setTaskTypes(Array.isArray(rtt.data) ? rtt.data : []);
     } catch (e) {
       console.error('[AppShell] Impossible de charger les données', e);
     } finally {
@@ -110,10 +113,11 @@ function AppShell() {
   }, []);
 
   /* Rechargement partiel */
-  const reloadStaff     = useCallback(async () => { const r = await api.get('/staff');     setStaff(Array.isArray(r.data)     ? r.data : []); }, []);
-  const reloadTeams     = useCallback(async () => { const r = await api.get('/teams');     setTeams(Array.isArray(r.data)     ? r.data : []); }, []);
-  const reloadFunctions = useCallback(async () => { const r = await api.get('/functions'); setFunctions(Array.isArray(r.data) ? r.data : []); }, []);
-  const reloadLeaves    = useCallback(async () => { const r = await api.get('/leaves');    setLeaves(Array.isArray(r.data)    ? r.data : []); }, []);
+  const reloadStaff        = useCallback(async () => { const r = await api.get('/staff');      setStaff(Array.isArray(r.data)      ? r.data : []); }, []);
+  const reloadTeams        = useCallback(async () => { const r = await api.get('/teams');      setTeams(Array.isArray(r.data)      ? r.data : []); }, []);
+  const reloadFunctions    = useCallback(async () => { const r = await api.get('/functions');  setFunctions(Array.isArray(r.data)  ? r.data : []); }, []);
+  const reloadLeaves       = useCallback(async () => { const r = await api.get('/leaves');     setLeaves(Array.isArray(r.data)     ? r.data : []); }, []);
+  const reloadTaskTypes    = useCallback(async () => { const r = await api.get('/task-types'); setTaskTypes(Array.isArray(r.data)  ? r.data : []); }, []);
 
   /* Push notifications */
   const pushEnabled = Array.isArray(settings)
@@ -143,11 +147,11 @@ function AppShell() {
 
   const ctx = {
     /* données */
-    staff, teams, functions, leaves, leaveTypes, settings, schedules,
+    staff, teams, functions, taskTypes, leaves, leaveTypes, settings, schedules,
     /* mutateurs */
     setStaff, setTeams, setFunctions, setLeaves, setLeaveTypes, setSettings, setSchedules,
     /* rechargements */
-    reloadStaff, reloadTeams, reloadFunctions, reloadLeaves, loadWeekSchedules,
+    reloadStaff, reloadTeams, reloadFunctions, reloadTaskTypes, reloadLeaves, loadWeekSchedules,
     /* navigation */
     view, setView,
     /* deep-link planning */

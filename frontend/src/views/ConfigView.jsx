@@ -10,7 +10,9 @@ const TABS = [
   { id: 'organigramme', label: '🏗️ Organigramme' },
   { id: 'equipes',   label: '🏠 Équipes' },
   { id: 'fonctions', label: '🔧 Fonctions' },
+  { id: 'taches',    label: '✅ Tâches' },
   { id: 'conges',    label: '🏖️ Congés' },
+  { id: 'fiscal',    label: '📆 Exercice' },
   { id: 'planning',  label: '📅 Planning' },
   { id: 'rh',        label: '👥 RH & Coûts' },
   { id: 'systeme',   label: '⚙️ Système' },
@@ -18,7 +20,7 @@ const TABS = [
 
 const ConfigView = () => {
   const { user }                                      = useAuth();
-  const { teams, functions, settings, setSettings, reloadTeams, reloadFunctions } = useApp();
+  const { teams, functions, taskTypes, settings, setSettings, reloadTeams, reloadFunctions, reloadTaskTypes } = useApp();
   const [tab, setTab]                                  = useState('organigramme');
   const isAdmin = ['admin', 'superadmin'].includes(user?.role);
 
@@ -49,7 +51,9 @@ const ConfigView = () => {
         {tab === 'organigramme' && <OrgTab />}
         {tab === 'equipes'   && <TeamsConfig    teams={teams}     reload={reloadTeams} />}
         {tab === 'fonctions' && <FunctionsConfig functions={functions} reload={reloadFunctions} />}
+        {tab === 'taches'    && <TaskTypesConfig taskTypes={taskTypes} reload={reloadTaskTypes} />}
         {tab === 'conges'    && <CongesConfig    settings={settings} setSettings={setSettings} />}
+        {tab === 'fiscal'    && <FiscalConfig    settings={settings} setSettings={setSettings} />}
         {tab === 'planning'  && <PlanningConfig  settings={settings} setSettings={setSettings} />}
         {tab === 'rh'        && <RhConfig        settings={settings} setSettings={setSettings} />}
         {tab === 'systeme'   && <SystemeConfig   settings={settings} setSettings={setSettings} />}
@@ -137,25 +141,6 @@ const CongesConfig = ({ settings, setSettings }) => {
   const cpDefault        = map['leave_default_cp_balance'] || '25';
   const rttDefault       = map['leave_default_rtt_balance']|| '5';
   const countMethod      = map['leave_count_method']       || 'working_days';
-  const fiscalType       = map['fiscal_year_type']         || 'calendar';
-  const fiscalStartMonth = map['fiscal_year_start_month']  || '9';
-  const fiscalStartDay   = map['fiscal_year_start_day']    || '1';
-
-  // Aperçu de l'exercice personnalisé
-  const fiscalPreview = (() => {
-    if (fiscalType !== 'custom') return null;
-    const sm = parseInt(fiscalStartMonth, 10);
-    const sd = parseInt(fiscalStartDay,   10);
-    const y  = new Date().getFullYear();
-    const startStr = `${y}-${String(sm).padStart(2,'0')}-${String(sd).padStart(2,'0')}`;
-    // Veille du début de l'exercice suivant — calcul en heure locale
-    const endDt = new Date(y + 1, sm - 1, sd);
-    endDt.setDate(endDt.getDate() - 1);
-    const pad = n => String(n).padStart(2, '0');
-    const endStr = `${endDt.getFullYear()}-${pad(endDt.getMonth()+1)}-${pad(endDt.getDate())}`;
-    const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
-    return `${fmt(startStr)} → ${fmt(endStr)}`;
-  })();
 
   return (
     <div style={{ maxWidth: 620 }}>
@@ -185,55 +170,6 @@ const CongesConfig = ({ settings, setSettings }) => {
           <option value="calendar_days">Jours calendaires (tous les jours)</option>
         </select>
       </SettingCard>
-
-      <SectionTitle>Exercice comptable</SectionTitle>
-
-      <SettingCard icon="📆" title="Bornes de l'année comptable"
-        desc="Définit les dates de début et fin de l'exercice. Utilisé dans les relevés annuels, les statistiques et le calcul de la balance d'heures de chaque salarié.">
-        <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-          {[
-            { v: 'calendar', l: '📆 Année calendaire', d: '1 janv. → 31 déc.' },
-            { v: 'custom',   l: '🗓 Exercice personnalisé', d: 'ex : 1 sept. → 31 août' },
-          ].map(opt => (
-            <button key={opt.v} onClick={() => save('fiscal_year_type', opt.v)} style={{
-              padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
-              fontFamily: 'inherit', background: '#F5F3EF', color: '#1E2235',
-              border: fiscalType === opt.v ? '2px solid #C5753A' : '2px solid transparent',
-              boxShadow: fiscalType === opt.v ? '0 0 0 1px #C5753A' : 'none',
-              transition: 'border .15s',
-            }}>
-              <div>{opt.l}</div>
-              <div style={{ fontSize: 10, fontWeight: 400, color: '#6B6860', marginTop: 1 }}>{opt.d}</div>
-            </button>
-          ))}
-        </div>
-      </SettingCard>
-
-      {fiscalType === 'custom' && (
-        <SettingCard icon="🗓" title="Jour et mois de début de l'exercice"
-          desc="L'exercice commence à la date indiquée et se termine la veille du même jour l'année suivante.">
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
-            <div>
-              <div style={{ fontSize: 11, color: '#6B6860', marginBottom: 3 }}>Mois de début</div>
-              <select value={fiscalStartMonth} onChange={e => save('fiscal_year_start_month', e.target.value)} style={{ ...inputSt, width: 'auto' }}>
-                {['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((m, i) => (
-                  <option key={i+1} value={i+1}>{m}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#6B6860', marginBottom: 3 }}>Jour</div>
-              <NumInput value={fiscalStartDay} min={1} max={28}
-                onChange={v => save('fiscal_year_start_day', parseInt(v,10) || 1)} />
-            </div>
-          </div>
-          {fiscalPreview && (
-            <div style={{ marginTop: 12, background: '#EBF5F0', border: '1px solid #A7F3D0', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#047857' }}>
-              ✅ Exercice en cours : <strong>{fiscalPreview}</strong>
-            </div>
-          )}
-        </SettingCard>
-      )}
 
       <SectionTitle>Soldes attribués aux nouveaux salariés</SectionTitle>
 
@@ -286,6 +222,7 @@ const CongesConfig = ({ settings, setSettings }) => {
 /* ─── Onglet Planning ────────────────────────────────── */
 const PlanningConfig = ({ settings, setSettings }) => {
   const { map, save } = useSettings(settings, setSettings);
+  const { functions } = useApp();
 
   const dayStart  = map['planning_day_start'] || '7';
   const dayEnd     = map['planning_day_end']   || '24';
@@ -295,6 +232,16 @@ const PlanningConfig = ({ settings, setSettings }) => {
   const maxAmpHours   = map['planning_max_amplitude_hours']   || '12';
   const minRestEnabled= map['planning_min_rest_enabled']       === 'true';
   const minRestHours  = map['planning_min_rest_hours']         || '11';
+
+  const courseSlotsFns = useMemo(() => {
+    try { return JSON.parse(map['planning_course_slots_fns'] || '[]'); } catch { return []; }
+  }, [map]);
+  const toggleCourseFn = slug => {
+    const next = courseSlotsFns.includes(slug)
+      ? courseSlotsFns.filter(s => s !== slug)
+      : [...courseSlotsFns, slug];
+    save('planning_course_slots_fns', JSON.stringify(next));
+  };
 
   return (
     <div style={{ maxWidth: 620 }}>
@@ -353,7 +300,7 @@ const PlanningConfig = ({ settings, setSettings }) => {
       </SettingCard>
 
       <SettingCard icon="💤" title="Repos minimum entre deux prises de poste"
-        desc="Vérifie qu'un salarié a bien bénéficié d'un temps de repos suffisant depuis la fin de son dernier poste (toutes fonctions confondues, sur la semaine en cours).">
+        desc="Vérifie qu'un salarié dispose d'un repos suffisant entre la fin d'une journée de travail et le début de la suivante. Ne s'applique pas aux créneaux d'une même journée (travail en horaires décalés ou coupés autorisé).">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: minRestEnabled ? 10 : 0 }}>
           <Toggle on={minRestEnabled} onChange={v => save('planning_min_rest_enabled', v)} />
           <span style={{ fontSize: 12, color: minRestEnabled ? '#16A34A' : '#9B9890' }}>
@@ -370,6 +317,28 @@ const PlanningConfig = ({ settings, setSettings }) => {
             </div>
           </div>
         )}
+      </SettingCard>
+
+      <SectionTitle>Affichage des créneaux de cours</SectionTitle>
+
+      <SettingCard icon="🎓" title="Fonctions pour lesquelles afficher les créneaux de cours"
+        desc="Les bandes de cours (horaires des groupes) ne s'affichent dans la grille que lorsque la fonction active fait partie de cette liste. Si aucune fonction n'est cochée, les créneaux de cours sont masqués partout.">
+        {functions.length === 0
+          ? <div style={{ fontSize: 12, color: '#9B9890', marginTop: 4 }}>Aucune fonction configurée.</div>
+          : <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+              {functions.map(f => {
+                const active = courseSlotsFns.includes(f.slug);
+                return (
+                  <label key={f.slug} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+                    <input type="checkbox" checked={active} onChange={() => toggleCourseFn(f.slug)}
+                      style={{ width: 15, height: 15, accentColor: f.color, cursor: 'pointer' }} />
+                    <span style={{ fontSize: 14 }}>{f.icon}</span>
+                    <span style={{ fontSize: 12, fontWeight: active ? 700 : 400, color: active ? f.color : '#6B6860' }}>{f.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+        }
       </SettingCard>
 
       <SectionTitle>Approbation des échanges de créneaux</SectionTitle>
@@ -766,6 +735,172 @@ const FunctionForm = ({ initial, err, onSave, onCancel }) => {
 };
 
 const inp = { padding: '6px 8px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#F5F3EF', fontSize: 12, width: '100%' };
+
+/* ─── Onglet Exercice comptable ─────────────────────────── */
+const FiscalConfig = ({ settings, setSettings }) => {
+  const { map, save } = useSettings(settings, setSettings);
+
+  const fiscalType       = map['fiscal_year_type']         || 'calendar';
+  const fiscalStartMonth = map['fiscal_year_start_month']  || '9';
+  const fiscalStartDay   = map['fiscal_year_start_day']    || '1';
+
+  const fiscalPreview = (() => {
+    if (fiscalType !== 'custom') return null;
+    const sm = parseInt(fiscalStartMonth, 10);
+    const sd = parseInt(fiscalStartDay,   10);
+    const y  = new Date().getFullYear();
+    const startStr = `${y}-${String(sm).padStart(2,'0')}-${String(sd).padStart(2,'0')}`;
+    const endDt = new Date(y + 1, sm - 1, sd);
+    endDt.setDate(endDt.getDate() - 1);
+    const pad = n => String(n).padStart(2, '0');
+    const endStr = `${endDt.getFullYear()}-${pad(endDt.getMonth()+1)}-${pad(endDt.getDate())}`;
+    const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    return `${fmt(startStr)} → ${fmt(endStr)}`;
+  })();
+
+  return (
+    <div style={{ maxWidth: 620 }}>
+      <SectionTitle>Bornes de l'exercice comptable</SectionTitle>
+
+      <SettingCard icon="📆" title="Type d'année comptable"
+        desc="Définit les dates de début et fin de l'exercice. Utilisé dans les relevés annuels, les statistiques et le calcul de la balance d'heures de chaque salarié.">
+        <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+          {[
+            { v: 'calendar', l: '📆 Année calendaire', d: '1 janv. → 31 déc.' },
+            { v: 'custom',   l: '🗓 Exercice personnalisé', d: 'ex : 1 sept. → 31 août' },
+          ].map(opt => (
+            <button key={opt.v} onClick={() => save('fiscal_year_type', opt.v)} style={{
+              padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600,
+              fontFamily: 'inherit', background: '#F5F3EF', color: '#1E2235',
+              border: fiscalType === opt.v ? '2px solid #C5753A' : '2px solid transparent',
+              boxShadow: fiscalType === opt.v ? '0 0 0 1px #C5753A' : 'none',
+              transition: 'border .15s',
+            }}>
+              <div>{opt.l}</div>
+              <div style={{ fontSize: 10, fontWeight: 400, color: '#6B6860', marginTop: 1 }}>{opt.d}</div>
+            </button>
+          ))}
+        </div>
+      </SettingCard>
+
+      {fiscalType === 'custom' && (
+        <SettingCard icon="🗓" title="Jour et mois de début de l'exercice"
+          desc="L'exercice commence à la date indiquée et se termine la veille du même jour l'année suivante.">
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#6B6860', marginBottom: 3 }}>Mois de début</div>
+              <select value={fiscalStartMonth} onChange={e => save('fiscal_year_start_month', e.target.value)} style={{ ...inputSt, width: 'auto' }}>
+                {['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'].map((m, i) => (
+                  <option key={i+1} value={i+1}>{m}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#6B6860', marginBottom: 3 }}>Jour</div>
+              <NumInput value={fiscalStartDay} min={1} max={28}
+                onChange={v => save('fiscal_year_start_day', parseInt(v,10) || 1)} />
+            </div>
+          </div>
+          {fiscalPreview && (
+            <div style={{ marginTop: 12, background: '#EBF5F0', border: '1px solid #A7F3D0', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#047857' }}>
+              ✅ Exercice en cours : <strong>{fiscalPreview}</strong>
+            </div>
+          )}
+        </SettingCard>
+      )}
+    </div>
+  );
+};
+
+/* ─── Onglet Tâches ─────────────────────────────────────── */
+const TaskTypesConfig = ({ taskTypes, reload }) => {
+  const [edit,     setEdit]     = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [err,      setErr]      = useState('');
+
+  const handleSave = async (data) => {
+    try {
+      if (edit) await api.put(`/task-types/${edit.id}`, data);
+      else      await api.post('/task-types', data);
+      await reload();
+      setShowForm(false);
+      setEdit(null);
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Erreur de sauvegarde');
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Supprimer ce type de tâche ?')) return;
+    try {
+      await api.delete(`/task-types/${id}`);
+      await reload();
+    } catch (e) {
+      window.alert(e.response?.data?.error || 'Erreur de suppression');
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 700 }}>
+      <div style={{ fontSize: 12, color: '#6B6860', marginBottom: 14, lineHeight: 1.6 }}>
+        Les types de tâches apparaissent dans les menus de création de créneaux du planning.
+        Vous pouvez les renommer, changer leur couleur et leur icône, ou en créer de nouveaux.
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontWeight: 700, fontSize: 14, color: '#1E2235' }}>Types de tâches ({(taskTypes||[]).length})</span>
+        <Btn variant="primary" onClick={() => { setEdit(null); setShowForm(true); setErr(''); }}>+ Nouveau type</Btn>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 8 }}>
+        {(taskTypes||[]).map(t => (
+          <div key={t.id} style={{ background: '#fff', border: `2px solid ${t.color}40`, borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>{t.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: t.color }}>{t.label}</div>
+              <div style={{ fontSize: 10, color: '#9B9890' }}>{t.slug}</div>
+            </div>
+            <button onClick={() => { setEdit(t); setShowForm(true); setErr(''); }}
+              style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+            <button onClick={() => handleDelete(t.id)}
+              style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 5, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626' }}>🗑</button>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <Modal onClose={() => setShowForm(false)} title={edit ? 'Modifier le type de tâche' : 'Nouveau type de tâche'}>
+          <TaskTypeForm initial={edit} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+const TaskTypeForm = ({ initial, err, onSave, onCancel }) => {
+  const [form, setForm] = useState({
+    slug:       initial?.slug       || '',
+    label:      initial?.label      || '',
+    icon:       initial?.icon       || '⚙️',
+    color:      initial?.color      || '#6B7280',
+    sort_order: initial?.sort_order ?? 0,
+  });
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {err && <div style={{ padding: '8px 12px', background: '#FEF2F2', borderRadius: 6, color: '#DC2626', fontSize: 12 }}>{err}</div>}
+      <Field label="Libellé"><input value={form.label} onChange={e => set('label', e.target.value)} style={inp} /></Field>
+      <Field label="Slug (identifiant)"><input value={form.slug} onChange={e => set('slug', e.target.value.toLowerCase().replace(/\s/g, '_'))} style={inp} disabled={!!initial} /></Field>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <Field label="Icône (emoji)"><input value={form.icon} onChange={e => set('icon', e.target.value)} style={inp} /></Field>
+        <Field label="Couleur"><input type="color" value={form.color} onChange={e => set('color', e.target.value)} style={{ ...inp, padding: 2, height: 36 }} /></Field>
+      </div>
+      <Field label="Ordre d'affichage"><input type="number" value={form.sort_order} min={0} onChange={e => set('sort_order', parseInt(e.target.value,10)||0)} style={inp} /></Field>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <Btn onClick={onCancel}>Annuler</Btn>
+        <Btn variant="primary" onClick={() => onSave(form)}>Enregistrer</Btn>
+      </div>
+    </div>
+  );
+};
 
 /* ─── Nœud d'organigramme (récursif) ───────────────────────── */
 const OrgTree = ({ node, childrenMap, depth = 0 }) => {

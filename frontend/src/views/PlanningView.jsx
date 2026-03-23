@@ -26,15 +26,6 @@ const yToTime  = (y) => Math.round(Math.max(DAY_START, Math.min(DAY_END, DAY_STA
 const timeToY  = (t) => (t - DAY_START) * HOUR_H;
 const fmtTime  = (t) => { const h = Math.floor(t); const m = Math.round((t - h) * 60); return `${h}h${m === 0 ? '' : String(m).padStart(2, '0')}`; };
 
-/* ─── Types de tâches ouvreurs ──────────────────────────────── */
-const TASK_TYPES = {
-  permanent:       { label: 'Permanence',     icon: '🏬', color: '#5B75DB' },
-  ouverture_blocs: { label: 'Ouvert. blocs',  icon: '🪨', color: '#E8820C' },
-  ouverture_voies: { label: 'Ouvert. voies',  icon: '🧗', color: '#DC3545' },
-  demontage:       { label: 'Démontage',      icon: '🔧', color: '#6B7280' },
-};
-const TASK_TYPE_KEYS = Object.keys(TASK_TYPES);
-
 function useIsMobile() {
   const [v, set] = useState(() => window.innerWidth < 768);
   useEffect(() => { const h = () => set(window.innerWidth < 768); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
@@ -73,12 +64,23 @@ const totalHoursForStaff = (spans, staffId) => {
 };
 
 /* ─── Bloc span individuel ──────────────────────────────────── */
-const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted }) => {
+const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {} }) => {
   const [showTT, setShowTT] = useState(false);
+  const [ddPos,  setDdPos]  = useState({ top: 0, left: 0 });
+  const badgeRef = useRef(null);
+
+  // Fermeture du dropdown au clic extérieur
+  useEffect(() => {
+    if (!showTT) return;
+    const close = () => setShowTT(false);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [showTT]);
+
   const top    = timeToY(span.start);
   const height = Math.max(SLOT_H, timeToY(span.end) - top);
   const dur    = span.end - span.start;
-  const tt     = span.taskType ? TASK_TYPES[span.taskType] : null;
+  const tt     = span.taskType ? ttMap[span.taskType] : null;
   const stripColor = tt ? tt.color : null;
   const w      = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
   const left   = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
@@ -111,8 +113,16 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
         {dur >= 0.75 && mode === 'fn' && (
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div
+              ref={badgeRef}
               onPointerDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); setShowTT(v => !v); }}
+              onClick={e => {
+                e.stopPropagation();
+                if (!showTT && badgeRef.current) {
+                  const r = badgeRef.current.getBoundingClientRect();
+                  setDdPos({ top: r.bottom + 4, left: r.left });
+                }
+                setShowTT(v => !v);
+              }}
               style={{ marginTop: 1, display: 'inline-flex', alignItems: 'center', gap: 2, background: tt ? `${tt.color}18` : '#F0EDE8', border: `1px solid ${tt ? tt.color + '50' : '#E0DDD8'}`, borderRadius: 4, padding: '1px 4px', cursor: 'pointer', fontSize: 8, color: tt ? tt.color : '#9B9890', fontWeight: 600 }}
             >
               {tt ? `${tt.icon} ${tt.label}` : '⚙ tâche'}
@@ -120,13 +130,13 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
             {showTT && (
               <div
                 onPointerDown={e => e.stopPropagation()}
-                style={{ position: 'absolute', top: '100%', left: 0, zIndex: 100, background: '#fff', border: '1px solid #E4E0D8', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,.12)', padding: 4, minWidth: 130 }}
+                style={{ position: 'fixed', top: ddPos.top, left: ddPos.left, zIndex: 9999, background: '#fff', border: '1px solid #E4E0D8', borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.18)', padding: 4, minWidth: 140 }}
               >
                 <div onClick={e => { e.stopPropagation(); onTaskTypeChange(dayIndex, span, null); setShowTT(false); }} style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', borderRadius: 4, color: '#9B9890', background: !span.taskType ? '#F5F3EF' : 'transparent' }}>— Aucune</div>
-                {TASK_TYPE_KEYS.map(k => (
+                {Object.keys(ttMap).map(k => (
                   <div key={k} onClick={e => { e.stopPropagation(); onTaskTypeChange(dayIndex, span, k); setShowTT(false); }}
-                    style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', borderRadius: 4, color: TASK_TYPES[k].color, background: span.taskType === k ? `${TASK_TYPES[k].color}15` : 'transparent', fontWeight: span.taskType === k ? 700 : 400 }}>
-                    {TASK_TYPES[k].icon} {TASK_TYPES[k].label}
+                    style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', borderRadius: 4, color: ttMap[k]?.color, background: span.taskType === k ? `${ttMap[k]?.color}15` : 'transparent', fontWeight: span.taskType === k ? 700 : 400 }}>
+                    {ttMap[k]?.icon} {ttMap[k]?.label}
                   </div>
                 ))}
               </div>
@@ -170,7 +180,7 @@ const CourseSlotBand = ({ cs }) => {
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId }) => {
+const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {} }) => {
   const placed = useMemo(() => {
     const sorted = [...spans].sort((a, b) => a.start - b.start);
     const cols = [];
@@ -197,7 +207,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onD
       {placed.result.map(({ sp, col }) => {
         const s = staff.find(x => x.id === sp.staffId);
         if (!s) return null;
-        return <SpanBlock key={`${sp.staffId}-${sp.start}-${col}`} span={sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={col} colCount={placed.colCount} highlighted={!!(highlightStaffId && sp.staffId === highlightStaffId)} />;
+        return <SpanBlock key={`${sp.staffId}-${sp.start}-${col}`} span={sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={col} colCount={placed.colCount} highlighted={!!(highlightStaffId && sp.staffId === highlightStaffId)} ttMap={ttMap} />;
       })}
     </div>
   );
@@ -550,8 +560,8 @@ const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots
         <div style={{ marginBottom: 18 }}>
           <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 7, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Type d'activité</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {TASK_TYPE_KEYS.map(k => {
-              const tt = TASK_TYPES[k]; const sel = taskType === k;
+            {(taskTypes||[]).map(t => {
+              const k = t.slug; const tt = t; const sel = taskType === k;
               return (
                 <button key={k} onClick={() => setTaskType(k)} style={{
                   padding: '6px 12px', borderRadius: 20, border: `1.5px solid ${sel ? tt.color : '#E4E0D8'}`,
@@ -584,7 +594,8 @@ const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots
 
 /* ═══════════════════════════════════════════════════════════════ */
 const PlanningView = () => {
-  const { staff, functions, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
+  const { staff, functions, taskTypes, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
+  const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
   const isMobile  = useIsMobile();
   const isTouch   = useIsTouch();
   const [wk,       setWk]      = useState(0);
@@ -612,6 +623,11 @@ const PlanningView = () => {
   const maxAmpH       = parseFloat(constraintMap['planning_max_amplitude_hours'] || '12');
   const minRestEnabled= constraintMap['planning_min_rest_enabled'] === 'true';
   const minRestH      = parseFloat(constraintMap['planning_min_rest_hours'] || '11');
+
+  // Créneaux de cours : slugs de fonctions pour lesquelles les afficher
+  const courseSlotsFns = useMemo(() => {
+    try { return JSON.parse(constraintMap['planning_course_slots_fns'] || '[]'); } catch { return []; }
+  }, [constraintMap]);
 
   const [constraintWarn, setConstraintWarn] = useState(null);
   useEffect(() => {
@@ -700,11 +716,14 @@ const PlanningView = () => {
       }
     }
 
-    // 2. Repos minimum entre deux postes
+    // 2. Repos minimum entre deux postes (inter-journée uniquement)
+    // La règle des 11h de repos quotidien s'applique entre deux journées de travail,
+    // pas entre deux créneaux d'une même journée (travail en split shift autorisé).
     if (minRestEnabled) {
       const newStartAbs = dayIndex * 24 + newStart;
       const newEndAbs   = dayIndex * 24 + newEnd;
       for (let d = 0; d < 7; d++) {
+        if (d === dayIndex) continue; // même jour → pas de contrainte de repos inter-journée
         for (const sp of allSpans[d]) {
           if (sp.staffId !== staffId) continue;
           // Exclure le créneau déplacé
@@ -787,7 +806,9 @@ const PlanningView = () => {
     const dropTime = yToTime(y);
 
     // Snap automatique sur un créneau de cours si applicable
-    const dayCourses = courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === dayIndex);
+    const dayCourses = courseSlotsFns.includes(activeFn)
+      ? courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === dayIndex)
+      : [];
     const match      = dayCourses.find(cs => dropTime >= cs.hour_start && dropTime < cs.hour_end);
 
     const start        = match ? match.hour_start : dropTime;
@@ -924,7 +945,9 @@ const PlanningView = () => {
     const touchDate   = dates[touchDay];
     const isToday     = touchDate?.toDateString() === new Date().toDateString();
     const daySpans    = (spans[touchDay] || []);
-    const dayCourses  = courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === touchDay);
+    const dayCourses  = courseSlotsFns.includes(activeFn)
+      ? courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === touchDay)
+      : [];
     const touchDayLabel = touchDate
       ? touchDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
       : '';
@@ -1040,7 +1063,7 @@ const PlanningView = () => {
                 const h    = Math.max(SLOT_H * 2, timeToY(sp.end) - top);
                 const w    = colCount > 1 ? `calc(${100/colCount}% - 3px)` : 'calc(100% - 4px)';
                 const left = colCount > 1 ? `calc(${col*100/colCount}% + 2px)` : '2px';
-                const tt   = sp.taskType ? TASK_TYPES[sp.taskType] : null;
+                const tt   = sp.taskType ? ttMap[sp.taskType] : null;
                 return (
                   <div key={`${sp.staffId}-${sp.start}`}
                     onClick={e => { e.stopPropagation(); setTouchModal({ type: 'edit', span: sp }); }}
@@ -1203,7 +1226,7 @@ const PlanningView = () => {
                   spans={spans[di] || []}
                   staff={staff}
                   mode={mode}
-                  courseSlots={courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === di)}
+                  courseSlots={courseSlotsFns.includes(activeFn) ? courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === di) : []}
                   onDragEnter={setDragOverDay}
                   onDragLeave={() => setDragOverDay(null)}
                   isDragOver={dragOverDay === di}
@@ -1215,6 +1238,7 @@ const PlanningView = () => {
                   isToday={isToday}
                   isWeekend={di >= 5}
                   highlightStaffId={highlightStaffId}
+                  ttMap={ttMap}
                 />
               );
             })}
