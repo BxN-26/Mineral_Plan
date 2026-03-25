@@ -65,6 +65,7 @@ function AppShell() {
 
   const [view,       setView]       = useState('mon-planning');
   const [planningFocus, setPlanningFocus] = useState(null); // { week, staffId } pour deep-link notif
+  const [swapTab,    setSwapTab]    = useState('mine');     // deep-link onglet échanges
   const [staff,      setStaff]      = useState([]);
   const [teams,      setTeams]      = useState([]);
   const [functions,  setFunctions]  = useState([]);
@@ -156,6 +157,8 @@ function AppShell() {
     view, setView,
     /* deep-link planning */
     planningFocus, setPlanningFocus,
+    /* deep-link échanges */
+    swapTab, setSwapTab,
   };
 
   return (

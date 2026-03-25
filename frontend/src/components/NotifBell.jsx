@@ -12,7 +12,7 @@ const TYPE_ICON = {
 };
 
 const NotifBell = () => {
-  const { setView, setPlanningFocus } = useApp();
+  const { setView, setPlanningFocus, setSwapTab } = useApp();
   const [open,   setOpen]   = useState(false);
   const [notifs, setNotifs] = useState([]);
   const [unread, setUnread] = useState(0);
@@ -32,6 +32,13 @@ const NotifBell = () => {
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Badge icône PWA (App Badging API)
+  useEffect(() => {
+    if (!('setAppBadge' in navigator)) return;
+    if (unread > 0) navigator.setAppBadge(unread).catch(() => {});
+    else            navigator.clearAppBadge().catch(() => {});
+  }, [unread]);
 
   // Fermer en cliquant ailleurs
   useEffect(() => {
@@ -74,6 +81,26 @@ const NotifBell = () => {
     return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
   };
 
+  /** Navigue vers la bonne vue/onglet selon le type de notif */
+  const handleNotifClick = (n) => {
+    if (!n.read) markOne(n.id);
+    setOpen(false);
+    const rt = n.related_type;
+    if (n.type === 'urgent' || (n.type === 'swap' && rt === 'swap')) {
+      // urgent → onglet manager ; swap normal → onglet mine
+      setSwapTab(n.type === 'urgent' ? 'manager' : 'mine');
+      setView('echanges');
+    } else if (n.type === 'approval' && rt === 'swap') {
+      setSwapTab('mine');
+      setView('echanges');
+    } else if (n.type === 'leave' || n.type === 'leave_planning' ||
+               (n.type === 'approval' && rt === 'leave')) {
+      setView('conges');
+    } else if (n.type === 'overtime') {
+      setView('releves');
+    }
+  };
+
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       {/* Bouton cloche */}
@@ -89,15 +116,24 @@ const NotifBell = () => {
       >
         🔔
         {unread > 0 && (
-          <span style={{
-            position: 'absolute', top: 0, right: 0,
-            background: '#EF4444', color: '#fff', borderRadius: 10,
-            fontSize: 9, fontWeight: 800, minWidth: 15, height: 15,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '0 4px', lineHeight: 1,
-          }}>
-            {unread > 99 ? '99+' : unread}
-          </span>
+          <>
+            <style>{`
+              @keyframes notif-pulse {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50%       { opacity: .55; transform: scale(.85); }
+              }
+            `}</style>
+            <span style={{
+              position: 'absolute', top: 0, right: 0,
+              background: '#EF4444', color: '#fff', borderRadius: 10,
+              fontSize: 9, fontWeight: 800, minWidth: 15, height: 15,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '0 4px', lineHeight: 1,
+              animation: 'notif-pulse 1.4s ease-in-out infinite',
+            }}>
+              {unread > 99 ? '99+' : unread}
+            </span>
+          </>
         )}
       </button>
 
@@ -141,7 +177,7 @@ const NotifBell = () => {
                 return (
                 <div
                   key={n.id}
-                  onClick={() => !n.read && markOne(n.id)}
+                  onClick={() => handleNotifClick(n)}
                   style={{
                     padding: '11px 16px', borderBottom: '1px solid #F7F4F0',
                     background: n.read ? '#fff' : '#FFF8F2',

@@ -6,7 +6,24 @@ import { useApp }  from '../App';
 import api from '../api/client';
 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const HOURS = Array.from({ length: 14 }, (_, i) => i + 8);
+
+/** Plages quart-horaires de `from` à `to` inclus, pas 0.25 */
+function timeOpts(from, to) {
+  const r = [];
+  for (let t = from; t <= to; t = Math.round((t + 0.25) * 100) / 100) {
+    const h = Math.floor(t), m = Math.round((t - h) * 60);
+    r.push({ val: t, label: `${h}h${m === 0 ? '00' : String(m).padStart(2, '0')}` });
+  }
+  return r;
+}
+const START_OPTS = timeOpts(7, 23.75);
+const END_OPTS   = timeOpts(7.25, 24);
+
+function fmtH(h) {
+  if (h == null) return '–';
+  const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  return `${hh}h${mm === 0 ? '00' : String(mm).padStart(2, '0')}`;
+}
 
 const STATUS_CFG = {
   pending:   { label: 'En attente',  color: '#F97316', bg: '#FFF3E0' },
@@ -21,22 +38,39 @@ function toMonday(d) {
   const m = new Date(d); m.setDate(d.getDate() + diff);
   return m.toISOString().slice(0, 10);
 }
+function toDayIndex(dateStr) {
+  const dow = new Date(dateStr + 'T12:00:00').getDay();
+  return dow === 0 ? 6 : dow - 1; // 0=lun … 6=dim
+}
 
 /* ── Composant carte échange ─────────────────────────────────── */
-const SwapCard = ({ swap, myStaffId, isManager, onRefresh }) => {
+const SwapCard = ({ swap, myStaffId, isManager, allStaff, onRefresh, onInvalidateWeek }) => {
   const st = STATUS_CFG[swap.status] || STATUS_CFG.pending;
   const isRequester  = swap.requester_id === myStaffId;
-  const isTarget     = swap.target_id === myStaffId || (!swap.target_id && swap.mode === 'open');
+  const isTarget     = swap.target_id === myStaffId ||
+                       (!swap.target_id && swap.mode === 'open') ||
+                       (swap.mode === 'open' && swap.status === 'pending');
   const canRespond   = isTarget && swap.status === 'pending' && !isRequester;
   const canApprove   = isManager && swap.status === 'matched';
+  const canAssign    = isManager && (swap.status === 'pending' || (swap.status === 'refused' && swap.urgent_alert_sent));
   const canCancel    = (isRequester || isManager) && ['pending', 'matched'].includes(swap.status);
   const [note, setNote] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Collègues éligibles pour le créneau (même fonction, hors demandeur)
+  const eligible = (allStaff || []).filter(
+    s => s.id !== swap.requester_id && s.functions?.includes(swap.fn_slug)
+  );
 
   const action = async (path, body = {}) => {
     setBusy(true);
     try {
       await api.put(`/swaps/${swap.id}/${path}`, body);
+      if (path === 'approve' || path === 'assign') {
+        onInvalidateWeek(swap.week_start);
+        if (swap.swap_week) onInvalidateWeek(swap.swap_week);
+      }
       onRefresh();
     } catch (e) {
       console.error(e);
@@ -59,11 +93,11 @@ const SwapCard = ({ swap, myStaffId, isManager, onRefresh }) => {
             {swap.mode === 'targeted' && swap.target_id && ` → ${swap.responder_name || '?'}`}
           </div>
           <div style={{ fontSize: 11, color: '#6B6860', marginTop: 2 }}>
-            {DAYS[swap.day_index]} {swap.hour}h — sem. {swap.week_start?.slice(5)} — {swap.fn_slug}
+            {DAYS[swap.day_index]} {fmtH(swap.hour_start)}–{fmtH(swap.hour_end)} — sem. {swap.week_start?.slice(5)} — {swap.fn_slug}
           </div>
           {swap.swap_week && (
             <div style={{ fontSize: 11, color: '#6B6860' }}>
-              ↔ Retour: {DAYS[swap.swap_day_index]} {swap.swap_hour}h — sem. {swap.swap_week?.slice(5)}
+              ↔ Retour: {DAYS[swap.swap_day_index]} {fmtH(swap.swap_hour_start)}–{fmtH(swap.swap_hour_end)} — sem. {swap.swap_week?.slice(5)}
             </div>
           )}
           {swap.note && <div style={{ fontSize: 11, color: '#9B9890', fontStyle: 'italic', marginTop: 2 }}>"{swap.note}"</div>}
@@ -88,6 +122,22 @@ const SwapCard = ({ swap, myStaffId, isManager, onRefresh }) => {
               style={{ ...inputSt, width: 200, fontSize: 12, padding: '4px 8px' }} />
           </>
         )}
+        {canAssign && eligible.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4,
+            padding: '8px 10px', background: '#FFF8F0', borderRadius: 8, border: '1px solid #FDDCB5', width: '100%' }}>
+            <span style={{ fontSize: 11, color: '#9B5D1A', fontWeight: 600 }}>📋 Désigner un remplaçant :</span>
+            <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+              style={{ ...inputSt, fontSize: 12, padding: '3px 8px', flex: 1, minWidth: 160 }}>
+              <option value="">Choisir…</option>
+              {eligible.map(s => (
+                <option key={s.id} value={s.id}>{s.firstname} {s.lastname}</option>
+              ))}
+            </select>
+            <Btn small variant="primary"
+              onClick={() => assigneeId && action('assign', { assignee_id: +assigneeId })}
+              disabled={busy || !assigneeId}>Valider</Btn>
+          </div>
+        )}
         {canCancel && (
           <Btn small variant="ghost" onClick={() => action('cancel')} disabled={busy}>Annuler</Btn>
         )}
@@ -99,23 +149,28 @@ const SwapCard = ({ swap, myStaffId, isManager, onRefresh }) => {
 /* ── Vue principale ───────────────────────────────────────────── */
 export default function SwapView() {
   const { user } = useAuth();
-  const { staff: allStaff, functions, schedules, loadWeekSchedules } = useApp();
+  const { staff: allStaff, functions, schedules, loadWeekSchedules, setSchedules, swapTab, setSwapTab } = useApp();
 
   const isManager    = ['admin','manager','superadmin','rh'].includes(user?.role);
   const myStaff      = allStaff.find(s => s.id === user?.staff_id);
   const myStaffId    = myStaff?.id;
 
   const [swaps,    setSwaps]   = useState([]);
-  const [tab,      setTab]     = useState('mine');   // mine | open | manager
+  const [tab,      setTab]     = useState(swapTab || 'mine');   // mine | open | manager
   const [modal,    setModal]   = useState(false);
   const [loading,  setLoading] = useState(false);
 
+  // Sync onglet si deep-link depuis une notification
+  useEffect(() => {
+    if (swapTab) { setTab(swapTab); setSwapTab(null); }
+  }, [swapTab, setSwapTab]);
+
   /* Formulaire création */
   const [form, setForm] = useState({
-    week_start: toMonday(new Date()),
-    fn_slug: '', day_index: 0, hour: 8,
+    date: new Date().toISOString().slice(0, 10),
+    fn_slug: '', hour_start: 9, hour_end: 10,
     mode: 'open', target_id: '',
-    swap_week: '', swap_fn_slug: '', swap_day_index: 0, swap_hour: 8,
+    swap_date: '', swap_fn_slug: '', swap_hour_start: 9, swap_hour_end: 10,
     bilateral: false, note: '',
   });
   const setF = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -135,20 +190,23 @@ export default function SwapView() {
   useEffect(() => { load(); }, [load]);
 
   const createSwap = async () => {
+    const dateObj = new Date(form.date + 'T12:00:00');
     const body = {
-      week_start: form.week_start,
+      week_start: toMonday(dateObj),
       fn_slug:    form.fn_slug,
-      day_index:  +form.day_index,
-      hour:       +form.hour,
+      day_index:  toDayIndex(form.date),
+      hour_start: +form.hour_start,
+      hour_end:   +form.hour_end,
       mode:       form.mode,
       target_id:  form.target_id ? +form.target_id : null,
       note:       form.note,
     };
-    if (form.bilateral) {
-      body.swap_week      = form.swap_week;
-      body.swap_fn_slug   = form.swap_fn_slug;
-      body.swap_day_index = +form.swap_day_index;
-      body.swap_hour      = +form.swap_hour;
+    if (form.bilateral && form.swap_date) {
+      body.swap_week       = toMonday(new Date(form.swap_date + 'T12:00:00'));
+      body.swap_fn_slug    = form.swap_fn_slug;
+      body.swap_day_index  = toDayIndex(form.swap_date);
+      body.swap_hour_start = +form.swap_hour_start;
+      body.swap_hour_end   = +form.swap_hour_end;
     }
     try {
       await api.post('/swaps', body);
@@ -160,9 +218,11 @@ export default function SwapView() {
   };
 
   /* Filtrage par onglet */
-  const mine    = swaps.filter(s => s.requester_id === myStaffId || s.responder_id === myStaffId);
+  const mine    = swaps.filter(s => s.requester_id === myStaffId || s.responder_id === myStaffId || s.target_id === myStaffId);
   const open    = swaps.filter(s => s.mode === 'open' && s.status === 'pending' && s.requester_id !== myStaffId);
-  const mgr     = swaps.filter(s => s.status === 'matched');
+  // pending urgents (alerte déclenchée) + matched en attente d'approbation + refused urgents à assigner
+  const mgr     = swaps.filter(s => s.status === 'matched' ||
+    ((s.status === 'pending' || s.status === 'refused') && s.urgent_alert_sent));
 
   const shown = tab === 'mine' ? mine : tab === 'open' ? open : mgr;
 
@@ -210,7 +270,12 @@ export default function SwapView() {
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
           {shown.map(s => (
-            <SwapCard key={s.id} swap={s} myStaffId={myStaffId} isManager={isManager} onRefresh={load} />
+            <SwapCard key={s.id} swap={s} myStaffId={myStaffId} isManager={isManager} allStaff={allStaff} onRefresh={load}
+              onInvalidateWeek={week => {
+                setSchedules(prev => { const n = { ...prev }; delete n[week]; return n; });
+                loadWeekSchedules(week);
+              }}
+            />
           ))}
         </div>
       </div>
@@ -219,8 +284,10 @@ export default function SwapView() {
       <Modal open={modal} onClose={() => setModal(false)} title="Nouvelle demande d'échange" width={580}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Semaine *">
-              <input type="date" value={form.week_start} onChange={e => setF('week_start', e.target.value)} style={inputSt} />
+            <Field label="Jour du créneau *">
+              <input type="date" value={form.date}
+                onChange={e => setF('date', e.target.value)}
+                style={inputSt} />
             </Field>
             <Field label="Fonction *">
               <select value={form.fn_slug} onChange={e => setF('fn_slug', e.target.value)} style={inputSt}>
@@ -230,14 +297,14 @@ export default function SwapView() {
                 ))}
               </select>
             </Field>
-            <Field label="Jour *">
-              <select value={form.day_index} onChange={e => setF('day_index', +e.target.value)} style={inputSt}>
-                {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+            <Field label="Début *">
+              <select value={form.hour_start} onChange={e => { const v = +e.target.value; setF('hour_start', v); if (form.hour_end <= v) setF('hour_end', Math.min(v + 1, 24)); }} style={inputSt}>
+                {START_OPTS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
               </select>
             </Field>
-            <Field label="Heure *">
-              <select value={form.hour} onChange={e => setF('hour', +e.target.value)} style={inputSt}>
-                {HOURS.map(h => <option key={h} value={h}>{h}h</option>)}
+            <Field label="Fin *">
+              <select value={form.hour_end} onChange={e => setF('hour_end', +e.target.value)} style={inputSt}>
+                {END_OPTS.filter(o => o.val > form.hour_start).map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
               </select>
             </Field>
           </div>
@@ -272,8 +339,8 @@ export default function SwapView() {
 
           {form.bilateral && (
             <div style={{ background: '#F9F7F4', borderRadius: 8, padding: '12px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <Field label="Semaine retour">
-                <input type="date" value={form.swap_week} onChange={e => setF('swap_week', e.target.value)} style={inputSt} />
+              <Field label="Jour du créneau retour">
+                <input type="date" value={form.swap_date} onChange={e => setF('swap_date', e.target.value)} style={inputSt} />
               </Field>
               <Field label="Fonction retour">
                 <select value={form.swap_fn_slug} onChange={e => setF('swap_fn_slug', e.target.value)} style={inputSt}>
@@ -283,14 +350,14 @@ export default function SwapView() {
                   ))}
                 </select>
               </Field>
-              <Field label="Jour retour">
-                <select value={form.swap_day_index} onChange={e => setF('swap_day_index', +e.target.value)} style={inputSt}>
-                  {DAYS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+              <Field label="Début retour">
+                <select value={form.swap_hour_start} onChange={e => { const v = +e.target.value; setF('swap_hour_start', v); if (form.swap_hour_end <= v) setF('swap_hour_end', Math.min(v + 1, 24)); }} style={inputSt}>
+                  {START_OPTS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
                 </select>
               </Field>
-              <Field label="Heure retour">
-                <select value={form.swap_hour} onChange={e => setF('swap_hour', +e.target.value)} style={inputSt}>
-                  {HOURS.map(h => <option key={h} value={h}>{h}h</option>)}
+              <Field label="Fin retour">
+                <select value={form.swap_hour_end} onChange={e => setF('swap_hour_end', +e.target.value)} style={inputSt}>
+                  {END_OPTS.filter(o => o.val > form.swap_hour_start).map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
                 </select>
               </Field>
             </div>
@@ -303,7 +370,7 @@ export default function SwapView() {
 
           <div style={{ display: 'flex', gap: 10, paddingTop: 8 }}>
             <Btn variant="primary" onClick={createSwap}
-              disabled={!form.week_start || !form.fn_slug}
+              disabled={!form.date || !form.fn_slug}
               style={{ flex: 1, justifyContent: 'center' }}>
               ➤ Envoyer la demande
             </Btn>

@@ -517,6 +517,62 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('fix_legacy_superadmin')").run();
   }
 
+  // ── Migration : plage horaire sur shift_swaps (hour → hour_start/hour_end) ──
+  const swapsRangeDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='swaps_range_columns'").get();
+  if (!swapsRangeDone) {
+    try { _db.exec("ALTER TABLE shift_swaps ADD COLUMN hour_start REAL"); } catch (_) {}
+    try { _db.exec("ALTER TABLE shift_swaps ADD COLUMN hour_end REAL"); } catch (_) {}
+    try { _db.exec("ALTER TABLE shift_swaps ADD COLUMN swap_hour_start REAL"); } catch (_) {}
+    try { _db.exec("ALTER TABLE shift_swaps ADD COLUMN swap_hour_end REAL"); } catch (_) {}
+    try { _db.exec("ALTER TABLE shift_swaps ADD COLUMN refused_by TEXT NOT NULL DEFAULT '[]'"); } catch (_) {}
+    try { _db.exec("ALTER TABLE shift_swaps ADD COLUMN urgent_alert_sent INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+    // Migrer les anciennes valeurs (hour entier → plage de 1h)
+    _db.exec("UPDATE shift_swaps SET hour_start = CAST(hour AS REAL), hour_end = CAST(hour AS REAL) + 1 WHERE hour_start IS NULL AND hour IS NOT NULL");
+    _db.exec("UPDATE shift_swaps SET swap_hour_start = CAST(swap_hour AS REAL), swap_hour_end = CAST(swap_hour AS REAL) + 1 WHERE swap_hour_start IS NULL AND swap_hour IS NOT NULL");
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('swaps_range_columns')").run();
+  }
+
+  // ── Migration : type 'urgent' dans notifications ──────────────
+  const notifUrgentDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='notifications_type_urgent'").get();
+  if (!notifUrgentDone) {
+    _db.exec(`
+      PRAGMA foreign_keys = OFF;
+      CREATE TABLE IF NOT EXISTS notifications_v3 (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type         TEXT    NOT NULL DEFAULT 'info'
+                             CHECK(type IN ('leave','leave_planning','overtime','approval','info','swap','urgent')),
+        title        TEXT    NOT NULL,
+        body         TEXT    NOT NULL DEFAULT '',
+        read         INTEGER NOT NULL DEFAULT 0,
+        related_type TEXT,
+        related_id   INTEGER,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        meta         TEXT    DEFAULT NULL
+      );
+      INSERT OR IGNORE INTO notifications_v3
+        SELECT id, user_id, type, title, body, read, related_type, related_id, created_at, meta
+        FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_v3 RENAME TO notifications;
+      PRAGMA foreign_keys = ON;
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('notifications_type_urgent')").run();
+  }
+
+  // ── Migration : seed paramètre alerte urgente échanges ────────
+  const swapAlertSeedDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='swap_urgent_alert_seed'").get();
+  if (!swapAlertSeedDone) {
+    _db.prepare(
+      "INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)"
+    ).run(
+      'swap_urgent_alert_hours', '24', 'number',
+      'Nombre d\'heures avant la prise de poste à partir duquel une alerte urgente est envoyée au référent si aucun remplaçant n\'a été trouvé pour un échange',
+      'planning'
+    );
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('swap_urgent_alert_seed')").run();
+  }
+
   return _db;
 }
 

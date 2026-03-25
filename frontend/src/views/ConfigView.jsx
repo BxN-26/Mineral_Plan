@@ -227,6 +227,7 @@ const PlanningConfig = ({ settings, setSettings }) => {
   const dayStart  = map['planning_day_start'] || '7';
   const dayEnd     = map['planning_day_end']   || '24';
   const swapLevel  = map['swap_approval_level'] || 'manager';
+  const swapAlertH = map['swap_urgent_alert_hours'] || '24';
 
   const maxAmpEnabled = map['planning_max_amplitude_enabled'] === 'true';
   const maxAmpHours   = map['planning_max_amplitude_hours']   || '12';
@@ -364,6 +365,15 @@ const PlanningConfig = ({ settings, setSettings }) => {
               <div style={{ fontSize: 11, color: '#6B6860', marginTop: 2 }}>{opt.d}</div>
             </button>
           ))}
+        </div>
+      </SettingCard>
+
+      <SettingCard icon="⏰" title="Délai d'alerte urgente (échanges sans preneur)"
+        desc="Si un créneau à échanger n'a toujours pas de remplaçant N heures avant la prise de poste, une notification urgente est automatiquement envoyée au référent du demandeur.">
+        <NumInput value={swapAlertH} min={1} max={96} unit="heures avant la prise de poste"
+          onChange={v => save('swap_urgent_alert_hours', parseInt(v, 10) || 24)} />
+        <div style={{ fontSize: 11, color: '#9B9890', marginTop: 6 }}>
+          Valeur actuelle : {swapAlertH}h avant le créneau — la vérification s'effectue toutes les 30 minutes.
         </div>
       </SettingCard>
     </div>

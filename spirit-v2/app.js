@@ -98,4 +98,59 @@ app.listen(PORT, () => {
   console.log(`[spirit-api] ENV: ${process.env.NODE_ENV || 'development'}`);
 });
 
+// ── Job : alerte urgente swap N heures avant prise de poste ───
+const { db_: _jobDb } = require('./db/database');
+const { notifyStaff: _notifyStaff } = require('./routes/notifications');
+
+function _fmtH(h) {
+  const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  return `${hh}h${mm === 0 ? '00' : String(mm).padStart(2, '0')}`;
+}
+
+function checkUrgentSwapAlerts() {
+  try {
+    const alertHours = Number(
+      _jobDb.get("SELECT value FROM settings WHERE key='swap_urgent_alert_hours'")?.value || 24
+    );
+    const now = Date.now();
+    const limitMs = now + alertHours * 3600 * 1000;
+
+    const pending = _jobDb.all(
+      `SELECT * FROM shift_swaps WHERE status='pending' AND urgent_alert_sent=0`
+    );
+
+    for (const swap of pending) {
+      if (swap.hour_start == null) continue;
+      // Calculer la date/heure du créneau (week_start = YYYY-MM-DD lundi)
+      const [y, m, d] = swap.week_start.split('-').map(Number);
+      const shiftDate = new Date(y, m - 1, d + swap.day_index);
+      shiftDate.setHours(Math.floor(swap.hour_start), Math.round((swap.hour_start % 1) * 60), 0, 0);
+      const shiftMs = shiftDate.getTime();
+
+      if (shiftMs > now && shiftMs <= limitMs) {
+        const requester = _jobDb.get('SELECT * FROM staff WHERE id=?', [swap.requester_id]);
+        if (!requester) continue;
+        const managerStaffId = requester.manager_id;
+        if (managerStaffId) {
+          const dayNames = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+          const creneauLabel = `${dayNames[swap.day_index]} ${_fmtH(swap.hour_start)}–${_fmtH(swap.hour_end)} sem. ${swap.week_start.slice(5)}`;
+          const hoursLeft = Math.round((shiftMs - now) / 3600000);
+          _notifyStaff(managerStaffId, 'urgent',
+            `⚠️ Créneau non couvert dans ${hoursLeft}h`,
+            `Le créneau de ${requester.firstname} ${requester.lastname} (${creneauLabel}) n'a pas de remplaçant. Veuillez attribuer ce créneau manuellement.`,
+            'swap', swap.id
+          );
+        }
+        _jobDb.run(`UPDATE shift_swaps SET urgent_alert_sent=1 WHERE id=?`, [swap.id]);
+      }
+    }
+  } catch (err) {
+    console.error('[swap-alert-job]', err.message);
+  }
+}
+
+// Vérification toutes les 30 minutes + au démarrage
+setInterval(checkUrgentSwapAlerts, 30 * 60 * 1000);
+setTimeout(checkUrgentSwapAlerts, 5000); // 5s après démarrage
+
 module.exports = app;
