@@ -45,6 +45,30 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+
+// ── Tracking activité temps réel ─────────────────────────────
+const activeSessions = new Map(); // token -> {user, last_seen}
+let connectionsToday = { date: '', count: 0 };
+
+function trackActivity(req, res, next) {
+  const auth = req.headers.authorization || req.cookies?.token;
+  if (auth) {
+    const key = auth.slice(-16);
+    const today = new Date().toISOString().slice(0,10);
+    if (!activeSessions.has(key) || activeSessions.get(key).date !== today) {
+      if (connectionsToday.date !== today) { connectionsToday = { date: today, count: 0 }; }
+      connectionsToday.count++;
+    }
+    activeSessions.set(key, { last_seen: Date.now(), date: today });
+    // Nettoyer les sessions inactives depuis plus de 15min
+    const limit = Date.now() - 15 * 60 * 1000;
+    for (const [k, v] of activeSessions) { if (v.last_seen < limit) activeSessions.delete(k); }
+  }
+  next();
+}
+app.use(trackActivity);
+global._hubStats = { activeSessions, connectionsToday };
+
 // Service des fichiers statiques du build Vite (production)
 const distPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(distPath, {
