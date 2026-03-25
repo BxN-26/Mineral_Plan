@@ -493,7 +493,7 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
 
 /* ═══════════════════════════════════════════════════════════════ */
 /* ─── Modale tactile (bottom sheet ajout/édition) ────────────── */
-const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots, checkConstraints, onSave, onRemove, onClose }) => {
+const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots, taskTypes, checkConstraints, onSave, onRemove, onClose }) => {
   const isEdit = modal.type === 'edit';
   const span   = isEdit ? modal.span : null;
   const [staffId,  setStaffId]  = useState(isEdit ? span.staffId  : (fnStaff[0]?.id ?? null));
@@ -1108,6 +1108,7 @@ const PlanningView = () => {
             staff={staff}
             activeFn={activeFn}
             courseSlots={dayCourses}
+            taskTypes={taskTypes}
             checkConstraints={checkConstraints}
             onSave={(staffId, start, end, taskType, courseSlotId) => {
               const next = cloneSpans(spans);
