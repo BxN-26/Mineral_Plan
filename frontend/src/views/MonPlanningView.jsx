@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import AvatarImg from '../components/AvatarImg';
+import api from '../api/client';
 
 const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -71,8 +72,16 @@ const SpanDetailModal = ({ sp, date, myStaff, ttMap, onClose }) => {
               <div style={{ fontSize: 11, color: '#9B9890' }}>{myStaff.primary_function || ''}</div>
             </div>
           </div>
-          {/* Type de tâche */}
-          {tt ? (
+          {/* Type de tâche ou cours */}
+          {sp.isCourse ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${sp.courseSlot.color}15`, border: `1.5px solid ${sp.courseSlot.color}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🎓</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: sp.courseSlot.color }}>{sp.courseSlot.group_name}</div>
+                <div style={{ fontSize: 11, color: '#9B9890' }}>{[sp.courseSlot.level, sp.courseSlot.public_desc].filter(Boolean).join(' · ') || 'Cours assigné'}</div>
+              </div>
+            </div>
+          ) : tt ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tt.color}15`, border: `1.5px solid ${tt.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{tt.icon}</div>
               <div>
@@ -102,6 +111,8 @@ const MonPlanningView = () => {
   const [dayMode, setDayMode]   = useState(() => localStorage.getItem('spirit-mon-planning-mode') === 'day');
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
   const [selectedSpan, setSelectedSpan] = useState(null); // { sp, date }
+  const [courseSlots,       setCourseSlots]       = useState([]);
+  const [courseAssignments, setCourseAssignments] = useState([]);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
@@ -115,7 +126,19 @@ const MonPlanningView = () => {
 
   const weekLabel = `${dates[0].getDate()} – ${dates[6].getDate()} ${dates[6].toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
 
+  const loadCourseData = useCallback(async (week) => {
+    try {
+      const [cs, ca] = await Promise.all([
+        api.get('/course-slots'),
+        api.get(`/course-slots/assignments?week=${week}`)
+      ]);
+      setCourseSlots(Array.isArray(cs.data) ? cs.data : []);
+      setCourseAssignments(Array.isArray(ca.data) ? ca.data : []);
+    } catch (_) {}
+  }, []);
+
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
+  useEffect(() => { loadCourseData(currentWeek); }, [currentWeek]);
 
   const myStaff = useMemo(() => {
     if (!user?.staff_id) return null;
@@ -123,7 +146,7 @@ const MonPlanningView = () => {
   }, [user, staff]);
 
   // Construire les créneaux personnels sous forme de spans par jour
-  // { day: [{ fn, start, end }] }
+  // { day: [{ fn, start, end, isCourse?, courseSlot? }] }
   const mySpans = useMemo(() => {
     const out = Array.from({ length: 7 }, () => []);
     if (!myStaff) return out;
@@ -136,8 +159,16 @@ const MonPlanningView = () => {
         }
       }
     }
+    // Ajouter les cours assignés
+    for (const a of courseAssignments) {
+      if (a.staff_id !== myStaff.id) continue;
+      const cs = courseSlots.find(c => c.id === a.course_slot_id);
+      if (!cs) continue;
+      const fn = functions.find(f => f.id === cs.function_id) || null;
+      out[cs.day_of_week].push({ fn, start: cs.hour_start, end: cs.hour_end, taskType: null, isCourse: true, courseSlot: cs });
+    }
     return out;
-  }, [myStaff, functions, schedules, currentWeek]);
+  }, [myStaff, functions, schedules, currentWeek, courseSlots, courseAssignments]);
 
   // Total d'heures planifiées cette semaine
   const totalH = useMemo(() => {
@@ -259,17 +290,22 @@ const MonPlanningView = () => {
                   const top = timeToY(sp.start);
                   const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
                   const tt  = sp.taskType ? ttMap[sp.taskType] : null;
+                  const cs  = sp.courseSlot;
+                  const blockColor = cs ? cs.color : (sp.fn?.color || myStaff.color);
+                  const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${myStaff.color}18`;
                   return (
-                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: `${myStaff.color}18`, border: `1.5px solid ${myStaff.color}50`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', paddingLeft: tt ? 8 : 5, cursor: 'pointer' }}>
-                      {tt && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tt.color, borderRadius: '3px 0 0 3px' }} />}
+                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: cs ? `${cs.bg_color}CC` : blockBg, border: `1.5px solid ${blockColor}60`, borderLeft: `3.5px solid ${blockColor}`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', cursor: 'pointer' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                        {sp.fn && <span style={{ fontSize: 9 }}>{sp.fn.icon}</span>}
-                        <span style={{ fontSize: 10, fontWeight: 700, color: sp.fn?.color || myStaff.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sp.fn?.short_name || sp.fn?.name}</span>
+                        {cs ? <span style={{ fontSize: 9 }}>🎓</span> : sp.fn && <span style={{ fontSize: 9 }}>{sp.fn.icon}</span>}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: blockColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cs ? cs.group_name : (sp.fn?.short_name || sp.fn?.name)}</span>
                       </div>
                       {(sp.end - sp.start) >= 0.5 && (
                         <div style={{ fontSize: 9, color: '#9B9890', paddingLeft: 2 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
                       )}
-                      {tt && h >= 44 && (
+                      {cs && h >= 44 && cs.level && (
+                        <div style={{ fontSize: 8, color: cs.color, opacity: .8, paddingLeft: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cs.level}</div>
+                      )}
+                      {!cs && tt && h >= 44 && (
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: `${tt.color}18`, border: `1px solid ${tt.color}40`, borderRadius: 3, padding: '0px 3px', fontSize: 8, color: tt.color, fontWeight: 600, marginTop: 1 }}>
                           {tt.icon} {tt.label}
                         </div>

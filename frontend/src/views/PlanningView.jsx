@@ -152,35 +152,61 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
   );
 };
 
-/* ─── Bande de cours en arrière-plan ────────────────────────── */
-const CourseSlotBand = ({ cs }) => {
-  const top = timeToY(cs.hour_start);
-  const h   = Math.max(SLOT_H * 2, timeToY(cs.hour_end) - top);
+/* ─── Grouper les cours par intervalles qui se chevauchent ────── */
+function groupOverlapping(slots) {
+  if (!slots || !slots.length) return [];
+  const sorted = [...slots].sort((a, b) => a.hour_start - b.hour_start);
+  const groups = [[sorted[0]]];
+  let maxEnd = sorted[0].hour_end;
+  for (let i = 1; i < sorted.length; i++) {
+    const cs = sorted[i];
+    if (cs.hour_start < maxEnd) {
+      groups[groups.length - 1].push(cs);
+      maxEnd = Math.max(maxEnd, cs.hour_end);
+    } else {
+      groups.push([cs]);
+      maxEnd = cs.hour_end;
+    }
+  }
+  return groups;
+}
+
+/* ─── Bloc compact groupé (remplace CourseSlotBand) ─────────────
+   Un seul bloc cliquable par groupe de cours qui se chevauchent.
+   Badge ×N avec compteur moniteurs assignés / requis.           */
+const CourseSlotCompactBlock = ({ courses, assignments, onOpen }) => {
+  const minS = Math.min(...courses.map(c => c.hour_start));
+  const maxE = Math.max(...courses.map(c => c.hour_end));
+  const top  = timeToY(minS);
+  const h    = Math.max(SLOT_H * 2, timeToY(maxE) - top);
+  const primaryColor = courses[0]?.color || '#5B75DB';
+  const primaryBg    = courses[0]?.bg_color || '#EBF0FE';
+  const totalNeeded   = courses.reduce((s, c) => s + (c.capacity || 2), 0);
+  const totalAssigned = courses.reduce((s, c) => s + (assignments[c.id]?.length || 0), 0);
+  const ok = totalAssigned >= totalNeeded;
   return (
-    <div style={{
-      position: 'absolute', top, left: 0, right: 0, height: h,
-      background: cs.bg_color || '#EBF0FE',
-      borderLeft: `4px solid ${cs.color}`,
-      borderTop: `1px solid ${cs.color}40`,
-      borderBottom: `1px solid ${cs.color}40`,
-      opacity: .80, pointerEvents: 'none', zIndex: 1,
-      boxSizing: 'border-box',
-      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-      padding: '3px 6px 4px',
-    }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: cs.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '.2px' }}>
-        {cs.group_name}
-        {cs.level && <span style={{ fontWeight: 500, opacity: .85, marginLeft: 4 }}>· {cs.level}</span>}
+    <div style={{ position: 'absolute', top, left: 0, right: 0, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box' }}>
+      {/* Fond semi-transparent */}
+      <div style={{ position: 'absolute', inset: 0, background: primaryBg, borderLeft: `4px solid ${primaryColor}`, borderTop: `1px solid ${primaryColor}40`, borderBottom: `1px solid ${primaryColor}40`, opacity: 0.72, boxSizing: 'border-box' }} />
+      {/* Badge cliquable en haut à droite */}
+      <div onClick={onOpen} title={`${courses.length} cours — cliquer pour gérer les moniteurs`} style={{ position: 'absolute', top: 3, right: 3, display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(255,255,255,.96)', border: `1.5px solid ${ok ? '#22C55E50' : '#F59E0B80'}`, borderRadius: 5, padding: '2px 5px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 1px 4px rgba(0,0,0,.14)', zIndex: 4, userSelect: 'none' }}>
+        {courses.slice(0, 3).map((c, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: c.color, flexShrink: 0 }} />)}
+        {courses.length > 3 && <span style={{ fontSize: 8, color: '#9B9890' }}>+{courses.length - 3}</span>}
+        <span style={{ fontSize: 9, fontWeight: 700, color: '#1E2235' }}>×{courses.length}</span>
+        <span style={{ fontSize: 9, fontWeight: 800, color: ok ? '#16A34A' : '#D97706' }}>{totalAssigned}/{totalNeeded}👤</span>
       </div>
-      {cs.public_desc && h >= 40 && (
-        <div style={{ fontSize: 9, color: cs.color, opacity: .75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cs.public_desc}</div>
+      {/* Noms des groupes si assez de hauteur */}
+      {h >= 44 && (
+        <div style={{ position: 'absolute', bottom: 3, left: 7, right: 60, fontSize: 9, color: primaryColor, fontWeight: 600, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+          {courses.map(c => c.group_name).join(' · ')}
+        </div>
       )}
     </div>
   );
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null }) => {
+const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null }) => {
   const placed = useMemo(() => {
     const sorted = [...spans].sort((a, b) => a.start - b.start);
     const cols = [];
@@ -201,8 +227,15 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onD
           {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
         </div>
       ))}
-      {/* Bandes de cours */}
-      {(courseSlots || []).map(cs => <CourseSlotBand key={cs.id} cs={cs} />)}
+      {/* Blocs cours compacts (un par groupe de cours qui se chevauchent) */}
+      {groupOverlapping(courseSlots || []).map((group, gi) => (
+        <CourseSlotCompactBlock
+          key={`g${gi}-${group[0].id}`}
+          courses={group}
+          assignments={assignments || {}}
+          onOpen={() => onOpenCourseGroup && onOpenCourseGroup(group)}
+        />
+      ))}
       {/* Blocs spans */}
       {placed.result.map(({ sp, col }) => {
         const s = staff.find(x => x.id === sp.staffId);
@@ -492,7 +525,121 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════ */
-/* ─── Modale tactile (bottom sheet ajout/édition) ────────────── */
+/*  Modal assignation moniteurs par cours (Option C popup)        */
+/* ═══════════════════════════════════════════════════════════════ */
+const CourseGroupModal = ({ courses, week, fnStaff, staff: allStaff, assignments, onClose, onChanged }) => {
+  const [localAssign, setLocalAssign] = useState(() => {
+    const o = {};
+    for (const cs of courses) o[cs.id] = assignments[cs.id] ? [...assignments[cs.id]] : [];
+    return o;
+  });
+  const [busy, setBusy] = useState(false);
+
+  const minS = Math.min(...courses.map(c => c.hour_start));
+  const maxE = Math.max(...courses.map(c => c.hour_end));
+
+  const handleAssign = async (csId, staffId) => {
+    if (!staffId) return;
+    setBusy(true);
+    try {
+      await api.post(`/course-slots/${csId}/assign`, { staff_id: staffId, week_start: week });
+      setLocalAssign(prev => ({ ...prev, [csId]: [...(prev[csId] || []), staffId] }));
+      onChanged();
+    } catch (e) { alert('❌ ' + (e.response?.data?.error || e.message)); }
+    finally { setBusy(false); }
+  };
+
+  const handleUnassign = async (csId, staffId) => {
+    setBusy(true);
+    try {
+      await api.delete(`/course-slots/${csId}/assign`, { params: { staff_id: staffId, week } });
+      setLocalAssign(prev => ({ ...prev, [csId]: (prev[csId] || []).filter(id => id !== staffId) }));
+      onChanged();
+    } catch (e) { alert('❌ ' + (e.response?.data?.error || e.message)); }
+    finally { setBusy(false); }
+  };
+
+  const weekLabel = (() => {
+    try { return new Date(week + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); }
+    catch { return week; }
+  })();
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: '#fff', borderRadius: 14, width: 540, maxHeight: '84vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,.22)', overflow: 'hidden' }}>
+        {/* En-tête */}
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #ECEAE4', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 18 }}>🎓</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#1E2235' }}>Cours — {fmtTime(minS)}–{fmtTime(maxE)}</div>
+            <div style={{ fontSize: 11, color: '#9B9890' }}>{courses.length} cours · Semaine du {weekLabel}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#9B9890', lineHeight: 1 }}>×</button>
+        </div>
+        {/* Corps */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {courses.map(cs => {
+            const assigned    = localAssign[cs.id] || [];
+            const remaining   = (cs.capacity || 2) - assigned.length;
+            const assignedSet = new Set(assigned);
+            const available   = fnStaff.filter(s => !assignedSet.has(s.id));
+            const full        = assigned.length >= (cs.capacity || 2);
+            return (
+              <div key={cs.id} style={{ borderRadius: 10, border: `1.5px solid ${cs.color}40`, overflow: 'hidden' }}>
+                {/* Entête du cours */}
+                <div style={{ background: cs.bg_color || '#EBF0FE', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: `1px solid ${cs.color}30` }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 2, background: cs.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: cs.color }}>{cs.group_name}</div>
+                    {(cs.level || cs.public_desc) && (
+                      <div style={{ fontSize: 10, color: cs.color, opacity: .8 }}>
+                        {[cs.level, cs.public_desc].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 10, background: full ? '#D1FAE5' : '#FEF3C7', color: full ? '#065F46' : '#92400E', borderRadius: 8, padding: '2px 7px', fontWeight: 700, flexShrink: 0 }}>
+                    {assigned.length}/{cs.capacity || 2} moniteur{(cs.capacity || 2) > 1 ? 's' : ''}
+                  </span>
+                </div>
+                {/* Moniteurs assignés + sélecteur */}
+                <div style={{ padding: '8px 12px', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', background: '#FAFAF8', minHeight: 40 }}>
+                  {assigned.map(sid => {
+                    const s = allStaff.find(x => x.id === sid);
+                    if (!s) return null;
+                    return (
+                      <div key={sid} style={{ display: 'flex', alignItems: 'center', gap: 5, background: `${s.color}12`, border: `1px solid ${s.color}40`, borderRadius: 20, padding: '3px 8px 3px 5px' }}>
+                        <AvatarImg s={s} size={18} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: s.color }}>{s.firstname || s.name}</span>
+                        <button disabled={busy} onClick={() => handleUnassign(cs.id, sid)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: `${s.color}90`, fontSize: 13, padding: '0 2px', lineHeight: 1, marginLeft: 1 }}>✕</button>
+                      </div>
+                    );
+                  })}
+                  {!full && available.length > 0 && (
+                    <select disabled={busy} value=""
+                      onChange={e => { if (e.target.value) handleAssign(cs.id, Number(e.target.value)); }}
+                      style={{ fontSize: 11, padding: '3px 8px', border: `1.5px dashed ${cs.color}60`, borderRadius: 20, background: '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#5B5855', outline: 'none' }}>
+                      <option value="">➕ Ajouter un moniteur…</option>
+                      {available.map(s => <option key={s.id} value={s.id}>{s.firstname || s.name} {s.lastname || ''}</option>)}
+                    </select>
+                  )}
+                  {full && <span style={{ fontSize: 10, color: '#16A34A', fontStyle: 'italic' }}>✅ Complet</span>}
+                  {!full && available.length === 0 && assigned.length === 0 && (
+                    <span style={{ fontSize: 10, color: '#C0BCB5', fontStyle: 'italic' }}>Aucun moniteur disponible</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════ */
+/*  Modal tactile (bottom sheet ajout/édition)                    */
 const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots, taskTypes, checkConstraints, onSave, onRemove, onClose }) => {
   const isEdit = modal.type === 'edit';
   const span   = isEdit ? modal.span : null;
@@ -594,7 +741,7 @@ const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots
 
 /* ═══════════════════════════════════════════════════════════════ */
 const PlanningView = () => {
-  const { staff, functions, taskTypes, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
+  const { staff, functions, taskTypes, teams, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
   const isMobile  = useIsMobile();
   const isTouch   = useIsTouch();
@@ -640,10 +787,25 @@ const PlanningView = () => {
   const [showTemplates,  setShowTemplates]  = useState(false);
   const [showCourseModal, setShowCourseModal] = useState(false);
   const [courseSlots,    setCourseSlots]    = useState([]);
+  const [assignments,    setAssignments]    = useState({});  // { [courseSlotId]: [staffId, ...] }
+  const [courseGroupModal, setCourseGroupModal] = useState(null); // null | { courses }
 
   const loadCourseSlots = useCallback(async () => {
     try { const r = await api.get('/course-slots'); setCourseSlots(Array.isArray(r.data) ? r.data : []); }
     catch (_) {}
+  }, []);
+
+  const loadAssignments = useCallback(async (week, fnId) => {
+    if (!fnId) return;
+    try {
+      const r = await api.get(`/course-slots/assignments?week=${week}&function_id=${fnId}`);
+      const map = {};
+      for (const a of (r.data || [])) {
+        if (!map[a.course_slot_id]) map[a.course_slot_id] = [];
+        map[a.course_slot_id].push(a.staff_id);
+      }
+      setAssignments(map);
+    } catch (_) {}
   }, []);
 
   useEffect(() => { loadCourseSlots(); }, []);
@@ -676,11 +838,23 @@ const PlanningView = () => {
   const weekLabel = `${dates[0].getDate()} – ${dates[6].getDate()} ${dates[6].toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
   const fn = functions.find(f => f.slug === activeFn);
   const activeFnId = fn?.id ?? null;
+  useEffect(() => { loadAssignments(currentWeek, activeFnId); }, [currentWeek, activeFnId]);
   // Tâches filtrées pour la fonction active (communes + spécifiques à cette fn)
   const fnTaskTypes = useMemo(
     () => (taskTypes||[]).filter(t => t.function_id == null || t.function_id === activeFnId),
     [taskTypes, activeFnId]
   );
+
+  // Bouton Cours visible seulement si des membres de l'équipe active ont show_course_slots
+  const showCourseBtn = useMemo(() => {
+    if (!fn) return false;
+    const courseTeamIds = new Set((teams||[]).filter(t => t.show_course_slots).map(t => t.id));
+    if (courseTeamIds.size === 0) return false;
+    return staff.some(s =>
+      s.functions?.includes(activeFn) &&
+      (s.team_ids || []).some(tid => courseTeamIds.has(tid))
+    );
+  }, [fn, activeFn, staff, teams]);
 
   const spans = useMemo(() => cloneSpans(schedules[currentWeek]?.[activeFn]), [schedules, currentWeek, activeFn]);
 
@@ -1050,16 +1224,14 @@ const PlanningView = () => {
                   {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q*SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
                 </div>
               ))}
-              {/* Cours de référence (fond) */}
-              {dayCourses.map(cs => (
-                <div key={cs.id} style={{
-                  position: 'absolute', top: timeToY(cs.hour_start), left: 0, right: 0,
-                  height: timeToY(cs.hour_end) - timeToY(cs.hour_start),
-                  background: `${cs.color}12`, borderLeft: `3px solid ${cs.color}60`,
-                  pointerEvents: 'none', zIndex: 1,
-                }}>
-                  <div style={{ fontSize: 9, color: cs.color, padding: '2px 5px', fontWeight: 600 }}>{cs.group_name}</div>
-                </div>
+              {/* Cours compacts (blocs groupés cliquables) */}
+              {groupOverlapping(dayCourses).map((group, gi) => (
+                <CourseSlotCompactBlock
+                  key={`tg${gi}-${group[0].id}`}
+                  courses={group}
+                  assignments={assignments}
+                  onOpen={() => setCourseGroupModal({ courses: group })}
+                />
               ))}
               {/* Blocs existants */}
               {placed.map(({ sp, col }) => {
@@ -1141,6 +1313,18 @@ const PlanningView = () => {
           <CourseSlotModal fn={fn} courseSlots={courseSlots.filter(cs => cs.fn_slug === fn.slug)}
             onClose={() => setShowCourseModal(false)} onChanged={loadCourseSlots} />
         )}
+        {/* Popup assignation moniteurs (Option C) */}
+        {courseGroupModal && (
+          <CourseGroupModal
+            courses={courseGroupModal.courses}
+            week={currentWeek}
+            fnStaff={fnStaff}
+            staff={staff}
+            assignments={assignments}
+            onClose={() => setCourseGroupModal(null)}
+            onChanged={() => loadAssignments(currentWeek, activeFnId)}
+          />
+        )}
       </div>
     );
   }
@@ -1189,7 +1373,7 @@ const PlanningView = () => {
           ))}
           {mode === 'fn' && fn && (
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexShrink: 0 }}>
-              <Btn onClick={() => { setShowCourseModal(true); setShowTemplates(false); }} small title="Gérer les créneaux de cours">🎓 Cours</Btn>
+              {showCourseBtn && <Btn onClick={() => { setShowCourseModal(true); setShowTemplates(false); }} small title="Gérer les créneaux de cours">🎓 Cours</Btn>}
               <Btn onClick={() => setShowTemplates(v => !v)} small style={{ background: showTemplates ? '#EBF0FE' : undefined, color: showTemplates ? '#5B75DB' : undefined }}>📋 Modèles</Btn>
             </div>
           )}
@@ -1234,6 +1418,8 @@ const PlanningView = () => {
                   staff={staff}
                   mode={mode}
                   courseSlots={courseSlotsFns.includes(activeFn) ? courseSlots.filter(cs => cs.fn_slug === activeFn && cs.day_of_week === di) : []}
+                  assignments={assignments}
+                  onOpenCourseGroup={(courses) => setCourseGroupModal({ courses })}
                   onDragEnter={setDragOverDay}
                   onDragLeave={() => setDragOverDay(null)}
                   isDragOver={dragOverDay === di}
@@ -1325,6 +1511,19 @@ const PlanningView = () => {
           courseSlots={courseSlots.filter(cs => cs.fn_slug === fn.slug)}
           onClose={() => setShowCourseModal(false)}
           onChanged={loadCourseSlots}
+        />
+      )}
+
+      {/* Popup assignation moniteurs (Option C) */}
+      {courseGroupModal && (
+        <CourseGroupModal
+          courses={courseGroupModal.courses}
+          week={currentWeek}
+          fnStaff={fnStaff}
+          staff={staff}
+          assignments={assignments}
+          onClose={() => setCourseGroupModal(null)}
+          onChanged={() => loadAssignments(currentWeek, activeFnId)}
         />
       )}
 

@@ -612,6 +612,15 @@ const TeamsConfig = ({ teams, reload }) => {
     }
   };
 
+  const toggleCourseSlots = async (t) => {
+    try {
+      await api.put(`/teams/${t.id}`, { show_course_slots: t.show_course_slots ? 0 : 1 });
+      await reload();
+    } catch (e) {
+      window.alert(e.response?.data?.error || 'Erreur');
+    }
+  };
+
   return (
     <div style={{ maxWidth: 600 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -625,6 +634,23 @@ const TeamsConfig = ({ teams, reload }) => {
               <div style={{ fontWeight: 600, fontSize: 13, color: '#1E2235' }}>{t.name}</div>
               <div style={{ fontSize: 10, color: '#9B9890' }}>{t.slug}</div>
             </div>
+            {/* Toggle créneaux de cours */}
+            <label title="Afficher le bouton de création de créneaux de cours pour cette équipe" style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+              <div onClick={() => toggleCourseSlots(t)} style={{
+                width: 32, height: 18, borderRadius: 9, flexShrink: 0,
+                background: t.show_course_slots ? '#C5753A' : '#D1CEC9',
+                position: 'relative', transition: 'background .2s', cursor: 'pointer',
+              }}>
+                <div style={{
+                  position: 'absolute', top: 2, left: t.show_course_slots ? 16 : 2,
+                  width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                  boxShadow: '0 1px 3px rgba(0,0,0,.2)', transition: 'left .2s',
+                }} />
+              </div>
+              <span style={{ fontSize: 10, color: t.show_course_slots ? '#C5753A' : '#9B9890', fontWeight: t.show_course_slots ? 600 : 400, whiteSpace: 'nowrap' }}>
+                🎓 Cours
+              </span>
+            </label>
             <button onClick={() => { setEdit(t); setShowForm(true); setErr(''); }}
               style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
             <button onClick={() => handleDelete(t.id)}

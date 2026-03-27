@@ -52,6 +52,7 @@ function getDb() {
       ["staff_avatar_url_idx",      "CREATE INDEX IF NOT EXISTS idx_staff_avatar ON staff(id) WHERE avatar_url IS NOT NULL"],
       ["users_must_change_password","ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"],
       ["task_types_function_id",    "ALTER TABLE task_types ADD COLUMN function_id INTEGER REFERENCES functions(id) ON DELETE SET NULL"],
+      ["teams_show_course_slots",    "ALTER TABLE teams ADD COLUMN show_course_slots INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, sql] of migrations) {
       const done = _db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(name);
@@ -432,6 +433,25 @@ function getDb() {
     seedTT.run('ouverture_voies', 'Ouvert. voies', '🧗', '#DC3545', 2);
     seedTT.run('demontage',       'Démontage',     '🔧', '#6B7280', 3);
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('task_types_table')").run();
+  }
+
+  // ── Migration : table course_slot_assignments ────────────────
+  const csaDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='course_slot_assignments_table'").get();
+  if (!csaDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS course_slot_assignments (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        course_slot_id INTEGER NOT NULL REFERENCES course_slots(id) ON DELETE CASCADE,
+        staff_id       INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+        week_start     TEXT    NOT NULL,
+        created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(course_slot_id, staff_id, week_start)
+      );
+      CREATE INDEX IF NOT EXISTS idx_csa_week  ON course_slot_assignments(week_start);
+      CREATE INDEX IF NOT EXISTS idx_csa_cs    ON course_slot_assignments(course_slot_id);
+      CREATE INDEX IF NOT EXISTS idx_csa_staff ON course_slot_assignments(staff_id);
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('course_slot_assignments_table')").run();
   }
 
   // ── Migration : comptes première installation (superadmin + admin) ───────────

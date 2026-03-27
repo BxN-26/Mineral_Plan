@@ -25,20 +25,21 @@ router.post('/', ...ADMIN, (req, res) => {
 
 // ── PUT /api/teams/:id ────────────────────────────────────────
 router.put('/:id', ...ADMIN, (req, res) => {
-  const { name, description, color, bg_color, icon, active } = req.body;
+  const { name, description, color, bg_color, icon, active, show_course_slots } = req.body;
   const old = db_.get('SELECT * FROM teams WHERE id = ?', [req.params.id]);
   if (!old) return res.status(404).json({ error: 'Équipe introuvable' });
 
   db_.run(
     `UPDATE teams SET
-       name        = COALESCE(?, name),
-       description = COALESCE(?, description),
-       color       = COALESCE(?, color),
-       bg_color    = COALESCE(?, bg_color),
-       icon        = COALESCE(?, icon),
-       active      = COALESCE(?, active)
+       name              = COALESCE(?, name),
+       description       = COALESCE(?, description),
+       color             = COALESCE(?, color),
+       bg_color          = COALESCE(?, bg_color),
+       icon              = COALESCE(?, icon),
+       active            = COALESCE(?, active),
+       show_course_slots = CASE WHEN ? IS NOT NULL THEN ? ELSE show_course_slots END
      WHERE id = ?`,
-    [name, description, color, bg_color, icon, active, req.params.id]
+    [name, description, color, bg_color, icon, active, show_course_slots ?? null, show_course_slots != null ? (show_course_slots ? 1 : 0) : null, req.params.id]
   );
   auditLog(req, 'TEAM_UPDATE', 'teams', req.params.id, old, req.body);
   res.json({ message: 'Équipe mise à jour' });

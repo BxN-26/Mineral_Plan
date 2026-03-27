@@ -65,4 +65,45 @@ router.delete('/:id', ...ADMIN, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /api/course-slots/assignments ─────────────────────────
+router.get('/assignments', AUTH, (req, res) => {
+  const { week, function_id } = req.query;
+  if (!week) return res.status(400).json({ error: 'week requis' });
+  let sql = `SELECT csa.course_slot_id, csa.staff_id
+             FROM course_slot_assignments csa
+             JOIN course_slots cs ON cs.id = csa.course_slot_id
+             WHERE csa.week_start = ?`;
+  const params = [week];
+  if (function_id) { sql += ' AND cs.function_id = ?'; params.push(Number(function_id)); }
+  res.json(db_.all(sql, params));
+});
+
+// ── POST /api/course-slots/:id/assign ─────────────────────────
+router.post('/:id/assign', ...ADMIN, (req, res) => {
+  const { staff_id, week_start } = req.body;
+  if (!staff_id || !week_start) return res.status(400).json({ error: 'staff_id et week_start requis' });
+  try {
+    db_.run(
+      `INSERT OR IGNORE INTO course_slot_assignments (course_slot_id, staff_id, week_start)
+       VALUES (?, ?, ?)`,
+      [Number(req.params.id), Number(staff_id), week_start]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// ── DELETE /api/course-slots/:id/assign ───────────────────────
+router.delete('/:id/assign', ...ADMIN, (req, res) => {
+  const { staff_id, week } = req.query;
+  if (!staff_id || !week) return res.status(400).json({ error: 'staff_id et week requis' });
+  db_.run(
+    `DELETE FROM course_slot_assignments
+     WHERE course_slot_id = ? AND staff_id = ? AND week_start = ?`,
+    [Number(req.params.id), Number(staff_id), week]
+  );
+  res.json({ ok: true });
+});
+
 module.exports = router;
