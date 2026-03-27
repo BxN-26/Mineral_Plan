@@ -25,12 +25,83 @@ function weekStart(offset) {
   return mon.toISOString().slice(0, 10);
 }
 
+/* ─── Modale détail créneau ────────────────────────────────── */
+const SpanDetailModal = ({ sp, date, myStaff, ttMap, onClose }) => {
+  const tt  = sp.taskType ? ttMap[sp.taskType] : null;
+  const dur = sp.end - sp.start;
+  const h   = Math.floor(dur);
+  const m   = Math.round((dur - h) * 60);
+  const durLabel = h > 0 ? (m > 0 ? `${h}h${String(m).padStart(2,'0')}` : `${h}h`) : `${m} min`;
+  const dateLabel = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,.18)', width: '100%', maxWidth: 340, overflow: 'hidden' }}>
+        {/* Bandeau couleur fonction */}
+        <div style={{ background: sp.fn ? `${sp.fn.color}18` : '#F5F3EF', borderBottom: `3px solid ${sp.fn?.color || '#E4E0D8'}`, padding: '16px 20px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {sp.fn && (
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: sp.fn.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                {sp.fn.icon}
+              </div>
+            )}
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: sp.fn?.color || '#1E2235' }}>{sp.fn?.name || 'Créneau'}</div>
+              <div style={{ fontSize: 11, color: '#9B9890', marginTop: 1 }}>{dateLabel}</div>
+            </div>
+            <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 18, color: '#9B9890', cursor: 'pointer', padding: 4, lineHeight: 1 }}>✕</button>
+          </div>
+        </div>
+        {/* Détails */}
+        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Horaire */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F5F3EF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🕐</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E2235' }}>{fmtTime(sp.start)} – {fmtTime(sp.end)}</div>
+              <div style={{ fontSize: 11, color: '#9B9890' }}>{durLabel}</div>
+            </div>
+          </div>
+          {/* Salarié */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: myStaff.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+              {myStaff.initials?.[0] || myStaff.firstname?.[0] || '?'}
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E2235' }}>{myStaff.firstname} {myStaff.lastname}</div>
+              <div style={{ fontSize: 11, color: '#9B9890' }}>{myStaff.primary_function || ''}</div>
+            </div>
+          </div>
+          {/* Type de tâche */}
+          {tt ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tt.color}15`, border: `1.5px solid ${tt.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{tt.icon}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: tt.color }}>{tt.label}</div>
+                <div style={{ fontSize: 11, color: '#9B9890' }}>Type de tâche</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F5F3EF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, color: '#C0BCB5' }}>⚙</div>
+              <div style={{ fontSize: 12, color: '#B0ACA5' }}>Aucun type de tâche</div>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: '0 20px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '8px 20px', background: '#F5F3EF', border: '1px solid #E4E0D8', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: '#5B5855' }}>Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MonPlanningView = () => {
   const { user }                                           = useAuth();
   const { staff, functions, taskTypes, schedules, loadWeekSchedules } = useApp();
   const [wk, setWk]                                        = useState(0);
   const [dayMode, setDayMode]   = useState(() => localStorage.getItem('spirit-mon-planning-mode') === 'day');
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
+  const [selectedSpan, setSelectedSpan] = useState(null); // { sp, date }
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
@@ -189,7 +260,7 @@ const MonPlanningView = () => {
                   const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
                   const tt  = sp.taskType ? ttMap[sp.taskType] : null;
                   return (
-                    <div key={i} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: `${myStaff.color}18`, border: `1.5px solid ${myStaff.color}50`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', paddingLeft: tt ? 8 : 5 }}>
+                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: `${myStaff.color}18`, border: `1.5px solid ${myStaff.color}50`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', paddingLeft: tt ? 8 : 5, cursor: 'pointer' }}>
                       {tt && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tt.color, borderRadius: '3px 0 0 3px' }} />}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                         {sp.fn && <span style={{ fontSize: 9 }}>{sp.fn.icon}</span>}
@@ -211,6 +282,16 @@ const MonPlanningView = () => {
           })}
         </div>
       </div>
+      {/* Modale détail créneau */}
+      {selectedSpan && (
+        <SpanDetailModal
+          sp={selectedSpan.sp}
+          date={selectedSpan.date}
+          myStaff={myStaff}
+          ttMap={ttMap}
+          onClose={() => setSelectedSpan(null)}
+        />
+      )}
     </div>
   );
 };
