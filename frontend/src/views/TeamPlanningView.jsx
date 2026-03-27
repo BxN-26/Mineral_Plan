@@ -24,7 +24,7 @@ function weekStart(offset) {
 }
 
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
-const ROGrid = ({ spans, staff, functions, dates }) => {
+const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
   return (
     <div style={{ display: 'flex', overflowX: 'auto' }}>
       {/* Colonne heures */}
@@ -71,6 +71,7 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
                 const s = staff.find(x => x.id === sp.staffId);
                 if (!s) return null;
                 const fn = functions.find(f => f.slug === sp.fnSlug);
+                const tt = sp.taskType ? ttMap[sp.taskType] : null;
                 const top = timeToY(sp.start);
                 const h   = Math.max(SLOT_H, timeToY(sp.end) - timeToY(sp.start));
                 return (
@@ -80,8 +81,9 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
                     border: `1.5px solid ${s.color}50`,
                     borderRadius: 6, overflow: 'hidden', padding: '2px 5px',
                     fontSize: 9, color: s.color, fontWeight: 600,
-                    boxSizing: 'border-box',
+                    boxSizing: 'border-box', paddingLeft: tt ? 8 : 5,
                   }}>
+                    {tt && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tt.color, borderRadius: '3px 0 0 3px' }} />}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden' }}>
                       {fn && <span style={{ fontSize: 8 }}>{fn.icon}</span>}
                       <div style={{
@@ -99,6 +101,11 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
                         {fmtTime(sp.start)}–{fmtTime(sp.end)}
                       </div>
                     )}
+                    {tt && h >= 32 && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: `${tt.color}18`, border: `1px solid ${tt.color}40`, borderRadius: 3, padding: '0px 3px', fontSize: 8, color: tt.color, fontWeight: 600, marginTop: 1 }}>
+                        {tt.icon} {tt.label}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -113,7 +120,7 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
 /* ─── Vue principale ─────────────────────────────────────────── */
 const TeamPlanningView = () => {
   const { user }                                             = useAuth();
-  const { staff, teams, functions, schedules, loadWeekSchedules } = useApp();
+  const { staff, teams, functions, taskTypes, schedules, loadWeekSchedules } = useApp();
   const [wk, setWk]                                          = useState(0);
   const [selectedTeamIds, setSelectedTeamIds]                = useState(null); // null = toutes
   const [hiddenStaffIds,  setHiddenStaffIds]                 = useState(new Set());
@@ -121,6 +128,7 @@ const TeamPlanningView = () => {
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
+  const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
 
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
 
@@ -193,11 +201,11 @@ const TeamPlanningView = () => {
 
   const filteredTeamStaff = useMemo(() => {
     return teamStaff.filter(s => {
-      const inTeam = effectiveTeamIds.size === 0 ||
-        s.team_ids?.some(tid => effectiveTeamIds.has(tid));
+      const inTeam = selectedTeamIds === null ||
+        s.team_ids?.some(tid => selectedTeamIds.has(tid));
       return inTeam && !hiddenStaffIds.has(s.id);
     });
-  }, [teamStaff, effectiveTeamIds, hiddenStaffIds]);
+  }, [teamStaff, selectedTeamIds, hiddenStaffIds]);
 
   const filteredStaffSet = useMemo(() => new Set(filteredTeamStaff.map(s => s.id)), [filteredTeamStaff]);
 
@@ -276,6 +284,14 @@ const TeamPlanningView = () => {
         {/* Ligne 2 : chips équipes (wrappables) */}
         {myTeams.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Bouton toggle tout/rien équipes */}
+            <button onClick={() => setSelectedTeamIds(selectedTeamIds === null ? new Set() : null)} style={{
+              fontSize: 11, fontWeight: 600, cursor: 'pointer', border: 'none',
+              borderRadius: 20, padding: '3px 10px',
+              background: selectedTeamIds === null ? '#C5753A' : '#E8E5DF',
+              color: selectedTeamIds === null ? '#fff' : '#8B8880',
+              transition: 'all .15s', fontFamily: 'inherit',
+            }}>{selectedTeamIds === null ? 'Tout masquer' : 'Tout afficher'}</button>
             {myTeams.map(t => {
               const active = selectedTeamIds === null || selectedTeamIds.has(t.id);
               return (
@@ -296,6 +312,22 @@ const TeamPlanningView = () => {
 
       {/* Légende membres (cliquables) */}
       <div style={{ padding: '8px 18px', borderBottom: '1px solid #ECEAE4', background: '#FAFAF8', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {teamStaff.length > 0 && (
+          /* Bouton toggle tout/rien membres */
+          <button
+            onClick={() => setHiddenStaffIds(hiddenStaffIds.size === 0 ? new Set(teamStaff.map(s => s.id)) : new Set())}
+            title={hiddenStaffIds.size === 0 ? 'Masquer tous les membres' : 'Afficher tous les membres'}
+            style={{
+              display: 'flex', alignItems: 'center',
+              fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              background: hiddenStaffIds.size === 0 ? '#1E223522' : '#F0EDE8',
+              border: `1px solid ${hiddenStaffIds.size === 0 ? '#1E2235' : '#DEDAD4'}`,
+              borderRadius: 14, padding: '2px 8px',
+              color: hiddenStaffIds.size === 0 ? '#1E2235' : '#B0ACA8',
+              textDecoration: hiddenStaffIds.size >= teamStaff.length ? 'line-through' : 'none',
+              transition: 'all .15s', fontFamily: 'inherit',
+            }}>{hiddenStaffIds.size === 0 ? 'Tout masquer' : 'Tout afficher'}</button>
+        )}
         {teamStaff.map(s => {
           const hidden = hiddenStaffIds.has(s.id);
           return (
@@ -320,7 +352,7 @@ const TeamPlanningView = () => {
 
       {/* Grille */}
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        <ROGrid spans={displaySpans} staff={filteredTeamStaff} functions={functions} dates={displayDates} />
+        <ROGrid spans={displaySpans} staff={filteredTeamStaff} functions={functions} dates={displayDates} ttMap={ttMap} />
       </div>
     </div>
   );

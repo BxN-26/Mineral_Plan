@@ -51,6 +51,7 @@ function getDb() {
       ["staff_charge_rate",         "ALTER TABLE staff ADD COLUMN charge_rate REAL NOT NULL DEFAULT 0.45"],
       ["staff_avatar_url_idx",      "CREATE INDEX IF NOT EXISTS idx_staff_avatar ON staff(id) WHERE avatar_url IS NOT NULL"],
       ["users_must_change_password","ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"],
+      ["task_types_function_id",    "ALTER TABLE task_types ADD COLUMN function_id INTEGER REFERENCES functions(id) ON DELETE SET NULL"],
     ];
     for (const [name, sql] of migrations) {
       const done = _db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(name);

@@ -14,22 +14,22 @@ router.get('/', AUTH, (req, res) => {
 
 // ── POST /api/task-types ──────────────────────────────────────
 router.post('/', ...ADMIN, (req, res) => {
-  const { slug, label, icon, color, sort_order } = req.body;
+  const { slug, label, icon, color, sort_order, function_id } = req.body;
   if (!slug || !label) return res.status(400).json({ error: 'slug et label requis' });
 
   const existing = db_.get('SELECT id FROM task_types WHERE slug = ?', [slug]);
   if (existing) return res.status(409).json({ error: 'Ce slug existe déjà' });
 
   const result = db_.run(
-    'INSERT INTO task_types (slug, label, icon, color, sort_order) VALUES (?, ?, ?, ?, ?)',
-    [slug, label, icon || '⚙️', color || '#6B7280', sort_order ?? 0]
+    'INSERT INTO task_types (slug, label, icon, color, sort_order, function_id) VALUES (?, ?, ?, ?, ?, ?)',
+    [slug, label, icon || '⚙️', color || '#6B7280', sort_order ?? 0, function_id || null]
   );
   res.status(201).json(db_.get('SELECT * FROM task_types WHERE id = ?', [result.lastInsertRowid]));
 });
 
 // ── PUT /api/task-types/:id ───────────────────────────────────
 router.put('/:id', ...ADMIN, (req, res) => {
-  const { slug, label, icon, color, sort_order } = req.body;
+  const { slug, label, icon, color, sort_order, function_id } = req.body;
   const tt = db_.get('SELECT id FROM task_types WHERE id = ?', [req.params.id]);
   if (!tt) return res.status(404).json({ error: 'Type de tâche introuvable' });
 
@@ -38,8 +38,8 @@ router.put('/:id', ...ADMIN, (req, res) => {
   if (conflict) return res.status(409).json({ error: 'Ce slug existe déjà' });
 
   db_.run(
-    'UPDATE task_types SET slug=?, label=?, icon=?, color=?, sort_order=? WHERE id=?',
-    [slug, label, icon || '⚙️', color || '#6B7280', sort_order ?? tt.sort_order ?? 0, req.params.id]
+    'UPDATE task_types SET slug=?, label=?, icon=?, color=?, sort_order=?, function_id=? WHERE id=?',
+    [slug, label, icon || '⚙️', color || '#6B7280', sort_order ?? tt.sort_order ?? 0, function_id || null, req.params.id]
   );
   res.json(db_.get('SELECT * FROM task_types WHERE id = ?', [req.params.id]));
 });

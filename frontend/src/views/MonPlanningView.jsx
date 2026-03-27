@@ -27,12 +27,13 @@ function weekStart(offset) {
 
 const MonPlanningView = () => {
   const { user }                                           = useAuth();
-  const { staff, functions, schedules, loadWeekSchedules } = useApp();
+  const { staff, functions, taskTypes, schedules, loadWeekSchedules } = useApp();
   const [wk, setWk]                                        = useState(0);
   const [dayMode, setDayMode]   = useState(() => localStorage.getItem('spirit-mon-planning-mode') === 'day');
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
+  const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
 
   const dates = useMemo(() => {
     const mon = new Date(currentWeek + 'T12:00:00');
@@ -60,7 +61,7 @@ const MonPlanningView = () => {
       for (let d = 0; d < 7; d++) {
         const daySpans = weekData[fn.slug]?.[d] ?? weekData[fn.slug]?.[String(d)] ?? [];
         for (const sp of daySpans) {
-          if (sp.staffId === myStaff.id) out[d].push({ fn, start: sp.start, end: sp.end });
+          if (sp.staffId === myStaff.id) out[d].push({ fn, start: sp.start, end: sp.end, taskType: sp.taskType });
         }
       }
     }
@@ -186,14 +187,21 @@ const MonPlanningView = () => {
                 {daySpans.map((sp, i) => {
                   const top = timeToY(sp.start);
                   const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
+                  const tt  = sp.taskType ? ttMap[sp.taskType] : null;
                   return (
-                    <div key={i} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: `${myStaff.color}18`, border: `1.5px solid ${myStaff.color}50`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px' }}>
+                    <div key={i} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: `${myStaff.color}18`, border: `1.5px solid ${myStaff.color}50`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', paddingLeft: tt ? 8 : 5 }}>
+                      {tt && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tt.color, borderRadius: '3px 0 0 3px' }} />}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                         {sp.fn && <span style={{ fontSize: 9 }}>{sp.fn.icon}</span>}
                         <span style={{ fontSize: 10, fontWeight: 700, color: sp.fn?.color || myStaff.color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sp.fn?.short_name || sp.fn?.name}</span>
                       </div>
                       {(sp.end - sp.start) >= 0.5 && (
                         <div style={{ fontSize: 9, color: '#9B9890', paddingLeft: 2 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
+                      )}
+                      {tt && h >= 44 && (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: `${tt.color}18`, border: `1px solid ${tt.color}40`, borderRadius: 3, padding: '0px 3px', fontSize: 8, color: tt.color, fontWeight: 600, marginTop: 1 }}>
+                          {tt.icon} {tt.label}
+                        </div>
                       )}
                     </div>
                   );

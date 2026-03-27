@@ -64,7 +64,7 @@ const totalHoursForStaff = (spans, staffId) => {
 };
 
 /* ─── Bloc span individuel ──────────────────────────────────── */
-const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {} }) => {
+const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {}, activeFnId = null }) => {
   const [showTT, setShowTT] = useState(false);
   const [ddPos,  setDdPos]  = useState({ top: 0, left: 0 });
   const badgeRef = useRef(null);
@@ -133,7 +133,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
                 style={{ position: 'fixed', top: ddPos.top, left: ddPos.left, zIndex: 9999, background: '#fff', border: '1px solid #E4E0D8', borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.18)', padding: 4, minWidth: 140 }}
               >
                 <div onClick={e => { e.stopPropagation(); onTaskTypeChange(dayIndex, span, null); setShowTT(false); }} style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', borderRadius: 4, color: '#9B9890', background: !span.taskType ? '#F5F3EF' : 'transparent' }}>— Aucune</div>
-                {Object.keys(ttMap).map(k => (
+                {Object.keys(ttMap).filter(k => ttMap[k].function_id == null || ttMap[k].function_id === activeFnId).map(k => (
                   <div key={k} onClick={e => { e.stopPropagation(); onTaskTypeChange(dayIndex, span, k); setShowTT(false); }}
                     style={{ padding: '4px 8px', fontSize: 10, cursor: 'pointer', borderRadius: 4, color: ttMap[k]?.color, background: span.taskType === k ? `${ttMap[k]?.color}15` : 'transparent', fontWeight: span.taskType === k ? 700 : 400 }}>
                     {ttMap[k]?.icon} {ttMap[k]?.label}
@@ -180,7 +180,7 @@ const CourseSlotBand = ({ cs }) => {
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {} }) => {
+const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null }) => {
   const placed = useMemo(() => {
     const sorted = [...spans].sort((a, b) => a.start - b.start);
     const cols = [];
@@ -207,7 +207,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, onDragEnter, onD
       {placed.result.map(({ sp, col }) => {
         const s = staff.find(x => x.id === sp.staffId);
         if (!s) return null;
-        return <SpanBlock key={`${sp.staffId}-${sp.start}-${col}`} span={sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={col} colCount={placed.colCount} highlighted={!!(highlightStaffId && sp.staffId === highlightStaffId)} ttMap={ttMap} />;
+        return <SpanBlock key={`${sp.staffId}-${sp.start}-${col}`} span={sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={col} colCount={placed.colCount} highlighted={!!(highlightStaffId && sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} />;
       })}
     </div>
   );
@@ -675,6 +675,12 @@ const PlanningView = () => {
   }, [currentWeek]);
   const weekLabel = `${dates[0].getDate()} – ${dates[6].getDate()} ${dates[6].toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
   const fn = functions.find(f => f.slug === activeFn);
+  const activeFnId = fn?.id ?? null;
+  // Tâches filtrées pour la fonction active (communes + spécifiques à cette fn)
+  const fnTaskTypes = useMemo(
+    () => (taskTypes||[]).filter(t => t.function_id == null || t.function_id === activeFnId),
+    [taskTypes, activeFnId]
+  );
 
   const spans = useMemo(() => cloneSpans(schedules[currentWeek]?.[activeFn]), [schedules, currentWeek, activeFn]);
 
@@ -1108,7 +1114,7 @@ const PlanningView = () => {
             staff={staff}
             activeFn={activeFn}
             courseSlots={dayCourses}
-            taskTypes={taskTypes}
+            taskTypes={fnTaskTypes}
             checkConstraints={checkConstraints}
             onSave={(staffId, start, end, taskType, courseSlotId) => {
               const next = cloneSpans(spans);
@@ -1154,7 +1160,7 @@ const PlanningView = () => {
       <div style={{ padding: '10px 18px 8px', borderBottom: '1px solid #ECEAE4', background: '#fff', flexShrink: 0 }}>
 
         {/* Ligne 1 : titre + toggle fn/all + nav semaine */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: mode === 'fn' ? 8 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#1E2235', whiteSpace: 'nowrap' }}>Planning</div>
             <div style={{ fontSize: 10, color: '#8B8880', whiteSpace: 'nowrap' }}>{weekLabel}</div>
@@ -1172,22 +1178,22 @@ const PlanningView = () => {
           </div>
         </div>
 
-        {/* Ligne 2 : chips fonctions + actions (seulement en mode fn) */}
-        {mode === 'fn' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            {functions.map(f => (
-              <button key={f.slug} onClick={() => setActiveFn(f.slug)} style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${activeFn===f.slug?f.color:'#E4E0D8'}`, background: activeFn===f.slug?(f.bg_color||'#F5F5F5'):'#fff', color: activeFn===f.slug?f.color:'#9B9890', cursor: 'pointer', fontSize: 11, fontWeight: activeFn===f.slug?700:400, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-                {f.icon} {f.name}
-              </button>
-            ))}
-            {fn && (
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexShrink: 0 }}>
-                <Btn onClick={() => { setShowCourseModal(true); setShowTemplates(false); }} small title="Gérer les créneaux de cours">🎓 Cours</Btn>
-                <Btn onClick={() => setShowTemplates(v => !v)} small style={{ background: showTemplates ? '#EBF0FE' : undefined, color: showTemplates ? '#5B75DB' : undefined }}>📋 Modèles</Btn>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Ligne 2 : chips fonctions + actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {/* Tout = Vue globale */}
+          <button onClick={() => setMode('all')} style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${mode === 'all' ? '#1E2235' : '#E4E0D8'}`, background: mode === 'all' ? '#EEF2FF' : '#fff', color: mode === 'all' ? '#1E2235' : '#9B9890', cursor: 'pointer', fontSize: 11, fontWeight: mode === 'all' ? 700 : 400, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>Tout</button>
+          {functions.map(f => (
+            <button key={f.slug} onClick={() => { setMode('fn'); setActiveFn(f.slug); }} style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${mode === 'fn' && activeFn===f.slug ? f.color : '#E4E0D8'}`, background: mode === 'fn' && activeFn===f.slug ? (f.bg_color||'#F5F5F5') : '#fff', color: mode === 'fn' && activeFn===f.slug ? f.color : '#9B9890', cursor: 'pointer', fontSize: 11, fontWeight: mode === 'fn' && activeFn===f.slug ? 700 : 400, fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              {f.icon} {f.name}
+            </button>
+          ))}
+          {mode === 'fn' && fn && (
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexShrink: 0 }}>
+              <Btn onClick={() => { setShowCourseModal(true); setShowTemplates(false); }} small title="Gérer les créneaux de cours">🎓 Cours</Btn>
+              <Btn onClick={() => setShowTemplates(v => !v)} small style={{ background: showTemplates ? '#EBF0FE' : undefined, color: showTemplates ? '#5B75DB' : undefined }}>📋 Modèles</Btn>
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -1240,6 +1246,7 @@ const PlanningView = () => {
                   isWeekend={di >= 5}
                   highlightStaffId={highlightStaffId}
                   ttMap={ttMap}
+                  activeFnId={activeFnId}
                 />
               );
             })}

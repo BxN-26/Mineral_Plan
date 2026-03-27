@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -51,7 +51,7 @@ const ConfigView = () => {
         {tab === 'organigramme' && <OrgTab />}
         {tab === 'equipes'   && <TeamsConfig    teams={teams}     reload={reloadTeams} />}
         {tab === 'fonctions' && <FunctionsConfig functions={functions} reload={reloadFunctions} />}
-        {tab === 'taches'    && <TaskTypesConfig taskTypes={taskTypes} reload={reloadTaskTypes} />}
+        {tab === 'taches'    && <TaskTypesConfig taskTypes={taskTypes} functions={functions} reload={reloadTaskTypes} />}
         {tab === 'conges'    && <CongesConfig    settings={settings} setSettings={setSettings} />}
         {tab === 'fiscal'    && <FiscalConfig    settings={settings} setSettings={setSettings} />}
         {tab === 'planning'  && <PlanningConfig  settings={settings} setSettings={setSettings} />}
@@ -823,7 +823,7 @@ const FiscalConfig = ({ settings, setSettings }) => {
 };
 
 /* ─── Onglet Tâches ─────────────────────────────────────── */
-const TaskTypesConfig = ({ taskTypes, reload }) => {
+const TaskTypesConfig = ({ taskTypes, functions, reload }) => {
   const [edit,     setEdit]     = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [err,      setErr]      = useState('');
@@ -850,57 +850,157 @@ const TaskTypesConfig = ({ taskTypes, reload }) => {
     }
   };
 
+  // Grouper les tâches par fonction (null = communes à toutes)
+  const groups = [
+    { fn: null, label: '— Communes à toutes les fonctions', tasks: (taskTypes||[]).filter(t => !t.function_id) },
+    ...(functions||[]).map(f => ({
+      fn: f,
+      label: `${f.icon} ${f.name}`,
+      tasks: (taskTypes||[]).filter(t => t.function_id === f.id),
+    })).filter(g => g.tasks.length > 0),
+  ];
+
   return (
     <div style={{ maxWidth: 700 }}>
       <div style={{ fontSize: 12, color: '#6B6860', marginBottom: 14, lineHeight: 1.6 }}>
         Les types de tâches apparaissent dans les menus de création de créneaux du planning.
-        Vous pouvez les renommer, changer leur couleur et leur icône, ou en créer de nouveaux.
+        Vous pouvez associer une tâche à une fonction spécifique ou la laisser commune à toutes.
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <span style={{ fontWeight: 700, fontSize: 14, color: '#1E2235' }}>Types de tâches ({(taskTypes||[]).length})</span>
         <Btn variant="primary" onClick={() => { setEdit(null); setShowForm(true); setErr(''); }}>+ Nouveau type</Btn>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 8 }}>
-        {(taskTypes||[]).map(t => (
-          <div key={t.id} style={{ background: '#fff', border: `2px solid ${t.color}40`, borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 20 }}>{t.icon}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, color: t.color }}>{t.label}</div>
-              <div style={{ fontSize: 10, color: '#9B9890' }}>{t.slug}</div>
-            </div>
-            <button onClick={() => { setEdit(t); setShowForm(true); setErr(''); }}
-              style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-            <button onClick={() => handleDelete(t.id)}
-              style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 5, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626' }}>🗑</button>
+
+      {groups.map(({ fn, label, tasks }) => (
+        <div key={fn?.id ?? 'common'} style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            {fn && <span style={{ width: 10, height: 10, borderRadius: '50%', background: fn.color, display: 'inline-block', flexShrink: 0 }} />}
+            <span style={{ fontSize: 12, fontWeight: 700, color: fn ? fn.color : '#6B6860', textTransform: 'uppercase', letterSpacing: '.4px' }}>{label}</span>
+            <div style={{ flex: 1, height: 1, background: '#ECEAE4' }} />
+            <span style={{ fontSize: 11, color: '#9B9890' }}>{tasks.length}</span>
           </div>
-        ))}
-      </div>
+          {tasks.length === 0 && (
+            <div style={{ fontSize: 11, color: '#C0BCB5', fontStyle: 'italic', paddingLeft: 4 }}>Aucune tâche</div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 8 }}>
+            {tasks.map(t => (
+              <div key={t.id} style={{ background: '#fff', border: `2px solid ${t.color}40`, borderRadius: 8, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 20 }}>{t.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: t.color }}>{t.label}</div>
+                  <div style={{ fontSize: 10, color: '#9B9890' }}>{t.slug}</div>
+                </div>
+                <button onClick={() => { setEdit(t); setShowForm(true); setErr(''); }}
+                  style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                <button onClick={() => handleDelete(t.id)}
+                  style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 5, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626' }}>🗑</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {showForm && (
         <Modal onClose={() => setShowForm(false)} title={edit ? 'Modifier le type de tâche' : 'Nouveau type de tâche'}>
-          <TaskTypeForm initial={edit} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
+          <TaskTypeForm initial={edit} functions={functions} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
         </Modal>
       )}
     </div>
   );
 };
 
-const TaskTypeForm = ({ initial, err, onSave, onCancel }) => {
+/* ─── Sélecteur d'emoji pour les types de tâches ─────────────── */
+const TASK_EMOJIS = [
+  { group: 'Sport & Eau',       emojis: ['🏊','🏊‍♀️','🏊‍♂️','🤽','🤿','🏋️','💪','🧘','🤸','⛹️','🚴','🥊','🎽','🏅','🥇'] },
+  { group: 'Formation',         emojis: ['🎓','📚','📖','✏️','🖊️','📝','🎯','🏆','📐','💡','🧑‍🏫','👩‍🏫'] },
+  { group: 'Administratif',     emojis: ['📋','📊','📈','📅','🗓️','📁','💼','📌','✅','🔖','📄','🗂️','📎'] },
+  { group: 'Technique',         emojis: ['🔧','⚙️','🛠️','🔨','🔑','🪛','🧰','🔦','🚿','🧹','🪣','🧽'] },
+  { group: 'Communication',     emojis: ['📢','💬','📱','📞','📧','✉️','🔔','💭','📣','📩','🗣️'] },
+  { group: 'Santé & Sécurité',  emojis: ['🩺','🩹','💊','🚑','🦺','⛑️','🧤','😷','🔴','🟡','🟢','♻️'] },
+  { group: 'Divers',            emojis: ['⭐','🌟','✨','🔥','💧','🌊','❄️','⚡','🎁','🎉','🕐','🔄'] },
+];
+
+const EmojiPickerField = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = e => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setSearch(''); } };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+  const allEmojis = TASK_EMOJIS.flatMap(g => g.emojis);
+  const filtered  = search.trim() ? allEmojis.filter(e => e.includes(search.trim())) : null;
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <button type="button" onClick={() => setOpen(v => !v)}
+          style={{ fontSize: 22, background: open ? '#FFF4EC' : '#F5F3EF', border: `1.5px solid ${open ? '#C5753A' : '#E4E0D8'}`, borderRadius: 8, padding: '2px 10px', cursor: 'pointer', lineHeight: 1.4, flexShrink: 0 }}>
+          {value || '⚙️'}
+        </button>
+        <input value={value} onChange={e => onChange(e.target.value)} style={{ ...inp, flex: 1 }} placeholder="ou saisir directement" />
+      </div>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 9999, background: '#fff', border: '1px solid #E4E0D8', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.15)', padding: 12, width: 288, maxHeight: 300, overflowY: 'auto' }}>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher…" autoFocus
+            style={{ width: '100%', boxSizing: 'border-box', padding: '6px 10px', border: '1px solid #E4E0D8', borderRadius: 6, fontSize: 12, marginBottom: 8, outline: 'none' }} />
+          {filtered ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+              {filtered.length === 0
+                ? <div style={{ fontSize: 11, color: '#9B9890', padding: '4px 8px' }}>Aucun résultat</div>
+                : filtered.map((em, i) => (
+                  <button key={i} type="button" onClick={() => { onChange(em); setOpen(false); setSearch(''); }}
+                    style={{ fontSize: 20, background: value === em ? '#FFF4EC' : 'none', border: `1.5px solid ${value === em ? '#C5753A' : 'transparent'}`, cursor: 'pointer', borderRadius: 6, padding: '2px 4px', lineHeight: 1 }}>
+                    {em}
+                  </button>
+                ))
+              }
+            </div>
+          ) : TASK_EMOJIS.map(group => (
+            <div key={group.group} style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#9B9890', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{group.group}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                {group.emojis.map((em, i) => (
+                  <button key={i} type="button" onClick={() => { onChange(em); setOpen(false); }}
+                    style={{ fontSize: 20, background: value === em ? '#FFF4EC' : 'none', border: `1.5px solid ${value === em ? '#C5753A' : 'transparent'}`, cursor: 'pointer', borderRadius: 6, padding: '2px 4px', lineHeight: 1 }}>
+                    {em}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TaskTypeForm = ({ initial, functions, err, onSave, onCancel }) => {
   const [form, setForm] = useState({
-    slug:       initial?.slug       || '',
-    label:      initial?.label      || '',
-    icon:       initial?.icon       || '⚙️',
-    color:      initial?.color      || '#6B7280',
-    sort_order: initial?.sort_order ?? 0,
+    slug:        initial?.slug        || '',
+    label:       initial?.label       || '',
+    icon:        initial?.icon        || '⚙️',
+    color:       initial?.color       || '#6B7280',
+    sort_order:  initial?.sort_order  ?? 0,
+    function_id: initial?.function_id ?? '',
   });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {err && <div style={{ padding: '8px 12px', background: '#FEF2F2', borderRadius: 6, color: '#DC2626', fontSize: 12 }}>{err}</div>}
+      <Field label="Fonction associée">
+        <select value={form.function_id ?? ''} onChange={e => set('function_id', e.target.value ? Number(e.target.value) : null)} style={inp}>
+          <option value="">— Commune à toutes les fonctions</option>
+          {(functions||[]).map(f => (
+            <option key={f.id} value={f.id}>{f.icon} {f.name}</option>
+          ))}
+        </select>
+      </Field>
       <Field label="Libellé"><input value={form.label} onChange={e => set('label', e.target.value)} style={inp} /></Field>
       <Field label="Slug (identifiant)"><input value={form.slug} onChange={e => set('slug', e.target.value.toLowerCase().replace(/\s/g, '_'))} style={inp} disabled={!!initial} /></Field>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <Field label="Icône (emoji)"><input value={form.icon} onChange={e => set('icon', e.target.value)} style={inp} /></Field>
+        <Field label="Icône (emoji)"><EmojiPickerField value={form.icon} onChange={v => set('icon', v)} /></Field>
         <Field label="Couleur"><input type="color" value={form.color} onChange={e => set('color', e.target.value)} style={{ ...inp, padding: 2, height: 36 }} /></Field>
       </div>
       <Field label="Ordre d'affichage"><input type="number" value={form.sort_order} min={0} onChange={e => set('sort_order', parseInt(e.target.value,10)||0)} style={inp} /></Field>

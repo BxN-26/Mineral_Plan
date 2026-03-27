@@ -22,7 +22,7 @@ function weekStart(offset) {
 }
 
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
-const ROGrid = ({ spans, staff, functions, dates }) => {
+const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
   return (
     <div style={{ display: 'flex', overflowX: 'auto' }}>
       {/* Colonne heures */}
@@ -65,6 +65,7 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
                 const s = staff.find(x => x.id === sp.staffId);
                 if (!s) return null;
                 const fn  = functions.find(f => f.slug === sp.fnSlug);
+                const tt  = sp.taskType ? ttMap[sp.taskType] : null;
                 const top = timeToY(sp.start);
                 const h   = Math.max(SLOT_H, timeToY(sp.end) - timeToY(sp.start));
                 return (
@@ -74,8 +75,9 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
                     border: `1.5px solid ${s.color}50`,
                     borderRadius: 6, overflow: 'hidden', padding: '2px 5px',
                     fontSize: 9, color: s.color, fontWeight: 600,
-                    boxSizing: 'border-box',
+                    boxSizing: 'border-box', paddingLeft: tt ? 8 : 5,
                   }}>
+                    {tt && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tt.color, borderRadius: '3px 0 0 3px' }} />}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden' }}>
                       {fn && <span style={{ fontSize: 8 }}>{fn.icon}</span>}
                       <div style={{
@@ -93,6 +95,11 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
                         {fmtTime(sp.start)}–{fmtTime(sp.end)}
                       </div>
                     )}
+                    {tt && h >= 32 && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: `${tt.color}18`, border: `1px solid ${tt.color}40`, borderRadius: 3, padding: '0px 3px', fontSize: 8, color: tt.color, fontWeight: 600, marginTop: 1 }}>
+                        {tt.icon} {tt.label}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -106,13 +113,14 @@ const ROGrid = ({ spans, staff, functions, dates }) => {
 
 /* ─── Vue principale ─────────────────────────────────────────── */
 const GeneralPlanningView = () => {
-  const { staff, functions, schedules, loadWeekSchedules } = useApp();
+  const { staff, functions, taskTypes, schedules, loadWeekSchedules } = useApp();
   const [wk,      setWk]      = useState(0);
-  const [selFns,  setSelFns]  = useState([]); // [] = toutes
+  const [selFns,  setSelFns]  = useState(null); // null = toutes, [] = aucune, [slugs] = filtrées
   const [dayMode, setDayMode] = useState(() => localStorage.getItem('spirit-general-planning-mode') === 'day');
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
+  const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
 
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
 
@@ -129,13 +137,14 @@ const GeneralPlanningView = () => {
 
   // Fonctions actives selon filtre
   const activeFns = useMemo(
-    () => selFns.length === 0 ? functions : functions.filter(f => selFns.includes(f.slug)),
+    () => selFns === null ? functions : functions.filter(f => selFns.includes(f.slug)),
     [functions, selFns]
   );
 
-  const toggleFn = (slug) => setSelFns(prev =>
-    prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
-  );
+  const toggleFn = (slug) => setSelFns(prev => {
+    const base = prev === null ? functions.map(f => f.slug) : prev;
+    return base.includes(slug) ? base.filter(s => s !== slug) : [...base, slug];
+  });
 
   const toggleDayMode = (val) => {
     setDayMode(val);
@@ -149,13 +158,6 @@ const GeneralPlanningView = () => {
     if (currentDay < 6) { setCurrentDay(d => d + 1); }
     else { setCurrentDay(0); setWk(w => w + 1); }
   };
-
-  // Grille selon mode
-  const displayDates = dayMode ? [dates[currentDay]] : dates;
-  const displaySpans = dayMode ? [spans[currentDay] || []] : spans;
-  const dayLabel     = dates[currentDay]
-    ? dates[currentDay].toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
-    : '';
 
   // Spans filtrés selon fonctions actives
   const spans = useMemo(() => {
@@ -171,6 +173,13 @@ const GeneralPlanningView = () => {
     }
     return s;
   }, [schedules, currentWeek, activeFns]);
+
+  // Grille selon mode
+  const displayDates = dayMode ? [dates[currentDay]] : dates;
+  const displaySpans = dayMode ? [spans[currentDay] || []] : spans;
+  const dayLabel     = dates[currentDay]
+    ? dates[currentDay].toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
+    : '';
 
   // Total créneaux planifiés visible
   const totalSlots = useMemo(() => spans.reduce((acc, day) => acc + day.length, 0), [spans]);
@@ -228,14 +237,15 @@ const GeneralPlanningView = () => {
       {/* Filtre fonctions */}
       <div style={{ padding: '8px 18px', borderBottom: '1px solid #ECEAE4', background: '#FAFAF8', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: '#9B9890', marginRight: 4 }}>Afficher :</span>
+        {/* Bouton toggle tout/rien */}
         <button
-          onClick={() => setSelFns([])}
-          style={{ ...chipSt({ color: '#1E2235', bg_color: '#EEF2FF' }, selFns.length === 0), border: `1.5px solid ${selFns.length === 0 ? '#1E2235' : '#E4E0D8'}`, color: selFns.length === 0 ? '#1E2235' : '#9B9890', background: selFns.length === 0 ? '#EEF2FF' : '#fff' }}
+          onClick={() => setSelFns(selFns === null ? [] : null)}
+          style={{ ...chipSt({ color: '#1E2235', bg_color: '#EEF2FF' }, selFns === null), border: `1.5px solid ${selFns === null ? '#1E2235' : '#E4E0D8'}`, color: selFns === null ? '#1E2235' : '#9B9890', background: selFns === null ? '#EEF2FF' : '#fff' }}
         >
-          Toutes fonctions
+          {selFns === null ? 'Tout masquer' : 'Tout afficher'}
         </button>
         {functions.map(fn => {
-          const sel = selFns.includes(fn.slug);
+          const sel = selFns === null || selFns.includes(fn.slug);
           return (
             <button key={fn.slug} onClick={() => toggleFn(fn.slug)} style={chipSt(fn, sel)}>
               {fn.icon} {fn.name}
@@ -246,7 +256,7 @@ const GeneralPlanningView = () => {
 
       {/* Grille */}
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        <ROGrid spans={displaySpans} staff={staff.filter(s => s.active)} functions={functions} dates={displayDates} />
+        <ROGrid spans={displaySpans} staff={staff.filter(s => s.active)} functions={functions} dates={displayDates} ttMap={ttMap} />
       </div>
     </div>
   );
