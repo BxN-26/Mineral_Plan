@@ -233,6 +233,8 @@ const PlanningConfig = ({ settings, setSettings }) => {
   const maxAmpHours   = map['planning_max_amplitude_hours']   || '12';
   const minRestEnabled= map['planning_min_rest_enabled']       === 'true';
   const minRestHours  = map['planning_min_rest_hours']         || '11';
+  const unavailApprovalRequired = map['unavailability_approval_required'] !== 'false';
+  const unavailMinNoticeDays    = Number(map['unavailability_min_notice_days'] || '3');
 
   const courseSlotsFns = useMemo(() => {
     try { return JSON.parse(map['planning_course_slots_fns'] || '[]'); } catch { return []; }
@@ -340,6 +342,27 @@ const PlanningConfig = ({ settings, setSettings }) => {
               })}
             </div>
         }
+      </SettingCard>
+
+      <SectionTitle>Indisponibilités salariés</SectionTitle>
+
+      <SettingCard icon="🚭" title="Approbation requise hors délai"
+        desc="Si activé, toute indisponibilité déclarée en-deçà du délai minimum passe automatiquement en statut 'en attente' et nécessite la validation du manager.">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Toggle on={unavailApprovalRequired} onChange={v => save('unavailability_approval_required', v)} />
+          <span style={{ fontSize: 12, color: unavailApprovalRequired ? '#16A34A' : '#9B9890' }}>
+            {unavailApprovalRequired ? 'Activé — validation manager requise' : 'Désactivé — toujours approuvé automatiquement'}
+          </span>
+        </div>
+      </SettingCard>
+
+      <SettingCard icon="⏰" title="Délai minimum de déclaration"
+        desc="Nombre de jours ouvrables avant le début d'une indisponibilité pour qu'elle soit automatiquement approuvée. En-deçà de ce délai, l'approbation du manager est requise (si activée ci-dessus).">
+        <NumInput value={unavailMinNoticeDays} min={0} max={30} unit="jours"
+          onChange={v => save('unavailability_min_notice_days', parseInt(v, 10) || 3)} />
+        <div style={{ fontSize: 11, color: '#9B9890', marginTop: 6 }}>
+          Valeur actuelle : <strong>{unavailMinNoticeDays} jour{unavailMinNoticeDays > 1 ? 's' : ''}</strong> de préavis requis pour validation automatique.
+        </div>
       </SettingCard>
 
       <SectionTitle>Approbation des échanges de créneaux</SectionTitle>

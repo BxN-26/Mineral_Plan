@@ -23,6 +23,7 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
     ...(isRh    ? [{ id: 'stats',            label: 'Statistiques',      icon: '📊', sub: 'Analyse & KPIs' }] : []),
     ...(isAdmin ? [{ id: 'costs',            label: 'Coûts',             icon: '💶', sub: 'Masse salariale' }] : []),
     { id: 'echanges',           label: 'Échanges',            icon: '🔄', sub: 'Créneaux & swaps' },
+    { id: 'indispos',           label: 'Indisponibilités',    icon: '📵', sub: 'Mes périodes indisponibles' },
     { id: 'profil',             label: 'Mon Profil',          icon: '🪪', sub: 'Infos & mot de passe' },
     ...(isAdmin ? [{ id: 'config',           label: 'Configuration',     icon: '⚙️', sub: 'Équipes & fonctions' }] : []),
   ];

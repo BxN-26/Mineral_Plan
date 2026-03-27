@@ -594,6 +594,46 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('swap_urgent_alert_seed')").run();
   }
 
+  // ── Migration : table unavailabilities ───────────────────────
+  const unavailDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='unavailabilities_table'").get();
+  if (!unavailDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS unavailabilities (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        staff_id       INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+        date_start     TEXT    NOT NULL,
+        date_end       TEXT    NOT NULL,
+        all_day        INTEGER NOT NULL DEFAULT 1,
+        hour_start     REAL,
+        hour_end       REAL,
+        note           TEXT,
+        recurrence     TEXT    NOT NULL DEFAULT 'none'
+                               CHECK(recurrence IN ('none','weekly','biweekly')),
+        recurrence_end TEXT,
+        status         TEXT    NOT NULL DEFAULT 'approved'
+                               CHECK(status IN ('approved','pending','refused')),
+        reviewed_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at    TEXT,
+        review_note    TEXT,
+        created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_unavail_staff ON unavailabilities(staff_id);
+      CREATE INDEX IF NOT EXISTS idx_unavail_dates ON unavailabilities(date_start, date_end);
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('unavailabilities_table')").run();
+  }
+
+  // ── Migration : seeds paramètres indisponibilités ─────────────
+  const unavailSeedDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='unavailability_settings_seed'").get();
+  if (!unavailSeedDone) {
+    const seed = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed.run('unavailability_min_notice_days', '3', 'number',
+      'Délai minimum (en jours) requis pour déclarer une indisponibilité sans validation du manager', 'planning');
+    seed.run('unavailability_approval_required', 'true', 'boolean',
+      'Activer la validation manager pour les indisponibilités déclarées hors délai', 'planning');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('unavailability_settings_seed')").run();
+  }
+
   return _db;
 }
 

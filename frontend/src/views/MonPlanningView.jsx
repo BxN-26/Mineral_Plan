@@ -113,6 +113,8 @@ const MonPlanningView = () => {
   const [selectedSpan, setSelectedSpan] = useState(null); // { sp, date }
   const [courseSlots,       setCourseSlots]       = useState([]);
   const [courseAssignments, setCourseAssignments] = useState([]);
+  const [myUnavailabilities, setMyUnavailabilities] = useState([]);
+  const [myLeaves,           setMyLeaves]           = useState([]);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
@@ -139,6 +141,18 @@ const MonPlanningView = () => {
 
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
   useEffect(() => { loadCourseData(currentWeek); }, [currentWeek]);
+  useEffect(() => {
+    if (!user?.staff_id) return;
+    const mon = new Date(currentWeek + 'T12:00:00');
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const to = sun.toISOString().slice(0, 10);
+    api.get(`/unavailabilities?staff_id=${user.staff_id}&from=${currentWeek}&to=${to}`)
+      .then(d => setMyUnavailabilities(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .catch(() => {});
+    api.get(`/leaves?status=approved&from=${currentWeek}&to=${to}`)
+      .then(d => setMyLeaves(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .catch(() => {});
+  }, [currentWeek, user?.staff_id]);
 
   const myStaff = useMemo(() => {
     if (!user?.staff_id) return null;
@@ -286,6 +300,46 @@ const MonPlanningView = () => {
                     {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
                   </div>
                 ))}
+                {/* Zones d'indisponibilité hachurées */}
+                {(() => {
+                  const dateStr = dates[di].toISOString().slice(0, 10);
+                  return myUnavailabilities
+                    .filter(u => u.date_start <= dateStr && u.date_end >= dateStr && u.status !== 'refused')
+                    .map((u, i) => {
+                      const top    = u.all_day ? 0 : Math.max(0, timeToY(u.hour_start));
+                      const bottom = u.all_day ? TOTAL_H : Math.max(top + SLOT_H, timeToY(u.hour_end));
+                      const h      = bottom - top;
+                      const isP    = u.status === 'pending';
+                      return (
+                        <div key={`indispo-${i}`}
+                          title={u.note || (isP ? 'Indisponibilité en attente de validation' : 'Indisponible')}
+                          style={{
+                            position: 'absolute', left: 0, right: 0, top, height: h,
+                            background: isP ? 'rgba(251,191,36,0.06)' : 'rgba(229,231,235,0.35)',
+                            backgroundImage: isP
+                              ? 'repeating-linear-gradient(45deg,rgba(251,191,36,0.25),rgba(251,191,36,0.25) 3px,transparent 3px,transparent 10px)'
+                              : 'repeating-linear-gradient(45deg,#D1D5DB,#D1D5DB 3px,transparent 3px,transparent 10px)',
+                            zIndex: 1, pointerEvents: 'none',
+                          }} />
+                      );
+                    });
+                })()}
+                {/* Zones de congés approuvés hachurées (vert) */}
+                {(() => {
+                  const dateStr = dates[di].toISOString().slice(0, 10);
+                  return myLeaves
+                    .filter(l => l.start_date <= dateStr && l.end_date >= dateStr)
+                    .map((l, i) => (
+                      <div key={`leave-${i}`}
+                        title={`Congé approuvé${l.type_label ? ' : ' + l.type_label : ''}`}
+                        style={{
+                          position: 'absolute', left: 0, right: 0, top: 0, height: TOTAL_H,
+                          background: 'rgba(16,185,129,0.06)',
+                          backgroundImage: 'repeating-linear-gradient(135deg,rgba(16,185,129,0.35),rgba(16,185,129,0.35) 3px,transparent 3px,transparent 10px)',
+                          zIndex: 1, pointerEvents: 'none',
+                        }} />
+                    ));
+                })()}
                 {daySpans.map((sp, i) => {
                   const top = timeToY(sp.start);
                   const h   = Math.max(SLOT_H, timeToY(sp.end) - top);

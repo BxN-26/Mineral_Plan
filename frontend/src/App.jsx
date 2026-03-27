@@ -15,6 +15,7 @@ import MonProfilView from './views/MonProfilView';
 import SwapView from './views/SwapView';
 import TeamPlanningView from './views/TeamPlanningView';
 import GeneralPlanningView from './views/GeneralPlanningView';
+import IndispoView from './views/IndispoView';
 import { Spinner } from './components/common';
 import api from './api/client';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -37,8 +38,9 @@ const VIEW_COMPONENTS = {
   'costs':        CostsView,
   'profil':         MonProfilView,
   'echanges':       SwapView,
-  'planning-equipe': TeamPlanningView,
-  'planning-general': GeneralPlanningView,
+  'planning-equipe':  TeamPlanningView,
+  'planning-general':  GeneralPlanningView,
+  'indispos':          IndispoView,
 };
 
 /* ─── Labels vues ───────────────────────────────────────────── */
@@ -55,6 +57,7 @@ const VIEW_LABELS = {
   'echanges':          'Échanges',
   'planning-equipe':   'Planning équipe',
   'planning-general':  'Planning général',
+  'indispos':          'Indisponibilités',
 };
 
 /* ─── Shell interne (après authentification) ─────────────────── */

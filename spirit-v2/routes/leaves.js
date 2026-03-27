@@ -51,7 +51,7 @@ function resolveApprover(staffId, level) {
 
 // ── GET /api/leaves ──────────────────────────────────────────
 router.get('/', AUTH, (req, res) => {
-  const { staff_id, status, year, pending_for, my_approvals } = req.query;
+  const { staff_id, status, year, from, to, pending_for, my_approvals } = req.query;
 
   let sql = `
     SELECT l.*,
@@ -86,6 +86,8 @@ router.get('/', AUTH, (req, res) => {
   }
 
   if (status)   { sql += ' AND l.status = ?';   p.push(status); }
+  if (from)     { sql += ' AND l.end_date >= ?';   p.push(from); }
+  if (to)       { sql += ' AND l.start_date <= ?'; p.push(to); }
   if (year)     { sql += ' AND strftime("%Y",l.start_date) = ?'; p.push(String(year)); }
 
   // Congés en attente de MON approbation

@@ -206,7 +206,7 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen }) => {
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null }) => {
+const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '' }) => {
   const placed = useMemo(() => {
     const sorted = [...spans].sort((a, b) => a.start - b.start);
     const cols = [];
@@ -227,6 +227,41 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
           {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
         </div>
       ))}
+      {/* Zones d'indisponibilité hachurées */}
+      {dateStr && unavailabilities
+        .filter(u => u.status !== 'refused' && u.date_start <= dateStr && u.date_end >= dateStr)
+        .map((u, i) => {
+          const top    = u.all_day ? 0 : Math.max(0, timeToY(u.hour_start));
+          const bottom = u.all_day ? TOTAL_H : Math.max(top + SLOT_H, timeToY(u.hour_end));
+          const isP    = u.status === 'pending';
+          return (
+            <div key={`unavail-${i}`}
+              title={`${u.firstname} ${u.lastname}${u.note ? ' — ' + u.note : ''}${isP ? ' (en attente)' : ''}`}
+              style={{
+                position: 'absolute', left: 0, right: 0, top, height: bottom - top,
+                background: isP ? 'rgba(251,191,36,0.07)' : 'rgba(229,231,235,0.35)',
+                backgroundImage: isP
+                  ? 'repeating-linear-gradient(45deg,rgba(251,191,36,0.3),rgba(251,191,36,0.3) 3px,transparent 3px,transparent 10px)'
+                  : 'repeating-linear-gradient(45deg,#D1D5DB,#D1D5DB 3px,transparent 3px,transparent 10px)',
+                zIndex: 1, pointerEvents: 'none',
+              }} />
+          );
+        })
+      }
+      {/* Zones de congés approuvés hachurées (vert) */}
+      {dateStr && leaves
+        .filter(l => l.start_date <= dateStr && l.end_date >= dateStr)
+        .map((l, i) => (
+          <div key={`leave-${i}`}
+            title={`${l.staff_name || ''} — Congé approuvé${l.type_label ? ' : ' + l.type_label : ''}`}
+            style={{
+              position: 'absolute', left: 0, right: 0, top: 0, height: TOTAL_H,
+              background: 'rgba(16,185,129,0.06)',
+              backgroundImage: 'repeating-linear-gradient(135deg,rgba(16,185,129,0.35),rgba(16,185,129,0.35) 3px,transparent 3px,transparent 10px)',
+              zIndex: 1, pointerEvents: 'none',
+            }} />
+        ))
+      }
       {/* Blocs cours compacts (un par groupe de cours qui se chevauchent) */}
       {groupOverlapping(courseSlots || []).map((group, gi) => (
         <CourseSlotCompactBlock
@@ -789,6 +824,8 @@ const PlanningView = () => {
   const [courseSlots,    setCourseSlots]    = useState([]);
   const [assignments,    setAssignments]    = useState({});  // { [courseSlotId]: [staffId, ...] }
   const [courseGroupModal, setCourseGroupModal] = useState(null); // null | { courses }
+  const [unavailabilities, setUnavailabilities] = useState([]);
+  const [leaves,           setLeaves]           = useState([]);
 
   const loadCourseSlots = useCallback(async () => {
     try { const r = await api.get('/course-slots'); setCourseSlots(Array.isArray(r.data) ? r.data : []); }
@@ -839,6 +876,18 @@ const PlanningView = () => {
   const fn = functions.find(f => f.slug === activeFn);
   const activeFnId = fn?.id ?? null;
   useEffect(() => { loadAssignments(currentWeek, activeFnId); }, [currentWeek, activeFnId]);
+
+  useEffect(() => {
+    const mon = new Date(currentWeek + 'T12:00:00');
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const to = sun.toISOString().slice(0, 10);
+    api.get(`/unavailabilities?from=${currentWeek}&to=${to}`)
+      .then(d => setUnavailabilities(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .catch(() => {});
+    api.get(`/leaves?status=approved&from=${currentWeek}&to=${to}`)
+      .then(d => setLeaves(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .catch(() => {});
+  }, [currentWeek]);
   // Tâches filtrées pour la fonction active (communes + spécifiques à cette fn)
   const fnTaskTypes = useMemo(
     () => (taskTypes||[]).filter(t => t.function_id == null || t.function_id === activeFnId),
@@ -934,8 +983,34 @@ const PlanningView = () => {
       }
     }
 
+    // 3. Indisponibilité déclarée
+    if (dates && dates[dayIndex]) {
+      const dateStr = dates[dayIndex].toISOString().slice(0, 10);
+      for (const u of unavailabilities) {
+        if (u.staff_id !== staffId) continue;
+        if (u.status === 'refused') continue;
+        if (u.date_start > dateStr || u.date_end < dateStr) continue;
+        const overlapAll     = !!u.all_day;
+        const overlapPartial = !u.all_day && u.hour_start < newEnd && u.hour_end > newStart;
+        if (overlapAll || overlapPartial) {
+          violations.push(
+            `⚠️ Indisponibilité${u.status === 'pending' ? ' (en attente)' : ''} déclarée${ u.all_day ? ' toute la journée' : ` de ${fmtTime(u.hour_start)} à ${fmtTime(u.hour_end)}`}`
+          );
+          break;
+        }
+      }
+
+      // 4. Congé approuvé
+      for (const l of leaves) {
+        if (l.staff_id !== staffId) continue;
+        if (l.start_date > dateStr || l.end_date < dateStr) continue;
+        violations.push(`🌿 Attribution impossible : congé approuvé${l.type_label ? ` (${l.type_label})` : ''} sur cette période`);
+        break;
+      }
+    }
+
     return violations;
-  }, [allSpans, activeFn, maxAmpEnabled, maxAmpH, minRestEnabled, minRestH]);
+  }, [allSpans, activeFn, maxAmpEnabled, maxAmpH, minRestEnabled, minRestH, unavailabilities, leaves, dates]);
 
   // ── Sauvegarde debounced ──────────────────────────────────────
   const debounceSave = useCallback((fnSlug, newSpans) => {
@@ -1433,6 +1508,9 @@ const PlanningView = () => {
                   highlightStaffId={highlightStaffId}
                   ttMap={ttMap}
                   activeFnId={activeFnId}
+                  unavailabilities={unavailabilities.filter(u => fnStaff.some(s => s.id === u.staff_id))}
+                  leaves={leaves.filter(l => fnStaff.some(s => s.id === l.staff_id))}
+                  dateStr={dates[di].toISOString().slice(0, 10)}
                 />
               );
             })}
