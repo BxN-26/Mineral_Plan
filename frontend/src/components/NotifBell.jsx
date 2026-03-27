@@ -3,12 +3,13 @@ import api from '../api/client';
 import { useApp } from '../App';
 
 const TYPE_ICON = {
-  leave:          '🏖️',
-  leave_planning: '⚠️',
-  overtime:       '⏱️',
-  approval:       '✅',
-  info:           'ℹ️',
-  swap:           '🔄',
+  leave:            '🏖️',
+  leave_planning:   '⚠️',
+  planning_conflict:'🗓️',
+  overtime:         '⏱️',
+  approval:         '✅',
+  info:             'ℹ️',
+  swap:             '🔄',
 };
 
 const NotifBell = () => {
@@ -86,7 +87,14 @@ const NotifBell = () => {
     if (!n.read) markOne(n.id);
     setOpen(false);
     const rt = n.related_type;
-    if (n.type === 'urgent' || (n.type === 'swap' && rt === 'swap')) {
+    if (n.type === 'planning_conflict') {
+      // Créneau libéré → renvoyer vers le planning à la bonne semaine
+      try {
+        const meta = n.meta ? JSON.parse(n.meta) : null;
+        if (meta?.week) setPlanningFocus({ week: meta.week, staffId: meta.staffId ?? null });
+      } catch (_) {}
+      setView('planning');
+    } else if (n.type === 'urgent' || (n.type === 'swap' && rt === 'swap')) {
       // urgent → onglet manager ; swap normal → onglet mine
       setSwapTab(n.type === 'urgent' ? 'manager' : 'mine');
       setView('echanges');

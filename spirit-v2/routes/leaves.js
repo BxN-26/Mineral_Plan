@@ -4,6 +4,7 @@ const { db_ }                               = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
 const { notify }                             = require('./notifications');
 const { sendPush }                           = require('./push');
+const { releaseStaffSlots }                  = require('../utils/releaseSlots');
 
 const AUTH  = requireAuth;
 const MGR   = [requireAuth, requireRole('admin','manager','rh','superadmin')];
@@ -299,64 +300,16 @@ router.put('/:id/approve', AUTH, (req, res) => {
       });
     }
 
-    // Trouver les créneaux planifiés du salarié qui tombent dans la période de congé
-    // Utiliser T12:00:00 pour éviter les décalages de fuseau horaire (minuit local ≠ minuit UTC)
-    const leaveStart = new Date(leave.start_date + 'T12:00:00');
-    const leaveEnd   = new Date(leave.end_date   + 'T12:00:00');
-
-    // Calculer les lundis de chaque semaine chevauchant les congés
-    const weeksAffected = new Set();
-    const d = new Date(leaveStart);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); // rewind to Monday
-    while (d <= leaveEnd) {
-      // Formater en YYYY-MM-DD sans passer par toISOString() (évite le décalage UTC)
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      weeksAffected.add(`${y}-${m}-${day}`);
-      d.setDate(d.getDate() + 7);
-    }
-
-    const staffRow = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
-    const staffName = staffRow ? `${staffRow.firstname} ${staffRow.lastname}` : `Salarié #${leave.staff_id}`;
-
-    for (const week of weeksAffected) {
-      // Vérifier s'il y a des schedule_slots pour ce salarié cette semaine-là
-      const slots = db_.all(
-        `SELECT ss.day_of_week, f.slug AS fn_slug, f.name AS fn_name
-         FROM schedule_slots ss
-         JOIN schedules sc ON sc.id = ss.schedule_id
-         JOIN functions f  ON f.id  = sc.function_id
-         WHERE sc.week_start = ? AND ss.staff_id = ?
-         LIMIT 10`,
-        [week, leave.staff_id]
-      );
-      if (!slots.length) continue;
-
-      const dayNames = ['lun','mar','mer','jeu','ven','sam','dim'];
-      const slotsSummary = slots.map(s => `${dayNames[s.day_of_week]} (${s.fn_name})`).join(', ');
-      const meta = {
-        type: 'leave_unassigned',
-        week,
-        staffId: leave.staff_id,
-        staffName,
-        slots: slots.map(s => ({ day: s.day_of_week, fnSlug: s.fn_slug })),
-      };
-
-      // Notifier tous les managers/admins
-      const managers = db_.all(
-        "SELECT id FROM users WHERE role IN ('admin','manager','superadmin') AND active=1"
-      );
-      for (const mgr of managers) {
-        notify(
-          mgr.id, 'leave_planning',
-          `⚠️ Créneau à réattribuer — ${staffName}`,
-          `Congé approuvé du ${leave.start_date} au ${leave.end_date}. Créneaux libres : ${slotsSummary}`,
-          'leave', leave.id,
-          meta
-        );
-      }
-    }
+    // Libérer les créneaux planifiés sur la période du congé + notifier le manager
+    releaseStaffSlots(db_, notify, {
+      staffId:   leave.staff_id,
+      dateStart: leave.start_date,
+      dateEnd:   leave.end_date,
+      allDay:    true,
+      hourStart: null,
+      hourEnd:   null,
+      label: `Congé approuvé${lt?.label ? ' (' + lt.label + ')' : ''}`,
+    });
   }
 
   auditLog(req, 'LEAVE_APPROVE', 'leaves', leave.id, null, { step: leave.approval_step });

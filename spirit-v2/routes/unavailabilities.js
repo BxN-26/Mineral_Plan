@@ -3,6 +3,7 @@ const router = require('express').Router();
 const { db_ }  = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { notify } = require('./notifications');
+const { releaseStaffSlots } = require('../utils/releaseSlots');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
@@ -128,8 +129,23 @@ router.post('/', AUTH, (req, res) => {
         `UPDATE unavailabilities SET status='approved', review_note='Auto-approuvée (aucun référent assigné)' WHERE id=?`,
         [r.lastInsertRowid]
       );
+      // Libérer les créneaux planifiés sur la période
+      releaseStaffSlots(db_, notify, {
+        staffId: Number(staff_id), dateStart: date_start, dateEnd: date_end,
+        allDay: !!all_day, hourStart: all_day ? null : Number(hour_start),
+        hourEnd: all_day ? null : Number(hour_end),
+        label: 'Indisponibilité (auto-approuvée)',
+      });
       return res.json({ id: r.lastInsertRowid, status: 'approved' });
     }
+  } else if (status === 'approved') {
+    // Approbation directe (délai respecté) — libérer les créneaux
+    releaseStaffSlots(db_, notify, {
+      staffId: Number(staff_id), dateStart: date_start, dateEnd: date_end,
+      allDay: !!all_day, hourStart: all_day ? null : Number(hour_start),
+      hourEnd: all_day ? null : Number(hour_end),
+      label: 'Indisponibilité',
+    });
   }
 
   res.json({ id: r.lastInsertRowid, status });
@@ -163,6 +179,19 @@ router.put('/:id/review', ...ADMIN, (req, res) => {
         : `Votre indisponibilité du ${unavail.date_start} au ${unavail.date_end} a été refusée.${review_note ? ' Note : ' + review_note : ''}`,
       'unavailability', unavail.id
     );
+  }
+
+  // Si approuvée — libérer les créneaux planifiés sur la période
+  if (status === 'approved') {
+    releaseStaffSlots(db_, notify, {
+      staffId: unavail.staff_id,
+      dateStart: unavail.date_start,
+      dateEnd:   unavail.date_end,
+      allDay:    !!unavail.all_day,
+      hourStart: unavail.all_day ? null : unavail.hour_start,
+      hourEnd:   unavail.all_day ? null : unavail.hour_end,
+      label: 'Indisponibilité approuvée',
+    });
   }
 
   res.json({ ok: true });
