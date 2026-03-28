@@ -603,6 +603,40 @@ const SystemeConfig = ({ settings, setSettings }) => {
           <div style={KNOB_STYLE(pushEnabled)} />
         </button>
       </div>
+      <SectionTitle>Documentation</SectionTitle>
+
+      <div style={{ background: '#fff', border: '1px solid #ECEAE4', borderRadius: 10, padding: '16px 18px', marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div style={{ fontSize: 24, lineHeight: 1.2, flexShrink: 0, marginTop: 2 }}>📖</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#1E2235', marginBottom: 4 }}>Manuel utilisateur</div>
+          <div style={{ fontSize: 12, color: '#6B6860', marginBottom: 10, lineHeight: 1.5 }}>
+            Guide complet d'utilisation de l'application — connexion, planning, congés, cours, échanges, configuration…
+          </div>
+          <a href="/docs/manuel_utilisateur.pdf" target="_blank" rel="noopener noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 6,
+              background: '#F5F3EF', border: '1px solid #E4E0D8', color: '#1E2235', fontSize: 12, fontWeight: 600,
+              textDecoration: 'none', cursor: 'pointer' }}>
+            📄 Ouvrir le PDF
+          </a>
+        </div>
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #ECEAE4', borderRadius: 10, padding: '16px 18px', marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+        <div style={{ fontSize: 24, lineHeight: 1.2, flexShrink: 0, marginTop: 2 }}>🛠️</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#1E2235', marginBottom: 4 }}>Documentation technique</div>
+          <div style={{ fontSize: 12, color: '#6B6860', marginBottom: 10, lineHeight: 1.5 }}>
+            Architecture, base de données, API, déploiement — à destination des développeurs et administrateurs système.
+          </div>
+          <a href="/docs/description_technique.pdf" target="_blank" rel="noopener noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 6,
+              background: '#F5F3EF', border: '1px solid #E4E0D8', color: '#1E2235', fontSize: 12, fontWeight: 600,
+              textDecoration: 'none', cursor: 'pointer' }}>
+            📄 Ouvrir le PDF
+          </a>
+        </div>
+      </div>
+
     </div>
   );
 };

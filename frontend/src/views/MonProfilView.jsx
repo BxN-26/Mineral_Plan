@@ -191,6 +191,27 @@ export default function MonProfilView() {
             </div>
           </div>
 
+          {/* ── Documentation ─────────────────────────────────── */}
+          <div style={{ background: '#fff', borderRadius: 14, padding: '24px 28px', boxShadow: '0 1px 6px rgba(0,0,0,.06)' }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#1E2235', marginBottom: 16 }}>Documentation</div>
+            <p style={{ fontSize: 13, color: '#6B6860', marginBottom: 16, lineHeight: 1.6 }}>
+              Ce guide vous explique comment utiliser l'application : consulter votre planning, déposer des congés, déclarer une indisponibilité, proposer un échange…
+            </p>
+            <a
+              href="/docs/manuel_staff.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '10px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: '#4A8C6E', color: '#fff', textDecoration: 'none',
+                boxShadow: '0 1px 4px rgba(74,140,110,.25)',
+              }}
+            >
+              📄 Ouvrir le guide du personnel (PDF)
+            </a>
+          </div>
+
         </div>
       </div>
     </div>

@@ -49,6 +49,11 @@ pandoc "$SCRIPT_DIR/manuel_utilisateur.md" \
   "${PANDOC_OPTS[@]}" \
   -o "$OUT_DIR/manuel_utilisateur.pdf"
 
+echo "==> Génération de manuel_staff.pdf..."
+pandoc "$SCRIPT_DIR/manuel_staff.md" \
+  "${PANDOC_OPTS[@]}" \
+  -o "$OUT_DIR/manuel_staff.pdf"
+
 echo ""
 echo "✓ Fichiers générés dans : $OUT_DIR/"
 ls -lh "$OUT_DIR/"*.pdf

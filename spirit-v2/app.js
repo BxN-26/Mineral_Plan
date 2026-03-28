@@ -83,6 +83,10 @@ app.use(express.static(distPath, {
 // Servir les uploads (avatars, etc.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Servir les PDFs de documentation (accès public, lecture seule)
+const docsPath = path.join(__dirname, '../Doc_techniques/pdf');
+app.use('/docs', express.static(docsPath, { index: false }));
+
 // ── Routes API ────────────────────────────────────────────────
 app.use('/api/auth',      authRouter);
 app.use('/api/staff',     staffRouter);
