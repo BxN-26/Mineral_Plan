@@ -174,7 +174,7 @@ function groupOverlapping(slots) {
 /* ─── Bloc compact groupé (remplace CourseSlotBand) ─────────────
    Un seul bloc cliquable par groupe de cours qui se chevauchent.
    Badge ×N avec compteur moniteurs assignés / requis.           */
-const CourseSlotCompactBlock = ({ courses, assignments, onOpen }) => {
+const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCount = 1 }) => {
   const minS = Math.min(...courses.map(c => c.hour_start));
   const maxE = Math.max(...courses.map(c => c.hour_end));
   const top  = timeToY(minS);
@@ -184,9 +184,10 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen }) => {
   const totalNeeded   = courses.reduce((s, c) => s + (c.capacity || 2), 0);
   const totalAssigned = courses.reduce((s, c) => s + (assignments[c.id]?.length || 0), 0);
   const ok = totalAssigned >= totalNeeded;
+  const w    = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
+  const left = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
   return (
-    <div style={{ position: 'absolute', top, left: 0, right: 0, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box' }}>
-      {/* Fond couleur de base */}
+    <div style={{ position: 'absolute', top, left, width: w, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box' }}>
       <div style={{ position: 'absolute', inset: 0, background: primaryBg, borderLeft: `4px solid ${primaryColor}`, borderTop: `1px solid ${primaryColor}40`, borderBottom: `1px solid ${primaryColor}40`, opacity: 0.72, boxSizing: 'border-box' }} />
       {/* Fond hachuré en points */}
       <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${primaryColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, boxSizing: 'border-box' }} />
@@ -216,15 +217,26 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen }) => {
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
 const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '' }) => {
   const placed = useMemo(() => {
-    const sorted = [...spans].sort((a, b) => a.start - b.start);
+    // Unification cours + spans dans le même algorithme de colonnes
+    const courseGroups = groupOverlapping(courseSlots || []);
+    const allItems = [
+      ...courseGroups.map(g => ({
+        type: 'course',
+        group: g,
+        start: Math.min(...g.map(c => c.hour_start)),
+        end:   Math.max(...g.map(c => c.hour_end)),
+      })),
+      ...spans.map(sp => ({ type: 'span', sp, start: sp.start, end: sp.end })),
+    ];
+    const sorted = [...allItems].sort((a, b) => a.start - b.start);
     const cols = [];
-    const result = sorted.map(sp => {
-      let col = cols.findIndex(end => end <= sp.start);
-      if (col === -1) { cols.push(sp.end); col = cols.length - 1; } else cols[col] = sp.end;
-      return { sp, col };
+    const result = sorted.map(item => {
+      let col = cols.findIndex(end => end <= item.start);
+      if (col === -1) { cols.push(item.end); col = cols.length - 1; } else cols[col] = item.end;
+      return { ...item, col };
     });
     return { result, colCount: Math.max(1, cols.length) };
-  }, [spans]);
+  }, [spans, courseSlots]);
 
   return (
     <div ref={colRef} onDragOver={e => { e.preventDefault(); onDragEnter(dayIndex); }} onDragLeave={onDragLeave}
@@ -270,20 +282,23 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
             }} />
         ))
       }
-      {/* Blocs cours compacts (un par groupe de cours qui se chevauchent) */}
-      {groupOverlapping(courseSlots || []).map((group, gi) => (
-        <CourseSlotCompactBlock
-          key={`g${gi}-${group[0].id}`}
-          courses={group}
-          assignments={assignments || {}}
-          onOpen={() => onOpenCourseGroup && onOpenCourseGroup(group)}
-        />
-      ))}
-      {/* Blocs spans */}
-      {placed.result.map(({ sp, col }) => {
-        const s = staff.find(x => x.id === sp.staffId);
+      {/* Blocs cours et spans — placement unifié côte à côte */}
+      {placed.result.map((item, idx) => {
+        if (item.type === 'course') {
+          return (
+            <CourseSlotCompactBlock
+              key={`course-${item.group[0].id}-${idx}`}
+              courses={item.group}
+              assignments={assignments || {}}
+              onOpen={() => onOpenCourseGroup && onOpenCourseGroup(item.group)}
+              col={item.col}
+              colCount={placed.colCount}
+            />
+          );
+        }
+        const s = staff.find(x => x.id === item.sp.staffId);
         if (!s) return null;
-        return <SpanBlock key={`${sp.staffId}-${sp.start}-${col}`} span={sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={col} colCount={placed.colCount} highlighted={!!(highlightStaffId && sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} />;
+        return <SpanBlock key={`${item.sp.staffId}-${item.sp.start}-${item.col}`} span={item.sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={item.col} colCount={placed.colCount} highlighted={!!(highlightStaffId && item.sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} />;
       })}
     </div>
   );
