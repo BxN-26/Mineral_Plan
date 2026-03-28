@@ -1146,6 +1146,13 @@ const PlanningView = () => {
   /* ─── Vue globale — colonne lecture seule ─────────────────── */
   const AllSpansColumn = ({ dayIndex, isToday, isWeekend }) => {
     const daySpans = allSpans[dayIndex] || [];
+    const dateStr  = dates[dayIndex].toISOString().slice(0, 10);
+
+    // Cours : toutes fonctions autorisées (courseSlotsFns)
+    const dayCourses = courseSlots.filter(cs =>
+      courseSlotsFns.includes(cs.fn_slug) && cs.day_of_week === dayIndex
+    );
+
     const placed = useMemo(() => {
       const sorted = [...daySpans].sort((a, b) => a.start - b.start);
       const cols = [];
@@ -1163,6 +1170,50 @@ const PlanningView = () => {
           <div key={h} style={{ position: 'absolute', left: 0, right: 0, top: (h - DAY_START) * HOUR_H, borderTop: '1px solid #F0EDE8', pointerEvents: 'none' }}>
             {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
           </div>
+        ))}
+        {/* Zones d'indisponibilité hachurées */}
+        {unavailabilities
+          .filter(u => u.status !== 'refused' && u.date_start <= dateStr && u.date_end >= dateStr)
+          .map((u, i) => {
+            const top    = u.all_day ? 0 : Math.max(0, timeToY(u.hour_start));
+            const bottom = u.all_day ? TOTAL_H : Math.max(top + SLOT_H, timeToY(u.hour_end));
+            const isP    = u.status === 'pending';
+            return (
+              <div key={`unavail-${i}`}
+                title={`${u.firstname} ${u.lastname}${u.note ? ' — ' + u.note : ''}${isP ? ' (en attente)' : ''}`}
+                style={{
+                  position: 'absolute', left: 0, right: 0, top, height: bottom - top,
+                  background: isP ? 'rgba(251,191,36,0.07)' : 'rgba(229,231,235,0.35)',
+                  backgroundImage: isP
+                    ? 'repeating-linear-gradient(45deg,rgba(251,191,36,0.3),rgba(251,191,36,0.3) 3px,transparent 3px,transparent 10px)'
+                    : 'repeating-linear-gradient(45deg,#D1D5DB,#D1D5DB 3px,transparent 3px,transparent 10px)',
+                  zIndex: 1, pointerEvents: 'none',
+                }} />
+            );
+          })
+        }
+        {/* Zones de congés approuvés hachurées (vert) */}
+        {leaves
+          .filter(l => l.start_date <= dateStr && l.end_date >= dateStr)
+          .map((l, i) => (
+            <div key={`leave-${i}`}
+              title={`${l.staff_name || ''} — Congé approuvé${l.type_label ? ' : ' + l.type_label : ''}`}
+              style={{
+                position: 'absolute', left: 0, right: 0, top: 0, height: TOTAL_H,
+                background: 'rgba(16,185,129,0.06)',
+                backgroundImage: 'repeating-linear-gradient(135deg,rgba(16,185,129,0.35),rgba(16,185,129,0.35) 3px,transparent 3px,transparent 10px)',
+                zIndex: 1, pointerEvents: 'none',
+              }} />
+          ))
+        }
+        {/* Blocs cours (toutes fonctions) */}
+        {groupOverlapping(dayCourses).map((group, gi) => (
+          <CourseSlotCompactBlock
+            key={`g${gi}-${group[0].id}`}
+            courses={group}
+            assignments={assignments}
+            onOpen={() => setCourseGroupModal({ courses: group })}
+          />
         ))}
         {placed.result.map(({ sp, col }) => {
           const s = staff.find(x => x.id === sp.staffId);
