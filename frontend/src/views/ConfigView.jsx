@@ -49,7 +49,7 @@ const ConfigView = () => {
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 18px' }}>
         {tab === 'organigramme' && <OrgTab />}
-        {tab === 'equipes'   && <TeamsConfig    teams={teams}     reload={reloadTeams} />}
+        {tab === 'equipes'   && <TeamsConfig    teams={teams} functions={functions} reload={reloadTeams} />}
         {tab === 'fonctions' && <FunctionsConfig functions={functions} reload={reloadFunctions} />}
         {tab === 'taches'    && <TaskTypesConfig taskTypes={taskTypes} functions={functions} reload={reloadTaskTypes} />}
         {tab === 'conges'    && <CongesConfig    settings={settings} setSettings={setSettings} />}
@@ -608,7 +608,7 @@ const SystemeConfig = ({ settings, setSettings }) => {
 };
 
 /* ─── Gestion des équipes ──────────────────────────────── */
-const TeamsConfig = ({ teams, reload }) => {
+const TeamsConfig = ({ teams, functions = [], reload }) => {
   const [edit,    setEdit]    = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [err,     setErr]     = useState('');
@@ -684,21 +684,37 @@ const TeamsConfig = ({ teams, reload }) => {
 
       {showForm && (
         <Modal onClose={() => setShowForm(false)} title={edit ? 'Modifier l\'équipe' : 'Nouvelle équipe'}>
-          <TeamForm initial={edit} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
+          <TeamForm initial={edit} functions={functions} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
         </Modal>
       )}
     </div>
   );
 };
 
-const TeamForm = ({ initial, err, onSave, onCancel }) => {
-  const [form, setForm] = useState({ name: initial?.name || '', slug: initial?.slug || '' });
+const TeamForm = ({ initial, functions = [], err, onSave, onCancel }) => {
+  const parsedFnSlugs = (() => { try { return Array.isArray(initial?.fn_slugs) ? initial.fn_slugs : (initial?.fn_slugs ? JSON.parse(initial.fn_slugs) : []); } catch { return []; } })();
+  const [form, setForm] = useState({ name: initial?.name || '', slug: initial?.slug || '', fn_slugs: parsedFnSlugs });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+  const toggleFn = (slug) => set('fn_slugs', form.fn_slugs.includes(slug) ? form.fn_slugs.filter(s => s !== slug) : [...form.fn_slugs, slug]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {err && <div style={{ padding: '8px 12px', background: '#FEF2F2', borderRadius: 6, color: '#DC2626', fontSize: 12 }}>{err}</div>}
       <Field label="Nom"><input value={form.name} onChange={e => set('name', e.target.value)} style={inp} /></Field>
       <Field label="Slug (identifiant)"><input value={form.slug} onChange={e => set('slug', e.target.value.toLowerCase().replace(/\s/g, '_'))} style={inp} /></Field>
+      <Field label="Fonctions affichées dans le planning équipe">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingTop: 2 }}>
+          {functions.map(f => {
+            const active = form.fn_slugs.includes(f.slug);
+            return (
+              <button key={f.slug} type="button" onClick={() => toggleFn(f.slug)} style={{
+                padding: '3px 9px', borderRadius: 12, fontSize: 11, cursor: 'pointer', border: `1px solid ${active ? f.color : '#D1CEC9'}`,
+                background: active ? f.bg_color : '#F5F4F2', color: active ? f.color : '#9B9890', fontWeight: active ? 600 : 400,
+              }}>{f.icon} {f.name}</button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 10, color: '#9B9890', marginTop: 4 }}>Si aucune sélection, toutes les fonctions sont affichées pour les membres multi-équipes.</div>
+      </Field>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <Btn onClick={onCancel}>Annuler</Btn>
         <Btn variant="primary" onClick={() => onSave(form)}>Enregistrer</Btn>

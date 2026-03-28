@@ -13,11 +13,12 @@ router.get('/', AUTH, (req, res) => {
 
 // ── POST /api/teams ───────────────────────────────────────────
 router.post('/', ...ADMIN, (req, res) => {
-  const { name, slug, description, color = '#8B8880', bg_color = '#F5F5F5', icon = '👥' } = req.body;
+  const { name, slug, description, color = '#8B8880', bg_color = '#F5F5F5', icon = '👥', fn_slugs } = req.body;
   if (!name || !slug) return res.status(400).json({ error: 'Nom et slug requis' });
+  const fnSlugsVal = Array.isArray(fn_slugs) ? JSON.stringify(fn_slugs) : (fn_slugs || null);
   const r = db_.run(
-    'INSERT INTO teams (name, slug, description, color, bg_color, icon) VALUES (?, ?, ?, ?, ?, ?)',
-    [name, slug, description || null, color, bg_color, icon]
+    'INSERT INTO teams (name, slug, description, color, bg_color, icon, fn_slugs) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [name, slug, description || null, color, bg_color, icon, fnSlugsVal]
   );
   auditLog(req, 'TEAM_CREATE', 'teams', r.lastInsertRowid, null, req.body);
   res.status(201).json({ id: r.lastInsertRowid });
@@ -25,9 +26,13 @@ router.post('/', ...ADMIN, (req, res) => {
 
 // ── PUT /api/teams/:id ────────────────────────────────────────
 router.put('/:id', ...ADMIN, (req, res) => {
-  const { name, description, color, bg_color, icon, active, show_course_slots } = req.body;
+  const { name, description, color, bg_color, icon, active, show_course_slots, fn_slugs } = req.body;
   const old = db_.get('SELECT * FROM teams WHERE id = ?', [req.params.id]);
   if (!old) return res.status(404).json({ error: 'Équipe introuvable' });
+
+  const fnSlugsVal = fn_slugs !== undefined
+    ? (Array.isArray(fn_slugs) ? JSON.stringify(fn_slugs) : (fn_slugs || null))
+    : undefined;
 
   db_.run(
     `UPDATE teams SET
@@ -37,9 +42,13 @@ router.put('/:id', ...ADMIN, (req, res) => {
        bg_color          = COALESCE(?, bg_color),
        icon              = COALESCE(?, icon),
        active            = COALESCE(?, active),
-       show_course_slots = CASE WHEN ? IS NOT NULL THEN ? ELSE show_course_slots END
+       show_course_slots = CASE WHEN ? IS NOT NULL THEN ? ELSE show_course_slots END,
+       fn_slugs          = CASE WHEN ? IS NOT NULL THEN ? ELSE fn_slugs END
      WHERE id = ?`,
-    [name, description, color, bg_color, icon, active, show_course_slots ?? null, show_course_slots != null ? (show_course_slots ? 1 : 0) : null, req.params.id]
+    [name, description, color, bg_color, icon, active,
+     show_course_slots ?? null, show_course_slots != null ? (show_course_slots ? 1 : 0) : null,
+     fnSlugsVal ?? null, fnSlugsVal ?? null,
+     req.params.id]
   );
   auditLog(req, 'TEAM_UPDATE', 'teams', req.params.id, old, req.body);
   res.json({ message: 'Équipe mise à jour' });

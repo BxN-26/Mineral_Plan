@@ -348,16 +348,22 @@ const MonPlanningView = () => {
                   const blockColor = cs ? cs.color : (sp.fn?.color || myStaff.color);
                   const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${myStaff.color}18`;
                   return (
-                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: cs ? `${cs.bg_color}CC` : blockBg, border: `1.5px solid ${blockColor}60`, borderLeft: `3.5px solid ${blockColor}`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', cursor: 'pointer' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: cs ? (cs.bg_color || '#EBF0FE') : blockBg, border: `1.5px solid ${blockColor}60`, borderLeft: `3.5px solid ${blockColor}`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', cursor: 'pointer' }}>
+                      {/* Fond hachuré points si cours */}
+                      {cs && <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${blockColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, pointerEvents: 'none' }} />}
+                      {/* Tampon COURS centré */}
+                      {cs && <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
+                        <span style={{ fontSize: Math.max(10, Math.min(18, h * 0.28)), fontWeight: 900, letterSpacing: '0.18em', color: blockColor, opacity: 0.32, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: 'Impact, "Arial Black", sans-serif' }}>COURS</span>
+                      </div>}
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3 }}>
                         {cs ? <span style={{ fontSize: 9 }}>🎓</span> : sp.fn && <span style={{ fontSize: 9 }}>{sp.fn.icon}</span>}
                         <span style={{ fontSize: 10, fontWeight: 700, color: blockColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cs ? cs.group_name : (sp.fn?.short_name || sp.fn?.name)}</span>
                       </div>
                       {(sp.end - sp.start) >= 0.5 && (
-                        <div style={{ fontSize: 9, color: '#9B9890', paddingLeft: 2 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
+                        <div style={{ position: 'relative', fontSize: 9, color: '#9B9890', paddingLeft: 2 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
                       )}
                       {cs && h >= 44 && cs.level && (
-                        <div style={{ fontSize: 8, color: cs.color, opacity: .8, paddingLeft: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cs.level}</div>
+                        <div style={{ position: 'relative', fontSize: 8, color: cs.color, opacity: .8, paddingLeft: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cs.level}</div>
                       )}
                       {!cs && tt && h >= 44 && (
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: `${tt.color}18`, border: `1px solid ${tt.color}40`, borderRadius: 3, padding: '0px 3px', fontSize: 8, color: tt.color, fontWeight: 600, marginTop: 1 }}>

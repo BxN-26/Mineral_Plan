@@ -278,6 +278,48 @@ router.put('/:id/approve', AUTH, (req, res) => {
       [leave.id]);
     nextStatus = 'approved';
 
+  } else if (['admin','superadmin'].includes(req.user.role) &&
+             ['pending','approved_n1','approved_n2'].includes(leave.status)) {
+    // Override admin/superadmin : peut approuver à l'étape courante même s'il n'est pas le valideur désigné
+    if (leave.n1_status === 'pending') {
+      // Approuver en tant que N1
+      db_.run(`UPDATE leaves SET n1_status='approved', n1_approver_id=?, n1_comment=?, n1_reviewed_at=datetime('now'),
+               approval_step=2, updated_at=datetime('now') WHERE id=?`, [userId, comment||null, leave.id]);
+      if (levels.length < 2 || !leave.n2_approver_id) {
+        db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+        nextStatus = 'approved';
+      } else {
+        db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+        if (leave.n2_approver_id !== userId)
+          db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
+            [leave.id, leave.n2_approver_id, 'new_request']);
+        nextStatus = 'approved_n1';
+      }
+    } else if (leave.n2_status === 'pending') {
+      // Approuver en tant que N2
+      db_.run(`UPDATE leaves SET n2_status='approved', n2_approver_id=?, n2_comment=?, n2_reviewed_at=datetime('now'),
+               approval_step=3, updated_at=datetime('now') WHERE id=?`, [userId, comment||null, leave.id]);
+      if (levels.length < 3 || !leave.n3_approver_id) {
+        db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+        nextStatus = 'approved';
+      } else {
+        db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+        if (leave.n3_approver_id !== userId)
+          db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
+            [leave.id, leave.n3_approver_id, 'new_request']);
+        nextStatus = 'approved_n2';
+      }
+    } else if (leave.n3_status === 'pending') {
+      db_.run(`UPDATE leaves SET n3_status='approved', n3_approver_id=?, n3_comment=?, n3_reviewed_at=datetime('now'),
+               status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
+        [userId, comment||null, leave.id]);
+      nextStatus = 'approved';
+    } else {
+      // Aucune étape N* en attente — approuver directement (ex: congé sans approbateurs assignés)
+      db_.run(`UPDATE leaves SET status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`, [leave.id]);
+      nextStatus = 'approved';
+    }
+
   } else {
     return res.status(403).json({ error: 'Vous n\'êtes pas le valideur de ce congé à cette étape' });
   }

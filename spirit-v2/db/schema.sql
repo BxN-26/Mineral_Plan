@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS teams (
   parent_id   INTEGER REFERENCES teams(id) ON DELETE SET NULL,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   active      INTEGER NOT NULL DEFAULT 1,
+  fn_slugs    TEXT    DEFAULT NULL,  -- JSON array of function slugs handled by this team
   created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 

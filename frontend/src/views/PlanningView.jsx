@@ -186,8 +186,16 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen }) => {
   const ok = totalAssigned >= totalNeeded;
   return (
     <div style={{ position: 'absolute', top, left: 0, right: 0, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box' }}>
-      {/* Fond semi-transparent */}
+      {/* Fond couleur de base */}
       <div style={{ position: 'absolute', inset: 0, background: primaryBg, borderLeft: `4px solid ${primaryColor}`, borderTop: `1px solid ${primaryColor}40`, borderBottom: `1px solid ${primaryColor}40`, opacity: 0.72, boxSizing: 'border-box' }} />
+      {/* Fond hachuré en points */}
+      <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${primaryColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, boxSizing: 'border-box' }} />
+      {/* Tampon COURS centré */}
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', overflow: 'hidden' }}>
+        <span style={{ fontSize: Math.max(13, Math.min(22, h * 0.28)), fontWeight: 900, letterSpacing: '0.18em', color: primaryColor, opacity: 0.38, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', lineHeight: 1, fontFamily: 'Impact, "Arial Black", sans-serif', textShadow: `0 0 0 1px ${primaryColor}40` }}>
+          COURS
+        </span>
+      </div>
       {/* Badge cliquable en haut à droite */}
       <div onClick={onOpen} title={`${courses.length} cours — cliquer pour gérer les moniteurs`} style={{ position: 'absolute', top: 3, right: 3, display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(255,255,255,.96)', border: `1.5px solid ${ok ? '#22C55E50' : '#F59E0B80'}`, borderRadius: 5, padding: '2px 5px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 1px 4px rgba(0,0,0,.14)', zIndex: 4, userSelect: 'none' }}>
         {courses.slice(0, 3).map((c, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: c.color, flexShrink: 0 }} />)}
