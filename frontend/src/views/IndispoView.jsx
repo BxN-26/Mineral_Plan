@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../App';
-import { Btn, Modal, Field, inputSt, PageHeader } from '../components/common';
+import { Btn, Modal, Field, inputSt, PageHeader, Tag } from '../components/common';
 import api from '../api/client';
 
-/* ── Badges statut ──────────────────────────────────────────── */
 const STATUS_CFG = {
   approved: { label: 'Acceptée',   bg: '#DCFCE7', color: '#15803D' },
   pending:  { label: 'En attente', bg: '#FEF9C3', color: '#A16207' },
@@ -12,16 +11,6 @@ const STATUS_CFG = {
 };
 
 const RECUR_LABELS = { none: 'Ponctuelle', weekly: 'Hebdomadaire', biweekly: 'Toutes les 2 semaines' };
-
-function StatusBadge({ status }) {
-  const c = STATUS_CFG[status] || STATUS_CFG.pending;
-  return (
-    <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 12,
-                   background: c.bg, color: c.color, fontWeight: 600 }}>
-      {c.label}
-    </span>
-  );
-}
 
 function hhmm(h) {
   if (h == null) return '—';
@@ -202,33 +191,49 @@ function ReviewModal({ item, onClose, onDone }) {
   );
 }
 
-/* ── Ligne indisponibilité ─────────────────────────────────── */
-function IndispoRow({ item, canDelete, onDelete }) {
+/* ── Carte indisponibilité ───────────────────────────────────── */
+function IndispoCard({ item, canDelete, onDelete }) {
+  const st = STATUS_CFG[item.status] || STATUS_CFG.pending;
   const today = new Date().toISOString().slice(0, 10);
-  const isDeletable = canDelete && item.date_start >= today;
+  const isDeletable = canDelete && item.date_start >= today && item.status === 'pending';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                  background: '#F9FAFB', borderRadius: 8, border: '1px solid #E5E7EB' }}>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>
-          {formatDate(item.date_start)}{item.date_start !== item.date_end ? ` → ${formatDate(item.date_end)}` : ''}
-          {!item.all_day && <span style={{ color: '#6B7280', fontSize: 13 }}> · {hhmm(item.hour_start)} – {hhmm(item.hour_end)}</span>}
-          {item.recurrence !== 'none' && (
-            <span style={{ marginLeft: 8, fontSize: 12, color: '#6366F1', background: '#EEF2FF',
-                           padding: '1px 7px', borderRadius: 999 }}>
-              🔁 {RECUR_LABELS[item.recurrence]}
-            </span>
+    <div style={{
+      background: '#fff', borderRadius: 12, padding: '14px 16px',
+      boxShadow: '0 1px 6px rgba(0,0,0,.06)', borderLeft: `4px solid ${st.color}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: isDeletable ? 8 : 0 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#1E2235' }}>
+            {formatDate(item.date_start)}
+            {item.date_start !== item.date_end && ` → ${formatDate(item.date_end)}`}
+            {!item.all_day && (
+              <span style={{ fontWeight: 400, color: '#6B6860', marginLeft: 6, fontSize: 12 }}>
+                · {hhmm(item.hour_start)} – {hhmm(item.hour_end)}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: '#6B6860', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span>{item.all_day ? '🗓️ Journée entière' : '🕐 Plage horaire'}</span>
+            {item.recurrence !== 'none' && (
+              <span style={{ background: '#EEF2FF', color: '#6366F1', padding: '1px 7px', borderRadius: 999, fontSize: 10, fontWeight: 600 }}>
+                🔁 {RECUR_LABELS[item.recurrence]}
+              </span>
+            )}
+          </div>
+          {item.note && (
+            <div style={{ fontSize: 12, color: '#9B9890', fontStyle: 'italic', marginTop: 4 }}>"{item.note}"</div>
+          )}
+          {item.status === 'refused' && item.review_note && (
+            <div style={{ fontSize: 12, color: '#DC2626', marginTop: 4 }}>↩ Note : {item.review_note}</div>
           )}
         </div>
-        {item.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>}
-        {item.status === 'refused' && item.review_note && (
-          <div style={{ fontSize: 12, color: '#DC2626', marginTop: 2 }}>Note : {item.review_note}</div>
-        )}
+        <Tag color={st.color} bg={st.bg}>{st.label}</Tag>
       </div>
-      <StatusBadge status={item.status} />
       {isDeletable && (
-        <Btn variant="danger" small onClick={() => onDelete(item.id)} type="button">Supprimer</Btn>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Btn small variant="ghost" onClick={() => onDelete(item.id)} type="button">Supprimer</Btn>
+        </div>
       )}
     </div>
   );
@@ -242,11 +247,10 @@ export default function IndispoView() {
   const isAdmin = ['admin', 'superadmin'].includes(user?.role);
   const isMgr   = isAdmin || user?.role === 'manager';
 
-  // Trouver le staffId de l'utilisateur courant
   const myStaffId = user?.staff_id || (staff.find(s => s.user_id === user?.id)?.id) || null;
 
-  const [tab, setTab]         = useState('mine');
-  const [showForm, setShowForm] = useState(false);
+  const [tab, setTab]           = useState('mine');
+  const [modal, setModal]       = useState(false);
   const [myList, setMyList]     = useState([]);
   const [pendingList, setPendingList] = useState([]);
   const [reviewItem, setReviewItem]   = useState(null);
@@ -255,16 +259,16 @@ export default function IndispoView() {
   const loadMyList = useCallback(async () => {
     if (!myStaffId) return;
     try {
-      const data = await api.get(`/unavailabilities?staff_id=${myStaffId}`);
-      setMyList(Array.isArray(data) ? data : []);
+      const r = await api.get(`/unavailabilities?staff_id=${myStaffId}`);
+      setMyList(Array.isArray(r.data) ? r.data : []);
     } catch { setMyList([]); }
   }, [myStaffId]);
 
   const loadPending = useCallback(async () => {
     if (!isMgr) return;
     try {
-      const data = await api.get('/unavailabilities?status=pending');
-      setPendingList(Array.isArray(data) ? data : []);
+      const r = await api.get('/unavailabilities?status=pending');
+      setPendingList(Array.isArray(r.data) ? r.data : []);
     } catch { setPendingList([]); }
   }, [isMgr]);
 
@@ -278,13 +282,11 @@ export default function IndispoView() {
     try {
       await api.delete(`/unavailabilities/${id}`);
       await loadMyList();
-    } catch (e) {
-      alert(e.response?.data?.error || 'Erreur');
-    }
+    } catch (e) { alert(e.response?.data?.error || 'Erreur'); }
   };
 
   const handleSaved = async () => {
-    setShowForm(false);
+    setModal(false);
     await loadMyList();
   };
 
@@ -293,114 +295,97 @@ export default function IndispoView() {
     await Promise.all([loadMyList(), loadPending()]);
   };
 
-  const TabBtn = ({ id, label, badge }) => (
-    <button type="button"
-      onClick={() => setTab(id)}
-      style={{
-        padding: '6px 18px', borderRadius: 999, border: 'none', cursor: 'pointer',
-        fontWeight: tab === id ? 700 : 400, fontSize: 14,
-        background: tab === id ? '#6366F1' : '#F3F4F6',
-        color: tab === id ? '#fff' : '#374151',
-        position: 'relative',
-      }}>
-      {label}
-      {badge > 0 && (
-        <span style={{ position: 'absolute', top: -4, right: -6, background: '#EF4444',
-                       color: '#fff', borderRadius: '50%', width: 18, height: 18,
-                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                       fontSize: 10, fontWeight: 700 }}>{badge}</span>
-      )}
-    </button>
-  );
+  const tabs = [
+    { id: 'mine',    label: `Mes indisponibilités (${myList.length})` },
+    ...(isMgr ? [{ id: 'pending', label: `À valider (${pendingList.length})` }] : []),
+  ];
+
+  const shown = tab === 'mine' ? myList : pendingList;
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 760, margin: '0 auto' }}>
-      <PageHeader title="📵 Indisponibilités"
-                  sub="Déclarez vos périodes d'indisponibilité et consultez leur statut." />
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <PageHeader
+        title="📵 Indisponibilités"
+        sub="Déclarez vos périodes d'indisponibilité et consultez leur statut"
+        actions={
+          myStaffId ? (
+            <Btn variant="primary" onClick={() => setModal(true)}>+ Déclarer</Btn>
+          ) : null
+        }
+      />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        <TabBtn id="mine"    label="Mes indisponibilités" />
-        {isMgr && <TabBtn id="pending" label="À valider" badge={pendingList.length} />}
+      {/* Onglets */}
+      <div style={{ display: 'flex', gap: 0, padding: '0 24px', borderBottom: '1px solid #E4E0D8', background: '#fff' }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            padding: '12px 16px', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+            background: 'transparent', color: tab === t.id ? '#C5753A' : '#6B6860',
+            borderBottom: `2px solid ${tab === t.id ? '#C5753A' : 'transparent'}`,
+            fontWeight: tab === t.id ? 700 : 400, fontSize: 13, transition: 'all .15s',
+          }}>{t.label}</button>
+        ))}
       </div>
 
-      {/* ── Onglet : mes indisponibilités ── */}
-      {tab === 'mine' && (
-        <div>
-          {!showForm && (
-            <div style={{ marginBottom: 20 }}>
-              <Btn variant="primary" onClick={() => setShowForm(true)}>
-                + Déclarer une indisponibilité
-              </Btn>
-            </div>
-          )}
+      {/* Contenu */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
+        {loading && <div style={{ textAlign: 'center', padding: 40, color: '#9B9890' }}>Chargement…</div>}
 
-          {showForm && (
-            <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 10,
-                          padding: '20px 24px', marginBottom: 24 }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700 }}>
-                Nouvelle indisponibilité
-              </h3>
-              <IndispoForm
-                myStaffId={myStaffId}
-                onSaved={handleSaved}
-                onCancel={() => setShowForm(false)} />
-            </div>
-          )}
+        {!loading && shown.length === 0 && (
+          <div style={{ textAlign: 'center', padding: 40, color: '#9B9890', background: '#fff', borderRadius: 12 }}>
+            {tab === 'mine' ? 'Aucune indisponibilité déclarée.' : 'Aucune indisponibilité en attente de validation.'}
+          </div>
+        )}
 
-          {loading && <p style={{ color: '#6B7280', fontSize: 14 }}>Chargement…</p>}
-
-          {!loading && myList.length === 0 && (
-            <p style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center', marginTop: 40 }}>
-              Aucune indisponibilité déclarée.
-            </p>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* ── Mes indisponibilités ── */}
+        {tab === 'mine' && !loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
             {myList.map(item => (
-              <IndispoRow key={item.id} item={item}
-                canDelete={true}
-                onDelete={handleDelete} />
+              <IndispoCard key={item.id} item={item} canDelete={true} onDelete={handleDelete} />
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Onglet : à valider (manager) ── */}
-      {tab === 'pending' && isMgr && (
-        <div>
-          {loading && <p style={{ color: '#6B7280', fontSize: 14 }}>Chargement…</p>}
-
-          {!loading && pendingList.length === 0 && (
-            <p style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center', marginTop: 40 }}>
-              Aucune indisponibilité en attente de validation.
-            </p>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {pendingList.map(item => (
-              <div key={item.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
-                         background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    {item.firstname} {item.lastname}
+        {/* ── À valider (manager) ── */}
+        {tab === 'pending' && isMgr && !loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
+            {pendingList.map(item => {
+              const st = STATUS_CFG.pending;
+              return (
+                <div key={item.id} style={{
+                  background: '#fff', borderRadius: 12, padding: '14px 16px',
+                  boxShadow: '0 1px 6px rgba(0,0,0,.06)', borderLeft: `4px solid ${st.color}`,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#1E2235' }}>
+                        {item.firstname} {item.lastname}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#6B6860', marginTop: 3 }}>
+                        Du {formatDate(item.date_start)} au {formatDate(item.date_end)}
+                        {!item.all_day && <> · {hhmm(item.hour_start)} – {hhmm(item.hour_end)}</>}
+                        {item.recurrence !== 'none' && <> · 🔁 {RECUR_LABELS[item.recurrence]}</>}
+                      </div>
+                      {item.note && (
+                        <div style={{ fontSize: 12, color: '#9B9890', fontStyle: 'italic', marginTop: 4 }}>"{item.note}"</div>
+                      )}
+                    </div>
+                    <Tag color={st.color} bg={st.bg}>{st.label}</Tag>
                   </div>
-                  <div style={{ fontSize: 13, color: '#374151', marginTop: 2 }}>
-                    Du {formatDate(item.date_start)} au {formatDate(item.date_end)}
-                    {!item.all_day && <> · {hhmm(item.hour_start)} – {hhmm(item.hour_end)}</>}
-                    {item.recurrence !== 'none' && <> · 🔁 {RECUR_LABELS[item.recurrence]}</>}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Btn small variant="primary" onClick={() => setReviewItem(item)} type="button">Décision</Btn>
                   </div>
-                  {item.note && (
-                    <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>
-                  )}
                 </div>
-                <Btn variant="primary" small onClick={() => setReviewItem(item)} type="button">
-                  Décision
-                </Btn>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* Modal formulaire */}
+      {modal && (
+        <Modal title="Déclarer une indisponibilité" onClose={() => setModal(false)} width={520}>
+          <IndispoForm myStaffId={myStaffId} onSaved={handleSaved} onCancel={() => setModal(false)} />
+        </Modal>
       )}
 
       {reviewItem && (

@@ -26,7 +26,8 @@ const courseSlotsRouter = require('./routes/course-slots');
 const { router: pushRouter } = require('./routes/push');
 const leaveTypesRouter       = require('./routes/leave-types');
 const taskTypesRouter        = require('./routes/task-types');
-const unavailabilitiesRouter = require('./routes/unavailabilities');
+const unavailabilitiesRouter  = require('./routes/unavailabilities');
+const hourDeclRouter          = require('./routes/hour-declarations');
 
 // ── Initialisation DB ─────────────────────────────────────────
 initSchema();
@@ -105,6 +106,7 @@ app.use('/api/push',           pushRouter);
 app.use('/api/leave-types',    leaveTypesRouter);
 app.use('/api/task-types',          taskTypesRouter);
 app.use('/api/unavailabilities',   unavailabilitiesRouter);
+app.use('/api/hour-declarations',  hourDeclRouter);
 
 // ── SPA fallback (renvoie index.html pour les routes React) ──
 app.get('*', (req, res, next) => {

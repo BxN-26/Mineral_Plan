@@ -139,6 +139,32 @@ function getDb() {
       _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('staff_teams_seed')").run();
     }
 
+    // ── Migration : table hour_declarations ──────────────────────
+    const hdDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='hour_declarations_table'").get();
+    if (!hdDone) {
+      _db.exec(`
+        CREATE TABLE IF NOT EXISTS hour_declarations (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          staff_id      INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+          function_id   INTEGER REFERENCES functions(id) ON DELETE SET NULL,
+          date          TEXT NOT NULL,
+          hour_start    REAL NOT NULL,
+          hour_end      REAL NOT NULL,
+          note          TEXT,
+          status        TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(status IN ('pending','approved','refused','cancelled')),
+          reviewed_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          reviewed_at   TEXT,
+          review_note   TEXT,
+          created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_hd_staff  ON hour_declarations(staff_id);
+        CREATE INDEX IF NOT EXISTS idx_hd_date   ON hour_declarations(date);
+        CREATE INDEX IF NOT EXISTS idx_hd_status ON hour_declarations(status);
+      `);
+      _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('hour_declarations_table')").run();
+    }
+
     // Migration fonction Service Civique
     const scDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='fn_service_civique'").get();
     if (!scDone) {

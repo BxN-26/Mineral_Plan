@@ -125,10 +125,40 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                 const fn = functions.find(f => f.slug === sp.fnSlug);
                 const tt = sp.taskType ? ttMap[sp.taskType] : null;
                 const cs = sp.courseSlotId ? courseSlots.find(c => c.id === sp.courseSlotId) : null;
-                const blockColor = cs ? (cs.color || '#5B75DB') : s.color;
-                const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${s.color}20`;
                 const top = timeToY(sp.start);
                 const h   = Math.max(SLOT_H, timeToY(sp.end) - timeToY(sp.start));
+
+                // ── Déclaration reliquat ──────────────────────────────
+                if (sp.isDeclaration) {
+                  const isPending  = sp.declStatus === 'pending';
+                  const isApproved = sp.declStatus === 'approved';
+                  const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
+                  const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
+                  return (
+                    <div key={si} style={{
+                      position: 'absolute', top, left: 2, right: 2, height: h,
+                      background: declBg,
+                      border: `1.5px dashed ${declBorder}`,
+                      borderLeft: `3.5px solid ${declBorder}`,
+                      borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
+                      fontSize: 9, fontWeight: 600,
+                      boxSizing: 'border-box', zIndex: 2,
+                    }}>
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
+                        <span style={{ fontSize: Math.max(9, Math.min(16, h * 0.28)), fontWeight: 900, letterSpacing: '0.16em', color: declBorder, opacity: 0.3, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: 'Impact, "Arial Black", sans-serif' }}>REL</span>
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', color: declBorder }}>
+                        <span style={{ fontSize: 8 }}>⏰</span>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800, flexShrink: 0 }}>{(s.firstname || s.name || '?')[0]}</div>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.firstname || s.name}</span>
+                      </div>
+                      {h >= 28 && <div style={{ position: 'relative', fontSize: 8, color: declBorder, opacity: .8 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>}
+                    </div>
+                  );
+                }
+
+                const blockColor = cs ? (cs.color || '#5B75DB') : s.color;
+                const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${s.color}20`;
                 return (
                   <div key={si} style={{
                     position: 'absolute', top, left: 2, right: 2, height: h,

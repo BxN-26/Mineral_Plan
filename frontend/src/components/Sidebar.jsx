@@ -24,6 +24,7 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
     ...(isAdmin ? [{ id: 'costs',            label: 'Coûts',             icon: '💶', sub: 'Masse salariale' }] : []),
     { id: 'echanges',           label: 'Échanges',            icon: '🔄', sub: 'Créneaux & swaps' },
     { id: 'indispos',           label: 'Indisponibilités',    icon: '📵', sub: 'Mes périodes indisponibles' },
+    { id: 'mes-heures',         label: isMgr ? 'Heures déclarées' : 'Mes heures', icon: '⏰', sub: 'Reliquat & déclarations' },
     { id: 'profil',             label: 'Mon Profil',          icon: '🪪', sub: 'Infos & mot de passe' },
     ...(isAdmin ? [{ id: 'config',           label: 'Configuration',     icon: '⚙️', sub: 'Équipes & fonctions' }] : []),
   ];

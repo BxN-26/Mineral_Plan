@@ -115,6 +115,7 @@ const MonPlanningView = () => {
   const [courseAssignments, setCourseAssignments] = useState([]);
   const [myUnavailabilities, setMyUnavailabilities] = useState([]);
   const [myLeaves,           setMyLeaves]           = useState([]);
+  const [myDeclarations,     setMyDeclarations]     = useState([]);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
@@ -152,6 +153,9 @@ const MonPlanningView = () => {
     api.get(`/leaves?status=approved&from=${currentWeek}&to=${to}`)
       .then(d => setMyLeaves(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
       .catch(() => {});
+    api.get('/hour-declarations')
+      .then(d => setMyDeclarations(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .catch(() => {});
   }, [currentWeek, user?.staff_id]);
 
   const myStaff = useMemo(() => {
@@ -160,7 +164,7 @@ const MonPlanningView = () => {
   }, [user, staff]);
 
   // Construire les créneaux personnels sous forme de spans par jour
-  // { day: [{ fn, start, end, isCourse?, courseSlot? }] }
+  // { day: [{ fn, start, end, isCourse?, courseSlot?, isDeclaration?, declStatus? }] }
   const mySpans = useMemo(() => {
     const out = Array.from({ length: 7 }, () => []);
     if (!myStaff) return out;
@@ -169,7 +173,7 @@ const MonPlanningView = () => {
       for (let d = 0; d < 7; d++) {
         const daySpans = weekData[fn.slug]?.[d] ?? weekData[fn.slug]?.[String(d)] ?? [];
         for (const sp of daySpans) {
-          if (sp.staffId === myStaff.id) out[d].push({ fn, start: sp.start, end: sp.end, taskType: sp.taskType });
+          if (sp.staffId === myStaff.id && !sp.isDeclaration) out[d].push({ fn, start: sp.start, end: sp.end, taskType: sp.taskType });
         }
       }
     }
@@ -181,8 +185,17 @@ const MonPlanningView = () => {
       const fn = functions.find(f => f.id === cs.function_id) || null;
       out[cs.day_of_week].push({ fn, start: cs.hour_start, end: cs.hour_end, taskType: null, isCourse: true, courseSlot: cs });
     }
+    // Ajouter les déclarations d'heures reliquat de la semaine courante
+    const weekMon = new Date(currentWeek + 'T12:00:00');
+    for (const decl of myDeclarations) {
+      if (!['pending', 'approved'].includes(decl.status)) continue;
+      const declDate = new Date(decl.date + 'T12:00:00');
+      const dayIdx = Math.round((declDate - weekMon) / 86400000);
+      if (dayIdx < 0 || dayIdx > 6) continue;
+      out[dayIdx].push({ fn: null, start: decl.hour_start, end: decl.hour_end, taskType: null, isDeclaration: true, declId: decl.id, declStatus: decl.status });
+    }
     return out;
-  }, [myStaff, functions, schedules, currentWeek, courseSlots, courseAssignments]);
+  }, [myStaff, functions, schedules, currentWeek, courseSlots, courseAssignments, myDeclarations]);
 
   // Total d'heures planifiées cette semaine
   const totalH = useMemo(() => {
@@ -345,6 +358,37 @@ const MonPlanningView = () => {
                   const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
                   const tt  = sp.taskType ? ttMap[sp.taskType] : null;
                   const cs  = sp.courseSlot;
+
+                  // ── Déclaration reliquat ─────────────────────────────
+                  if (sp.isDeclaration) {
+                    const isPending  = sp.declStatus === 'pending';
+                    const isApproved = sp.declStatus === 'approved';
+                    const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
+                    const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
+                    return (
+                      <div key={i} style={{
+                        position: 'absolute', top, left: 2, right: 2, height: h,
+                        background: declBg,
+                        border: `1.5px dashed ${declBorder}`,
+                        borderLeft: `3.5px solid ${declBorder}`,
+                        borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box',
+                        zIndex: 2, padding: '2px 5px', cursor: 'default',
+                      }}>
+                        {/* Tampon REL diagonal */}
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
+                          <span style={{ fontSize: Math.max(10, Math.min(18, h * 0.28)), fontWeight: 900, letterSpacing: '0.18em', color: declBorder, opacity: 0.3, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: 'Impact, "Arial Black", sans-serif' }}>REL</span>
+                        </div>
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <span style={{ fontSize: 9 }}>⏰</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: declBorder, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Reliquat</span>
+                        </div>
+                        {(sp.end - sp.start) >= 0.5 && (
+                          <div style={{ position: 'relative', fontSize: 9, color: '#9B9890', paddingLeft: 2 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   const blockColor = cs ? cs.color : (sp.fn?.color || myStaff.color);
                   const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${myStaff.color}18`;
                   return (

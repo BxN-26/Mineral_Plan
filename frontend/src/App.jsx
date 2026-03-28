@@ -16,6 +16,7 @@ import SwapView from './views/SwapView';
 import TeamPlanningView from './views/TeamPlanningView';
 import GeneralPlanningView from './views/GeneralPlanningView';
 import IndispoView from './views/IndispoView';
+import HourDeclarationView from './views/HourDeclarationView';
 import { Spinner } from './components/common';
 import api from './api/client';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -41,6 +42,7 @@ const VIEW_COMPONENTS = {
   'planning-equipe':  TeamPlanningView,
   'planning-general':  GeneralPlanningView,
   'indispos':          IndispoView,
+  'mes-heures':        HourDeclarationView,
 };
 
 /* ─── Labels vues ───────────────────────────────────────────── */
@@ -58,6 +60,7 @@ const VIEW_LABELS = {
   'planning-equipe':   'Planning équipe',
   'planning-general':  'Planning général',
   'indispos':          'Indisponibilités',
+  'mes-heures':        'Heures reliquat',
 };
 
 /* ─── Shell interne (après authentification) ─────────────────── */

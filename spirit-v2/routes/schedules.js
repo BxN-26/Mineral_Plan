@@ -39,6 +39,46 @@ router.get('/', AUTH, (req, res) => {
       courseSlotId: slot.course_slot_id || null,
     });
   }
+
+  // ── Inclure les déclarations d'heures (pending + approved) ──
+  // Calculer le dimanche de la semaine demandée
+  const weekDate = new Date(week + 'T12:00:00Z');
+  const sunDate  = new Date(weekDate);
+  sunDate.setUTCDate(weekDate.getUTCDate() + 6);
+  const sunStr = sunDate.toISOString().slice(0, 10);
+
+  const decls = db_.all(
+    `SELECT hd.id, hd.staff_id, hd.date, hd.hour_start, hd.hour_end, hd.status,
+            f.slug AS fn_slug
+     FROM hour_declarations hd
+     LEFT JOIN functions f ON f.id = hd.function_id
+     WHERE hd.date BETWEEN ? AND ?
+       AND hd.status IN ('pending', 'approved')`,
+    [week, sunStr]
+  );
+
+  for (const d of decls) {
+    // Convertir la date en day_of_week (lundi = 0)
+    const declDate = new Date(d.date + 'T12:00:00Z');
+    const dayOfWeek = Math.round((declDate - weekDate) / 86400000); // 0-6
+    if (dayOfWeek < 0 || dayOfWeek > 6) continue;
+    const dayKey = String(dayOfWeek);
+    const fnSlug = d.fn_slug || '__decl__';
+
+    if (!result[fnSlug]) result[fnSlug] = {};
+    if (!result[fnSlug][dayKey]) result[fnSlug][dayKey] = [];
+    result[fnSlug][dayKey].push({
+      staffId:       d.staff_id,
+      start:         d.hour_start,
+      end:           d.hour_end,
+      taskType:      null,
+      courseSlotId:  null,
+      isDeclaration: true,
+      declId:        d.id,
+      declStatus:    d.status,
+    });
+  }
+
   res.json(result);
 });
 
