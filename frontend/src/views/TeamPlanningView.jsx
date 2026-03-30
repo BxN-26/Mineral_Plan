@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
+import SpanDetailModal from '../components/SpanDetailModal';
 
 const DAYS     = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH  = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -45,7 +46,7 @@ function computeColumns(items) {
 
 
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
-const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], courseSlotsFns = [] }) => {
+const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], courseSlotsFns = [], onSpanClick }) => {
   return (
     <div style={{ display: 'flex', overflowX: 'auto' }}>
       {/* Colonne heures */}
@@ -108,14 +109,14 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                   const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
                   const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
                   return (
-                    <div key={si} style={{
+                    <div key={si} onClick={() => onSpanClick?.(sp, date)} style={{
                     position: 'absolute', top, left: spL, width: spW, height: h,
                       background: declBg,
                       border: `1.5px dashed ${declBorder}`,
                       borderLeft: `3.5px solid ${declBorder}`,
                       borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
                       fontSize: 9, fontWeight: 600,
-                      boxSizing: 'border-box', zIndex: 2,
+                      boxSizing: 'border-box', zIndex: 2, cursor: 'pointer',
                     }}>
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
                         <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
@@ -133,14 +134,14 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                 const blockColor = cs ? (cs.color || '#5B75DB') : s.color;
                 const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${s.color}20`;
                 return (
-                  <div key={si} style={{
+                  <div key={si} onClick={() => onSpanClick?.(sp, date)} style={{
                     position: 'absolute', top, left: spL, width: spW, height: h,
                     background: blockBg,
                     border: `1.5px solid ${blockColor}50`,
                     borderLeft: `3.5px solid ${blockColor}`,
                     borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
                     fontSize: 9, color: blockColor, fontWeight: 600,
-                    boxSizing: 'border-box', zIndex: 2,
+                    boxSizing: 'border-box', zIndex: 2, cursor: 'pointer',
                   }}>
                     {/* Fond points si cours */}
                     {cs && <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${blockColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, pointerEvents: 'none' }} />}
@@ -194,6 +195,7 @@ const TeamPlanningView = () => {
   const [declarations,      setDeclarations]      = useState([]);
   const [dayMode, setDayMode]  = useState(() => localStorage.getItem('spirit-teamplanning-mode') === 'day');
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
+  const [selectedSpan, setSelectedSpan] = useState(null);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
@@ -530,8 +532,28 @@ const TeamPlanningView = () => {
 
       {/* Grille */}
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        <ROGrid spans={displaySpans} staff={filteredTeamStaff} functions={functions} dates={displayDates} ttMap={ttMap} courseSlots={courseSlots} courseSlotsFns={courseSlotsFns} />
+        <ROGrid spans={displaySpans} staff={filteredTeamStaff} functions={functions} dates={displayDates} ttMap={ttMap} courseSlots={courseSlots} courseSlotsFns={courseSlotsFns}
+          onSpanClick={(sp, date) => setSelectedSpan({ sp, date })} />
       </div>
+      {selectedSpan && (() => {
+        const { sp, date } = selectedSpan;
+        const sm = filteredTeamStaff.find(x => x.id === sp.staffId) || (staff || []).find(x => x.id === sp.staffId);
+        const fn = functions.find(f => f.slug === sp.fnSlug) || null;
+        const tt = sp.taskType ? ttMap[sp.taskType] : null;
+        const cs = sp.courseSlotId ? courseSlots.find(c => c.id === sp.courseSlotId) : null;
+        return (
+          <SpanDetailModal
+            span={sp}
+            date={date}
+            staffMember={sm}
+            fn={fn}
+            tt={tt}
+            courseSlot={cs}
+            taskTypes={taskTypes}
+            onClose={() => setSelectedSpan(null)}
+          />
+        );
+      })()}
     </div>
   );
 };

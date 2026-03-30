@@ -3,6 +3,7 @@ import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
+import SpanDetailModal from '../components/SpanDetailModal';
 
 const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -42,84 +43,6 @@ function computeColumns(items) {
   for (const item of sorted) result[item._idx] = item;
   return { result, colCount };
 }
-/* ─── Modale détail créneau ────────────────────────────────── */
-const SpanDetailModal = ({ sp, date, myStaff, ttMap, onClose }) => {
-  const tt  = sp.taskType ? ttMap[sp.taskType] : null;
-  const dur = sp.end - sp.start;
-  const h   = Math.floor(dur);
-  const m   = Math.round((dur - h) * 60);
-  const durLabel = h > 0 ? (m > 0 ? `${h}h${String(m).padStart(2,'0')}` : `${h}h`) : `${m} min`;
-  const dateLabel = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, boxShadow: '0 8px 32px rgba(0,0,0,.18)', width: '100%', maxWidth: 340, overflow: 'hidden' }}>
-        {/* Bandeau couleur fonction */}
-        <div style={{ background: sp.fn ? `${sp.fn.color}18` : '#F5F3EF', borderBottom: `3px solid ${sp.fn?.color || '#E4E0D8'}`, padding: '16px 20px 12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {sp.fn && (
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: sp.fn.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                {sp.fn.icon}
-              </div>
-            )}
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 15, color: sp.fn?.color || '#1E2235' }}>{sp.fn?.name || 'Créneau'}</div>
-              <div style={{ fontSize: 11, color: '#9B9890', marginTop: 1 }}>{dateLabel}</div>
-            </div>
-            <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 18, color: '#9B9890', cursor: 'pointer', padding: 4, lineHeight: 1 }}>✕</button>
-          </div>
-        </div>
-        {/* Détails */}
-        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Horaire */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F5F3EF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🕐</div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E2235' }}>{fmtTime(sp.start)} – {fmtTime(sp.end)}</div>
-              <div style={{ fontSize: 11, color: '#9B9890' }}>{durLabel}</div>
-            </div>
-          </div>
-          {/* Salarié */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: '50%', background: myStaff.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-              {myStaff.initials?.[0] || myStaff.firstname?.[0] || '?'}
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1E2235' }}>{myStaff.firstname} {myStaff.lastname}</div>
-              <div style={{ fontSize: 11, color: '#9B9890' }}>{myStaff.primary_function || ''}</div>
-            </div>
-          </div>
-          {/* Type de tâche ou cours */}
-          {sp.isCourse ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${sp.courseSlot.color}15`, border: `1.5px solid ${sp.courseSlot.color}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🎓</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: sp.courseSlot.color }}>{sp.courseSlot.group_name}</div>
-                <div style={{ fontSize: 11, color: '#9B9890' }}>{[sp.courseSlot.level, sp.courseSlot.public_desc].filter(Boolean).join(' · ') || 'Cours assigné'}</div>
-              </div>
-            </div>
-          ) : tt ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: `${tt.color}15`, border: `1.5px solid ${tt.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>{tt.icon}</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: tt.color }}>{tt.label}</div>
-                <div style={{ fontSize: 11, color: '#9B9890' }}>Type de tâche</div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#F5F3EF', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0, color: '#C0BCB5' }}>⚙</div>
-              <div style={{ fontSize: 12, color: '#B0ACA5' }}>Aucun type de tâche</div>
-            </div>
-          )}
-        </div>
-        <div style={{ padding: '0 20px 16px', display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 20px', background: '#F5F3EF', border: '1px solid #E4E0D8', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: '#5B5855' }}>Fermer</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const MonPlanningView = () => {
   const { user }                                           = useAuth();
   const { staff, functions, taskTypes, schedules, loadWeekSchedules } = useApp();
@@ -445,10 +368,21 @@ const MonPlanningView = () => {
       {/* Modale détail créneau */}
       {selectedSpan && (
         <SpanDetailModal
-          sp={selectedSpan.sp}
+          span={{
+            start: selectedSpan.sp.start,
+            end:   selectedSpan.sp.end,
+            taskType:      selectedSpan.sp.taskType ?? null,
+            isDeclaration: selectedSpan.sp.isDeclaration ?? false,
+            declStatus:    selectedSpan.sp.declStatus ?? null,
+            declId:        selectedSpan.sp.declId ?? null,
+            courseSlotId:  selectedSpan.sp.courseSlot?.id ?? null,
+          }}
           date={selectedSpan.date}
-          myStaff={myStaff}
-          ttMap={ttMap}
+          staffMember={myStaff}
+          fn={selectedSpan.sp.fn || null}
+          tt={selectedSpan.sp.taskType ? ttMap[selectedSpan.sp.taskType] : null}
+          courseSlot={selectedSpan.sp.courseSlot || null}
+          taskTypes={taskTypes}
           onClose={() => setSelectedSpan(null)}
         />
       )}

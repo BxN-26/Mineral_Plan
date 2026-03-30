@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useApp } from '../App';
 import { Btn } from '../components/common';
 import api from '../api/client';
+import SpanDetailModal from '../components/SpanDetailModal';
 
 /* ── Injection CSS animation highlight (une seule fois) ──────── */
 if (typeof document !== 'undefined' && !document.getElementById('spirit-highlight-style')) {
@@ -64,7 +65,7 @@ const totalHoursForStaff = (spans, staffId) => {
 };
 
 /* ─── Bloc span individuel ──────────────────────────────────── */
-const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {}, activeFnId = null }) => {
+const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {}, activeFnId = null, onSpanClick }) => {
   const [showTT, setShowTT] = useState(false);
   const [ddPos,  setDdPos]  = useState({ top: 0, left: 0 });
   const badgeRef = useRef(null);
@@ -87,12 +88,13 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
   return (
     <div
       onPointerDown={e => mode === 'fn' && onMoveStart(e, span, dayIndex)}
+      onClick={() => onSpanClick?.(span, dayIndex)}
       style={{ position: 'absolute', top, left, width: w, height,
         background: highlighted ? `${s.color}35` : `${s.color}22`,
         border: highlighted ? '2px solid #C5753A' : `1.5px solid ${s.color}80`,
         animation: highlighted ? 'spirit-pulse 1.6s ease-in-out infinite' : undefined,
         borderRadius: 5, overflow: 'visible', userSelect: 'none',
-        cursor: mode === 'fn' ? 'grab' : 'default',
+        cursor: mode === 'fn' ? 'grab' : 'pointer',
         boxSizing: 'border-box', zIndex: 2, display: 'flex', flexDirection: 'column' }}
     >
       {/* Bande colorée tâche (gauche) */}
@@ -146,6 +148,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
       </div>
       {mode === 'fn' && (
         <div onPointerDown={e => { e.stopPropagation(); onResizeStart(e, span, dayIndex); }}
+          onClick={e => e.stopPropagation()}
           style={{ height: 6, background: `${s.color}40`, cursor: 'ns-resize', borderTop: `1px solid ${s.color}50`, flexShrink: 0 }} />
       )}
     </div>
@@ -215,7 +218,7 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '', declSpans = [] }) => {
+const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '', declSpans = [], onSpanClick, onDeclClick }) => {
   const placed = useMemo(() => {
     // Unification cours + spans + déclarations reliquat dans le même algorithme de colonnes
     const courseGroups = groupOverlapping(courseSlots || []);
@@ -312,12 +315,15 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
           const w = placed.colCount > 1 ? `calc(${100 / placed.colCount}% - 2px)` : 'calc(100% - 4px)';
           const l = placed.colCount > 1 ? `calc(${col * 100 / placed.colCount}% + 1px)` : '2px';
           return (
-            <div key={`decl-${decl.id}`} style={{
+            <div key={`decl-${decl.id}`}
+              onClick={() => onDeclClick?.(decl, dayIndex)}
+              style={{
               position: 'absolute', top, left: l, width: w, height: h,
               background: declBg, border: `1.5px dashed ${declBorder}`,
               borderLeft: `3.5px solid ${declBorder}`,
               borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
               fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2,
+              cursor: 'pointer',
             }}>
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
                 <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
@@ -333,7 +339,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
         }
         const s = staff.find(x => x.id === item.sp.staffId);
         if (!s) return null;
-        return <SpanBlock key={`${item.sp.staffId}-${item.sp.start}-${item.col}`} span={item.sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={item.col} colCount={placed.colCount} highlighted={!!(highlightStaffId && item.sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} />;
+        return <SpanBlock key={`${item.sp.staffId}-${item.sp.start}-${item.col}`} span={item.sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={item.col} colCount={placed.colCount} highlighted={!!(highlightStaffId && item.sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} onSpanClick={onSpanClick} />;
       })}
     </div>
   );
@@ -846,6 +852,9 @@ const PlanningView = () => {
   const [touchModal, setTouchModal] = useState(null); // null | {type:'add',start,end} | {type:'edit',span}
   const [dragMode,   setDragMode]   = useState(false); // basculer vers drag & drop sur tablette
   const [highlightStaffId, setHighlightStaffId] = useState(null);
+  // Modale détail/édition créneau
+  const [spanDetailModal, setSpanDetailModal] = useState(null);
+  // { span, dayIndex, fn, editable }
 
   const panelDragStaff = useRef(null);
   const [dragOverDay,  setDragOverDay]  = useState(null);
@@ -1326,12 +1335,15 @@ const PlanningView = () => {
             const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
             const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
             return (
-              <div key={`decl-${sp.declId}`} style={{
+              <div key={`decl-${sp.declId}`}
+                onClick={() => setSpanDetailModal({ span: sp, dayIndex, fn: sp.fn || null, editable: false })}
+                style={{
                 position: 'absolute', top, left: l, width: w, height: h,
                 background: declBg, border: `1.5px dashed ${declBorder}`,
                 borderLeft: `3.5px solid ${declBorder}`,
                 borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
                 fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2,
+                cursor: 'pointer',
               }}>
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
                   <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
@@ -1347,7 +1359,9 @@ const PlanningView = () => {
           }
 
           return (
-            <div key={`${sp.staffId}-${sp.start}-${sp.fn?.slug}`} style={{ position: 'absolute', top, left: l, width: w, height: h, background: `${s.color}18`, border: `1.5px solid ${s.color}60`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2 }}>
+            <div key={`${sp.staffId}-${sp.start}-${sp.fn?.slug}`}
+              onClick={() => setSpanDetailModal({ span: sp, dayIndex, fn: sp.fn || null, editable: false })}
+              style={{ position: 'absolute', top, left: l, width: w, height: h, background: `${s.color}18`, border: `1.5px solid ${s.color}60`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, cursor: 'pointer' }}>
               <div style={{ padding: '1px 4px', display: 'flex', alignItems: 'center', gap: 2 }}>
                 {sp.fn && <span style={{ fontSize: 8 }}>{sp.fn.icon}</span>}
                 <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800 }}>{s.initials[0]}</div>
@@ -1687,6 +1701,18 @@ const PlanningView = () => {
                   leaves={leaves.filter(l => fnStaff.some(s => s.id === l.staff_id))}
                   dateStr={dates[di].toISOString().slice(0, 10)}
                   declSpans={declarations.filter(d => d.date === dates[di].toISOString().slice(0, 10))}
+                  onSpanClick={(span, dIdx) => setSpanDetailModal({
+                    span,
+                    dayIndex: dIdx,
+                    fn,
+                    editable: mode === 'fn' && !span.isDeclaration,
+                  })}
+                  onDeclClick={(decl, dIdx) => setSpanDetailModal({
+                    span: { start: decl.hour_start, end: decl.hour_end, staffId: decl.staff_id, taskType: null, isDeclaration: true, declStatus: decl.status, declId: decl.id },
+                    dayIndex: dIdx,
+                    fn: functions.find(f => f.slug === decl.function_slug) || null,
+                    editable: false,
+                  })}
                 />
               );
             })}
@@ -1815,6 +1841,39 @@ const PlanningView = () => {
           />
         );
       })}
+
+      {/* ── Modale détail / édition créneau ──────────────── */}
+      {spanDetailModal && (() => {
+        const { span, dayIndex, editable } = spanDetailModal;
+        const sm  = staff.find(x => x.id === span.staffId);
+        const fnObj = spanDetailModal.fn || null;
+        const ttObj = span.taskType ? ttMap[span.taskType] : null;
+        const cs  = span.courseSlotId ? courseSlots.find(c => c.id === span.courseSlotId) : null;
+        return (
+          <SpanDetailModal
+            span={span}
+            date={dates[dayIndex]}
+            staffMember={sm}
+            fn={fnObj}
+            tt={ttObj}
+            courseSlot={cs}
+            taskTypes={taskTypes}
+            onClose={() => setSpanDetailModal(null)}
+            editable={editable}
+            onSave={editable ? ({ start, end, taskType }) => {
+              const violations = checkConstraints(span.staffId, dayIndex, start, end, span);
+              if (violations.length > 0) return violations;
+              const next = cloneSpans(spans);
+              const i = next[dayIndex].findIndex(s => s.staffId === span.staffId && s.start === span.start);
+              if (i !== -1) next[dayIndex][i] = { ...next[dayIndex][i], start, end, taskType: taskType || null };
+              updateSpans(next);
+              setSpanDetailModal(null);
+              return null;
+            } : undefined}
+            onRemove={editable ? () => { removeSpan(dayIndex, span); setSpanDetailModal(null); } : undefined}
+          />
+        );
+      })()}
     </div>
   );
 };

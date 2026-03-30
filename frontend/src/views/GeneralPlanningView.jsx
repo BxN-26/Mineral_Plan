@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import api from '../api/client';
+import SpanDetailModal from '../components/SpanDetailModal';
 
 const DAYS      = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAY_START = 7;
@@ -39,7 +40,7 @@ function computeColumns(items) {
   return { result, colCount };
 }
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
-const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
+const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, onSpanClick }) => {
   return (
     <div style={{ display: 'flex', overflowX: 'auto' }}>
       {/* Colonne heures */}
@@ -97,12 +98,12 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
                   const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
                   const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
                   return (
-                    <div key={si} style={{
+                    <div key={si} onClick={() => onSpanClick?.(sp, date)} style={{
                       position: 'absolute', top, left: spL, width: spW, height: h,
                       background: declBg, border: `1.5px dashed ${declBorder}`,
                       borderLeft: `3.5px solid ${declBorder}`,
                       borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
-                      fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2,
+                      fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2, cursor: 'pointer',
                     }}>
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
                         <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
@@ -118,13 +119,13 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
                 }
 
                 return (
-                  <div key={si} style={{
+                  <div key={si} onClick={() => onSpanClick?.(sp, date)} style={{
                     position: 'absolute', top, left: spL, width: spW, height: h,
                     background: `${s.color}20`,
                     border: `1.5px solid ${s.color}50`,
                     borderRadius: 6, overflow: 'hidden', padding: '2px 5px',
                     fontSize: 9, color: s.color, fontWeight: 600,
-                    boxSizing: 'border-box', paddingLeft: tt ? 8 : 5,
+                    boxSizing: 'border-box', paddingLeft: tt ? 8 : 5, cursor: 'pointer',
                   }}>
                     {tt && <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tt.color, borderRadius: '3px 0 0 3px' }} />}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden' }}>
@@ -168,6 +169,7 @@ const GeneralPlanningView = () => {
   const [dayMode,      setDayMode]      = useState(() => localStorage.getItem('spirit-general-planning-mode') === 'day');
   const [currentDay,   setCurrentDay]   = useState(todayDayIdx);
   const [declarations, setDeclarations] = useState([]);
+  const [selectedSpan, setSelectedSpan] = useState(null);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
@@ -333,8 +335,27 @@ const GeneralPlanningView = () => {
 
       {/* Grille */}
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
-        <ROGrid spans={displaySpans} staff={staff.filter(s => s.active)} functions={functions} dates={displayDates} ttMap={ttMap} />
+        <ROGrid spans={displaySpans} staff={staff.filter(s => s.active)} functions={functions} dates={displayDates} ttMap={ttMap}
+          onSpanClick={(sp, date) => setSelectedSpan({ sp, date })} />
       </div>
+      {selectedSpan && (() => {
+        const { sp, date } = selectedSpan;
+        const sm = staff.find(x => x.id === sp.staffId);
+        const fn = functions.find(f => f.slug === sp.fnSlug) || null;
+        const tt = sp.taskType ? ttMap[sp.taskType] : null;
+        return (
+          <SpanDetailModal
+            span={sp}
+            date={date}
+            staffMember={sm}
+            fn={fn}
+            tt={tt}
+            courseSlot={null}
+            taskTypes={taskTypes}
+            onClose={() => setSelectedSpan(null)}
+          />
+        );
+      })()}
     </div>
   );
 };
