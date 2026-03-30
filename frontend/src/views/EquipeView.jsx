@@ -101,7 +101,11 @@ const EquipeView = () => {
                       {!s.active && <span style={{ fontSize: 9, background: '#F5EEE8', color: '#C5753A', borderRadius: 8, padding: '1px 6px' }}>Inactif</span>}
                     </div>
                     <div style={{ fontSize: 11, color: '#9B9890' }}>{team?.name || '—'} · {s.initials}</div>
-                    <div style={{ fontSize: 10, color: '#B0ACA5', marginTop: 2 }}>{s.type?.toUpperCase()} {s.contract_h ? `· ${s.contract_h}h` : ''}</div>
+                    <div style={{ fontSize: 10, color: '#B0ACA5', marginTop: 2 }}>
+                      {s.type?.toUpperCase()}
+                      {s.contract_base === 'aucune' ? '' :
+                        s.contract_h ? ` · ${s.contract_h}h/${s.contract_base === 'annualise' ? 'an' : 'sem'}` : ''}
+                    </div>
                   </div>
                   {isAdmin && (
                     <div style={{ display: 'flex', gap: 5 }}>

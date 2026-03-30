@@ -96,7 +96,11 @@ export default function MonProfilView() {
                 {[
                   { label: 'Email',          value: s.email    || '—' },
                   { label: 'Téléphone',      value: s.phone    || '—' },
-                  { label: 'Contrat',        value: `${s.contract_h || '?'} h/sem` },
+                  { label: 'Contrat',        value: (() => {
+                    if (s.contract_base === 'aucune')    return 'Sans base horaire';
+                    if (s.contract_base === 'annualise') return `${s.contract_h || '?'} h/an (Annualisé)`;
+                    return `${s.contract_h || '?'} h/sem (Hebdomadaire)`;
+                  })() },
                   { label: 'Embauche',       value: s.hire_date ? new Date(s.hire_date).toLocaleDateString('fr-FR') : '—' },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ background: '#F9F7F4', borderRadius: 8, padding: '10px 14px' }}>
