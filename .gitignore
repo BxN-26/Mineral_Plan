@@ -10,10 +10,10 @@ frontend/dist/
 spirit-v2/.env
 .env
 
-# Base de données SQLite
-spirit-v2/db/spirit.db
-spirit-v2/db/spirit.db-wal
-spirit-v2/db/spirit.db-shm
+# Bases de données SQLite (tous fichiers .db et journaux WAL/SHM)
+spirit-v2/db/*.db
+spirit-v2/db/*.db-wal
+spirit-v2/db/*.db-shm
 
 # Logs
 *.log
