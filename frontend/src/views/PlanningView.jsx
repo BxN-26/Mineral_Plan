@@ -215,9 +215,9 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '' }) => {
+const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '', declSpans = [] }) => {
   const placed = useMemo(() => {
-    // Unification cours + spans dans le même algorithme de colonnes
+    // Unification cours + spans + déclarations reliquat dans le même algorithme de colonnes
     const courseGroups = groupOverlapping(courseSlots || []);
     const allItems = [
       ...courseGroups.map(g => ({
@@ -226,7 +226,10 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
         start: Math.min(...g.map(c => c.hour_start)),
         end:   Math.max(...g.map(c => c.hour_end)),
       })),
-      ...spans.map(sp => ({ type: 'span', sp, start: sp.start, end: sp.end })),
+      ...spans.filter(sp => !sp.isDeclaration).map(sp => ({ type: 'span', sp, start: sp.start, end: sp.end })),
+      ...declSpans
+        .filter(d => ['pending', 'approved'].includes(d.status))
+        .map(d => ({ type: 'decl', decl: d, start: d.hour_start, end: d.hour_end })),
     ];
     const sorted = [...allItems].sort((a, b) => a.start - b.start);
     const cols = [];
@@ -236,7 +239,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
       return { ...item, col };
     });
     return { result, colCount: Math.max(1, cols.length) };
-  }, [spans, courseSlots]);
+  }, [spans, courseSlots, declSpans]);
 
   return (
     <div ref={colRef} onDragOver={e => { e.preventDefault(); onDragEnter(dayIndex); }} onDragLeave={onDragLeave}
@@ -294,6 +297,38 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
               col={item.col}
               colCount={placed.colCount}
             />
+          );
+        }
+        if (item.type === 'decl') {
+          const { decl, col } = item;
+          const s = staff.find(x => x.id === decl.staff_id);
+          if (!s) return null;
+          const top = timeToY(decl.hour_start);
+          const h   = Math.max(SLOT_H, timeToY(decl.hour_end) - top);
+          const isPending  = decl.status === 'pending';
+          const isApproved = decl.status === 'approved';
+          const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
+          const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
+          const w = placed.colCount > 1 ? `calc(${100 / placed.colCount}% - 2px)` : 'calc(100% - 4px)';
+          const l = placed.colCount > 1 ? `calc(${col * 100 / placed.colCount}% + 1px)` : '2px';
+          return (
+            <div key={`decl-${decl.id}`} style={{
+              position: 'absolute', top, left: l, width: w, height: h,
+              background: declBg, border: `1.5px dashed ${declBorder}`,
+              borderLeft: `3.5px solid ${declBorder}`,
+              borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
+              fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2,
+            }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
+                <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
+              </div>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', color: declBorder }}>
+                <span style={{ fontSize: 8 }}>⏰</span>
+                <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800 }}>{s.initials[0]}</div>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.firstname || s.name}</span>
+              </div>
+              {h >= 28 && <div style={{ position: 'relative', fontSize: 8, color: declBorder, opacity: .8 }}>{fmtTime(decl.hour_start)}–{fmtTime(decl.hour_end)}</div>}
+            </div>
           );
         }
         const s = staff.find(x => x.id === item.sp.staffId);
@@ -849,6 +884,7 @@ const PlanningView = () => {
   const [courseGroupModal, setCourseGroupModal] = useState(null); // null | { courses }
   const [unavailabilities, setUnavailabilities] = useState([]);
   const [leaves,           setLeaves]           = useState([]);
+  const [declarations,     setDeclarations]     = useState([]);
 
   const loadCourseSlots = useCallback(async () => {
     try { const r = await api.get('/course-slots'); setCourseSlots(Array.isArray(r.data) ? r.data : []); }
@@ -910,6 +946,9 @@ const PlanningView = () => {
     api.get(`/leaves?status=approved&from=${currentWeek}&to=${to}`)
       .then(d => setLeaves(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
       .catch(() => {});
+    api.get(`/hour-declarations?from=${currentWeek}&to=${to}`)
+      .then(d => setDeclarations(Array.isArray(d.data) ? d.data : []))
+      .catch(() => {});
   }, [currentWeek]);
   // Tâches filtrées pour la fonction active (communes + spécifiques à cette fn)
   const fnTaskTypes = useMemo(
@@ -936,9 +975,29 @@ const PlanningView = () => {
     for (const f of functions)
       for (let d = 0; d < 7; d++)
         for (const sp of (weekData[f.slug]?.[d] ?? weekData[f.slug]?.[String(d)] ?? []))
-          out[d].push({ ...sp, fn: f });
+          if (!sp.isDeclaration) out[d].push({ ...sp, fn: f }); // isDeclaration géré séparément
+    // Déclarations d'heures reliquat (pending + approved)
+    const weekMon = new Date(currentWeek + 'T12:00:00');
+    for (const decl of declarations) {
+      if (!['pending', 'approved'].includes(decl.status)) continue;
+      const staffMember = staff.find(s => s.id === decl.staff_id);
+      if (!staffMember) continue;
+      const declDate = new Date(decl.date + 'T12:00:00');
+      const dayIdx = Math.round((declDate - weekMon) / 86400000);
+      if (dayIdx < 0 || dayIdx > 6) continue;
+      out[dayIdx].push({
+        staffId:       decl.staff_id,
+        start:         decl.hour_start,
+        end:           decl.hour_end,
+        fn:            null,
+        taskType:      null,
+        isDeclaration: true,
+        declId:        decl.id,
+        declStatus:    decl.status,
+      });
+    }
     return out;
-  }, [schedules, currentWeek, functions]);
+  }, [schedules, currentWeek, functions, declarations, staff]);
 
   const fnStaff = staff.filter(s => s.functions?.includes(activeFn));
 
@@ -1259,6 +1318,34 @@ const PlanningView = () => {
           const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
           const w   = placed.colCount > 1 ? `calc(${100 / placed.colCount}% - 2px)` : 'calc(100% - 4px)';
           const l   = placed.colCount > 1 ? `calc(${col * 100 / placed.colCount}% + 1px)` : '2px';
+
+          // ── Déclaration reliquat ──────────────────────────────
+          if (sp.isDeclaration) {
+            const isPending  = sp.declStatus === 'pending';
+            const isApproved = sp.declStatus === 'approved';
+            const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
+            const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
+            return (
+              <div key={`decl-${sp.declId}`} style={{
+                position: 'absolute', top, left: l, width: w, height: h,
+                background: declBg, border: `1.5px dashed ${declBorder}`,
+                borderLeft: `3.5px solid ${declBorder}`,
+                borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
+                fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2,
+              }}>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
+                  <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
+                </div>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', color: declBorder }}>
+                  <span style={{ fontSize: 8 }}>⏰</span>
+                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800 }}>{s.initials[0]}</div>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.firstname || s.name}</span>
+                </div>
+                {h >= 28 && <div style={{ position: 'relative', fontSize: 8, color: declBorder, opacity: .8 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>}
+              </div>
+            );
+          }
+
           return (
             <div key={`${sp.staffId}-${sp.start}-${sp.fn?.slug}`} style={{ position: 'absolute', top, left: l, width: w, height: h, background: `${s.color}18`, border: `1.5px solid ${s.color}60`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2 }}>
               <div style={{ padding: '1px 4px', display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -1599,6 +1686,7 @@ const PlanningView = () => {
                   unavailabilities={unavailabilities.filter(u => fnStaff.some(s => s.id === u.staff_id))}
                   leaves={leaves.filter(l => fnStaff.some(s => s.id === l.staff_id))}
                   dateStr={dates[di].toISOString().slice(0, 10)}
+                  declSpans={declarations.filter(d => d.date === dates[di].toISOString().slice(0, 10))}
                 />
               );
             })}

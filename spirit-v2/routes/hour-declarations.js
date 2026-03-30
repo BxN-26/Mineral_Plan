@@ -11,7 +11,7 @@ const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
 // Staff : ses propres déclarations. Manager+ : toutes (filtrables par ?staffId=&date=)
 router.get('/', AUTH, (req, res) => {
   const isManager = ['admin', 'manager', 'superadmin', 'rh'].includes(req.user.role);
-  const { staffId, date, status } = req.query;
+  const { staffId, date, from, to, status } = req.query;
 
   let sql = `
     SELECT hd.*, s.firstname, s.lastname, s.color,
@@ -33,8 +33,10 @@ router.get('/', AUTH, (req, res) => {
     if (staffId) { sql += ' AND hd.staff_id = ?'; params.push(Number(staffId)); }
   }
 
-  if (date)   { sql += ' AND hd.date = ?';   params.push(date); }
-  if (status) { sql += ' AND hd.status = ?'; params.push(status); }
+  if (date)   { sql += ' AND hd.date = ?';        params.push(date); }
+  if (from)   { sql += ' AND hd.date >= ?';        params.push(from); }
+  if (to)     { sql += ' AND hd.date <= ?';        params.push(to); }
+  if (status) { sql += ' AND hd.status = ?';       params.push(status); }
 
   sql += ' ORDER BY hd.date DESC, hd.hour_start ASC';
 

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
+import api from '../api/client';
 
 const DAYS      = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAY_START = 7;
@@ -88,6 +89,34 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
                 const col = sp.col ?? 0;
                 const spW = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
                 const spL = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
+
+                // ── Déclaration reliquat ───────────────────────────────────────
+                if (sp.isDeclaration) {
+                  const isPending  = sp.declStatus === 'pending';
+                  const isApproved = sp.declStatus === 'approved';
+                  const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
+                  const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
+                  return (
+                    <div key={si} style={{
+                      position: 'absolute', top, left: spL, width: spW, height: h,
+                      background: declBg, border: `1.5px dashed ${declBorder}`,
+                      borderLeft: `3.5px solid ${declBorder}`,
+                      borderRadius: 5, overflow: 'hidden', padding: '2px 5px',
+                      fontSize: 9, fontWeight: 600, boxSizing: 'border-box', zIndex: 2,
+                    }}>
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
+                        <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', color: declBorder }}>
+                        <span style={{ fontSize: 8 }}>⏰</span>
+                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 6, fontWeight: 800, flexShrink: 0 }}>{(s.firstname || s.name || '?')[0]}</div>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.firstname || s.name}</span>
+                      </div>
+                      {h >= 28 && <div style={{ position: 'relative', fontSize: 8, color: declBorder, opacity: .8 }}>{fmtTime(sp.start)}–{fmtTime(sp.end)}</div>}
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={si} style={{
                     position: 'absolute', top, left: spL, width: spW, height: h,
@@ -134,15 +163,24 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
 /* ─── Vue principale ─────────────────────────────────────────── */
 const GeneralPlanningView = () => {
   const { staff, functions, taskTypes, schedules, loadWeekSchedules } = useApp();
-  const [wk,      setWk]      = useState(0);
-  const [selFns,  setSelFns]  = useState(null); // null = toutes, [] = aucune, [slugs] = filtrées
-  const [dayMode, setDayMode] = useState(() => localStorage.getItem('spirit-general-planning-mode') === 'day');
-  const [currentDay, setCurrentDay] = useState(todayDayIdx);
+  const [wk,           setWk]           = useState(0);
+  const [selFns,       setSelFns]       = useState(null);
+  const [dayMode,      setDayMode]      = useState(() => localStorage.getItem('spirit-general-planning-mode') === 'day');
+  const [currentDay,   setCurrentDay]   = useState(todayDayIdx);
+  const [declarations, setDeclarations] = useState([]);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
 
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
+  useEffect(() => {
+    const mon = new Date(currentWeek + 'T12:00:00');
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const to = sun.toISOString().slice(0, 10);
+    api.get(`/hour-declarations?from=${currentWeek}&to=${to}`)
+      .then(d => setDeclarations(Array.isArray(d.data) ? d.data : []))
+      .catch(() => {});
+  }, [currentWeek]);
 
   const dates = useMemo(() => {
     const mon = new Date(currentWeek + 'T12:00:00');
@@ -179,7 +217,7 @@ const GeneralPlanningView = () => {
     else { setCurrentDay(0); setWk(w => w + 1); }
   };
 
-  // Spans filtrés selon fonctions actives
+  // Spans filtrés selon fonctions actives + déclarations reliquat
   const spans = useMemo(() => {
     const weekData = schedules[currentWeek] || {};
     const s = Array.from({ length: 7 }, () => []);
@@ -187,12 +225,31 @@ const GeneralPlanningView = () => {
       const fnData = weekData[fn.slug] || {};
       for (let d = 0; d < 7; d++) {
         for (const sp of (fnData[d] || [])) {
+          if (sp.isDeclaration) continue; // géré par la section déclarations
           s[d].push({ ...sp, fnSlug: fn.slug });
         }
       }
     }
+    // Déclarations d'heures reliquat (pending + approved)
+    const weekMon = new Date(currentWeek + 'T12:00:00');
+    for (const decl of declarations) {
+      if (!['pending', 'approved'].includes(decl.status)) continue;
+      const declDate = new Date(decl.date + 'T12:00:00');
+      const dayIdx = Math.round((declDate - weekMon) / 86400000);
+      if (dayIdx < 0 || dayIdx > 6) continue;
+      s[dayIdx].push({
+        staffId:       decl.staff_id,
+        start:         decl.hour_start,
+        end:           decl.hour_end,
+        fnSlug:        null,
+        taskType:      null,
+        isDeclaration: true,
+        declId:        decl.id,
+        declStatus:    decl.status,
+      });
+    }
     return s;
-  }, [schedules, currentWeek, activeFns]);
+  }, [schedules, currentWeek, activeFns, declarations]);
 
   // Grille selon mode
   const displayDates = dayMode ? [dates[currentDay]] : dates;

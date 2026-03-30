@@ -118,7 +118,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                       boxSizing: 'border-box', zIndex: 2,
                     }}>
                       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
-                        <span style={{ fontSize: Math.max(9, Math.min(16, h * 0.28)), fontWeight: 900, letterSpacing: '0.16em', color: declBorder, opacity: 0.3, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: 'Impact, "Arial Black", sans-serif' }}>REL</span>
+                        <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
                       </div>
                       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3, overflow: 'hidden', color: declBorder }}>
                         <span style={{ fontSize: 8 }}>⏰</span>
@@ -191,6 +191,7 @@ const TeamPlanningView = () => {
   const [hiddenStaffIds,  setHiddenStaffIds]                 = useState(new Set());
   const [courseSlots,       setCourseSlots]       = useState([]);
   const [courseAssignments, setCourseAssignments] = useState([]);
+  const [declarations,      setDeclarations]      = useState([]);
   const [dayMode, setDayMode]  = useState(() => localStorage.getItem('spirit-teamplanning-mode') === 'day');
   const [currentDay, setCurrentDay] = useState(todayDayIdx);
 
@@ -206,12 +207,17 @@ const TeamPlanningView = () => {
 
   const loadCourseData = useCallback(async (week) => {
     try {
-      const [cs, ca] = await Promise.all([
+      const mon = new Date(week + 'T12:00:00');
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      const to = sun.toISOString().slice(0, 10);
+      const [cs, ca, decl] = await Promise.all([
         api.get('/course-slots'),
         api.get(`/course-slots/assignments?week=${week}`),
+        api.get(`/hour-declarations?from=${week}&to=${to}`),
       ]);
       setCourseSlots(Array.isArray(cs.data) ? cs.data : []);
       setCourseAssignments(Array.isArray(ca.data) ? ca.data : []);
+      setDeclarations(Array.isArray(decl.data) ? decl.data : []);
     } catch (_) {}
   }, []);
 
@@ -336,6 +342,7 @@ const TeamPlanningView = () => {
       const fnData = weekData[fn.slug] || {};
       for (let d = 0; d < 7; d++) {
         for (const sp of (fnData[d] || [])) {
+          if (sp.isDeclaration) continue; // géré par la section 3
           if (!filteredStaffSet.has(sp.staffId)) continue;
           // Pour un membre multi-équipes avec des équipes hors scope : filtrer par fonctions du scope
           if (scopeFnSet) {
@@ -371,8 +378,27 @@ const TeamPlanningView = () => {
         taskType:     null,
       });
     }
+    // 3. Déclarations d'heures reliquat (pending + approved)
+    const weekMon = new Date(currentWeek + 'T12:00:00');
+    for (const decl of declarations) {
+      if (!['pending', 'approved'].includes(decl.status)) continue;
+      if (!filteredStaffSet.has(decl.staff_id)) continue;
+      const declDate = new Date(decl.date + 'T12:00:00');
+      const dayIdx = Math.round((declDate - weekMon) / 86400000);
+      if (dayIdx < 0 || dayIdx > 6) continue;
+      s[dayIdx].push({
+        staffId:       decl.staff_id,
+        start:         decl.hour_start,
+        end:           decl.hour_end,
+        fnSlug:        null,
+        taskType:      null,
+        isDeclaration: true,
+        declId:        decl.id,
+        declStatus:    decl.status,
+      });
+    }
     return s;
-  }, [schedules, currentWeek, functions, filteredStaffSet, scopedStaff, selectedTeamIds, myTeams, courseAssignments, courseSlots]);
+  }, [schedules, currentWeek, functions, filteredStaffSet, scopedStaff, selectedTeamIds, myTeams, courseAssignments, courseSlots, declarations]);
 
   const teamNames = useMemo(() => {
     if (myTeamIds.length === 0) return 'Toutes équipes';

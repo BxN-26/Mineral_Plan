@@ -396,7 +396,7 @@ const MonPlanningView = () => {
                       }}>
                         {/* Tampon REL diagonal */}
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', pointerEvents: 'none' }}>
-                          <span style={{ fontSize: Math.max(10, Math.min(18, h * 0.28)), fontWeight: 900, letterSpacing: '0.18em', color: declBorder, opacity: 0.3, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: 'Impact, "Arial Black", sans-serif' }}>REL</span>
+                          <span style={{ fontSize: Math.max(7, Math.min(11, h * 0.20)), fontWeight: 900, letterSpacing: '0.04em', color: declBorder, opacity: 0.28, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: '"Arial Black", Arial, sans-serif', whiteSpace: 'nowrap' }}>H.salarié</span>
                         </div>
                         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 3 }}>
                           <span style={{ fontSize: 9 }}>⏰</span>
