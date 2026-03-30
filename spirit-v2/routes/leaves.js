@@ -1,53 +1,128 @@
 // routes/leaves.js — Workflow d'approbation hiérarchique complet
-const router = require('express').Router();
+const path    = require('path');
+const fs      = require('fs');
+const router  = require('express').Router();
+const multer  = require('multer');
 const { db_ }                               = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
-const { notify }                             = require('./notifications');
+const { notify, notifyStaff }               = require('./notifications');
 const { sendPush }                           = require('./push');
 const { releaseStaffSlots }                  = require('../utils/releaseSlots');
 
 const AUTH  = requireAuth;
-const MGR   = [requireAuth, requireRole('admin','manager','rh','superadmin')];
-const RH    = [requireAuth, requireRole('admin','rh','superadmin')];
 const ADMIN = [requireAuth, requireRole('admin','superadmin')];
 
+// ── Multer pour upload justificatif ─────────────────────────
+const docUpload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 10 * 1024 * 1024 }, // 10 Mo max
+  fileFilter: (req, file, cb) => {
+    const ok = ['image/jpeg','image/png','image/webp','application/pdf'].includes(file.mimetype);
+    if (!ok) return cb(new Error('Fichier image ou PDF requis'));
+    cb(null, true);
+  },
+});
+
 // ── Helpers ──────────────────────────────────────────────────
-function calcDays(start, end, method = 'working_days') {
-  let days = 0;
-  const d = new Date(start), e = new Date(end);
-  while (d <= e) {
-    if (method === 'working_days') {
-      if (d.getDay() !== 0 && d.getDay() !== 7) days++; // Lun-Sam
+
+/** Lit les jours ouvrés depuis les paramètres (Set de getDay() : 0=Dim, 1=Lun…6=Sam) */
+function getWorkingDaysSet() {
+  const setting = db_.get("SELECT value FROM settings WHERE key='leave_working_days'");
+  if (setting?.value) {
+    try {
+      const arr = JSON.parse(setting.value);
+      if (Array.isArray(arr) && arr.every(n => Number.isInteger(n) && n >= 0 && n <= 6))
+        return new Set(arr);
+    } catch (_) {}
+  }
+  return new Set([1, 2, 3, 4, 5, 6]); // Lun-Sam par défaut
+}
+
+/**
+ * Construit un Set des dates "YYYY-MM-DD" fériées comprises dans la plage [start, end].
+ * Les jours récurrents (recurring=1) sont étendus à toutes les années couvertes.
+ */
+function getHolidaysSet(start, end) {
+  const holidays = db_.all('SELECT date, recurring FROM public_holidays');
+  const startYear = new Date(start + 'T12:00:00').getFullYear();
+  const endYear   = new Date(end   + 'T12:00:00').getFullYear();
+  const set = new Set();
+  for (const h of holidays) {
+    if (h.recurring) {
+      const mmdd = h.date.slice(5); // "MM-DD"
+      for (let y = startYear; y <= endYear; y++) set.add(`${y}-${mmdd}`);
     } else {
-      days++;
+      set.add(h.date);
     }
+  }
+  return set;
+}
+
+/**
+ * Calcule le nombre de jours de congé en excluant les jours non-ouvrés et les jours fériés.
+ * halfStart / halfEnd enlèvent chacun 0,5 jour (demi-journée de début / fin).
+ */
+function calcDays(start, end, method = 'working_days', halfStart = 0, halfEnd = 0) {
+  let days = 0;
+  const d = new Date(start + 'T12:00:00');
+  const e = new Date(end   + 'T12:00:00');
+  const working  = method === 'working_days' ? getWorkingDaysSet() : null;
+  const holidays = getHolidaysSet(start, end);
+  while (d <= e) {
+    const dateStr = d.toISOString().slice(0, 10);
+    if ((working ? working.has(d.getDay()) : true) && !holidays.has(dateStr)) days++;
     d.setDate(d.getDate() + 1);
   }
-  return days;
+  if (halfStart) days -= 0.5;
+  if (halfEnd)   days -= 0.5;
+  return Math.max(0, days);
 }
 
-function getNextApprover(leave, leaveType) {
-  const levels = JSON.parse(leaveType.approval_levels || '["manager"]');
-  const step   = leave.approval_step || 1;
-  return levels[step - 1] || null;
-}
-
+/** Résout un approbateur pour un niveau donné. Retourne null si introuvable. */
 function resolveApprover(staffId, level) {
-  // level: 'manager' | 'rh' | 'direction'
   if (level === 'manager') {
-    const mgr = db_.get(
-      'SELECT u.* FROM users u JOIN staff s ON s.manager_id = u.staff_id WHERE s.id = ?',
+    return db_.get(
+      'SELECT u.* FROM users u JOIN staff s ON s.manager_id = u.staff_id WHERE s.id = ? AND u.active=1',
       [staffId]
-    );
-    return mgr;
+    ) || null;
   }
   if (level === 'rh') {
-    return db_.get("SELECT * FROM users WHERE role IN ('rh','admin','superadmin') AND active=1 LIMIT 1");
+    return db_.get("SELECT * FROM users WHERE role IN ('rh','admin','superadmin') AND active=1 LIMIT 1") || null;
   }
   if (level === 'direction') {
-    return db_.get("SELECT * FROM users WHERE role IN ('admin','superadmin') AND active=1 LIMIT 1");
+    return db_.get("SELECT * FROM users WHERE role IN ('admin','superadmin') AND active=1 LIMIT 1") || null;
   }
   return null;
+}
+
+/**
+ * Résout et compacte les approbateurs pour une demande.
+ * Les niveaux sans approbateur sont ignorés et les non-null sont compactés en N1/N2/N3.
+ * Les doublons (même utilisateur à plusieurs niveaux) sont dédupliqués.
+ */
+function resolveApprovers(staffId, levels) {
+  const resolved = levels.map(l => resolveApprover(staffId, l)).filter(Boolean);
+  const seen = new Set();
+  const unique = resolved.filter(u => { if (seen.has(u.id)) return false; seen.add(u.id); return true; });
+  return { n1: unique[0] || null, n2: unique[1] || null, n3: unique[2] || null };
+}
+
+/** Déduit le solde CP/RTT quand un congé est définitivement approuvé. */
+function deductBalance(leave) {
+  const lt = db_.get('SELECT slug FROM leave_types WHERE id=?', [leave.type_id]);
+  if (lt?.slug === 'cp')
+    db_.run('UPDATE staff SET cp_balance = MAX(0, cp_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
+  else if (lt?.slug === 'rtt')
+    db_.run('UPDATE staff SET rtt_balance = MAX(0, rtt_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
+}
+
+/** Restitue le solde CP/RTT quand un congé approuvé est annulé. */
+function restoreBalance(leave) {
+  const lt = db_.get('SELECT slug FROM leave_types WHERE id=?', [leave.type_id]);
+  if (lt?.slug === 'cp')
+    db_.run('UPDATE staff SET cp_balance = cp_balance + ? WHERE id=?', [leave.days_count, leave.staff_id]);
+  else if (lt?.slug === 'rtt')
+    db_.run('UPDATE staff SET rtt_balance = rtt_balance + ? WHERE id=?', [leave.days_count, leave.staff_id]);
 }
 
 // ── GET /api/leaves ──────────────────────────────────────────
@@ -184,40 +259,50 @@ router.post('/', AUTH, (req, res) => {
   );
   if (conflict) return res.status(409).json({ error: 'Conflit avec un congé existant', conflict_id: conflict.id });
 
-  const days  = calcDays(start_date, end_date, leaveType.count_method);
+  const { half_start = 0, half_end = 0 } = req.body;
+  const days   = calcDays(start_date, end_date, leaveType.count_method, Number(half_start), Number(half_end));
   const levels = JSON.parse(leaveType.approval_levels || '["manager"]');
 
-  // Résolution approvers — dédupliqués (si N2 = N1, inutile d'un 2e niveau)
-  const n1 = resolveApprover(staff_id, levels[0]);
-  let   n2 = levels[1] ? resolveApprover(staff_id, levels[1]) : null;
-  let   n3 = levels[2] ? resolveApprover(staff_id, levels[2]) : null;
-  // Supprimer les niveaux redondants (même utilisateur)
-  if (n2 && n1 && n2.id === n1.id) n2 = null;
-  if (n3 && n2 && n3.id === n2.id) n3 = null;
-  if (n3 && !n2 && n1 && n3.id === n1.id) n3 = null;
+  // Résolution & compaction des approbateurs (niveaux null sautés, doublons dédupliqués)
+  const { n1, n2, n3 } = resolveApprovers(Number(staff_id), levels);
+
+  // Avertissement solde insuffisant (non-bloquant)
+  let balance_warning = null;
+  if (['cp','rtt'].includes(leaveType.slug)) {
+    const s = db_.get('SELECT cp_balance, rtt_balance FROM staff WHERE id=?', [staff_id]);
+    const bal = leaveType.slug === 'cp' ? (s?.cp_balance ?? 0) : (s?.rtt_balance ?? 0);
+    if (days > bal) balance_warning = `Solde insuffisant : il reste ${bal}j, vous en demandez ${days}j.`;
+  }
 
   const r = db_.run(
     `INSERT INTO leaves
        (staff_id, type_id, start_date, end_date, days_count, reason, document_url,
         status, approval_step, submitted_at,
+        half_start, half_end,
         n1_approver_id, n1_status,
         n2_approver_id, n2_status,
         n3_approver_id, n3_status)
-     VALUES (?,?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?)`,
+     VALUES (?,?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
     [staff_id, type_id, start_date, end_date, days, reason||null, document_url||null,
-     n1?.id||null, n1?'pending':null,
-     n2?.id||null, n2?'pending':null,
-     n3?.id||null, n3?'pending':null]
+     half_start ? 1 : 0, half_end ? 1 : 0,
+     n1?.id||null, n1 ? 'pending' : null,
+     n2?.id||null, n2 ? 'pending' : null,
+     n3?.id||null, n3 ? 'pending' : null]
   );
 
-  // Notifier N1
+  // Notifier le premier approbateur via notifications unifiées
   if (n1) {
-    db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
-      [r.lastInsertRowid, n1.id, 'new_request']);
+    const staffRow = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [staff_id]);
+    const staffName = staffRow ? `${staffRow.firstname} ${staffRow.lastname}` : 'Un salarié';
+    notify(n1.id, 'approval',
+      'Nouvelle demande de congé',
+      `${staffName} a demandé un ${leaveType.label} du ${start_date} au ${end_date}.`,
+      'leave', r.lastInsertRowid, { action: 'approve' }
+    );
   }
 
   auditLog(req, 'LEAVE_CREATE', 'leaves', r.lastInsertRowid, null, req.body);
-  res.status(201).json({ id: r.lastInsertRowid, days_count: days, n1_approver: n1?.email });
+  res.status(201).json({ id: r.lastInsertRowid, days_count: days, n1_approver: n1?.email, balance_warning });
 });
 
 // ── PUT /api/leaves/:id/approve ──────────────────────────────
@@ -244,9 +329,14 @@ router.put('/:id/approve', AUTH, (req, res) => {
       nextStatus = 'approved';
     } else {
       db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      // Notifier N2
-      db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
-        [leave.id, leave.n2_approver_id, 'new_request']);
+      // Notifier N2 via notifications unifiées
+      const lt2 = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+      const sf2 = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+      notify(leave.n2_approver_id, 'approval',
+        'Demande de congé à valider',
+        `${sf2 ? sf2.firstname + ' ' + sf2.lastname : 'Un salarié'} — ${lt2?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1 validé, en attente de votre approbation).`,
+        'leave', leave.id, { action: 'approve' }
+      );
       nextStatus = 'approved_n1';
     }
 
@@ -259,8 +349,13 @@ router.put('/:id/approve', AUTH, (req, res) => {
       nextStatus = 'approved';
     } else {
       db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
-        [leave.id, leave.n3_approver_id, 'new_request']);
+      const lt3 = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+      const sf3 = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+      notify(leave.n3_approver_id, 'approval',
+        'Demande de congé à valider',
+        `${sf3 ? sf3.firstname + ' ' + sf3.lastname : 'Un salarié'} — ${lt3?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1+N2 validés, en attente de votre approbation).`,
+        'leave', leave.id, { action: 'approve' }
+      );
       nextStatus = 'approved_n2';
     }
 
@@ -304,9 +399,15 @@ router.put('/:id/approve', AUTH, (req, res) => {
         nextStatus = 'approved';
       } else {
         db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-        if (leave.n3_approver_id !== userId)
-          db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
-            [leave.id, leave.n3_approver_id, 'new_request']);
+        if (leave.n3_approver_id && leave.n3_approver_id !== userId) {
+          const ltA = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+          const sfA = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+          notify(leave.n3_approver_id, 'approval',
+            'Demande de congé à valider',
+            `${sfA ? sfA.firstname + ' ' + sfA.lastname : 'Un salarié'} — ${ltA?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (en attente de votre approbation finale).`,
+            'leave', leave.id, { action: 'approve' }
+          );
+        }
         nextStatus = 'approved_n2';
       }
     } else if (leave.n3_status === 'pending') {
@@ -324,15 +425,11 @@ router.put('/:id/approve', AUTH, (req, res) => {
     return res.status(403).json({ error: 'Vous n\'êtes pas le valideur de ce congé à cette étape' });
   }
 
-  // Si approuvé définitivement → déduire du solde + notifier managers des créneaux impactés + push salarié
+  // Si approuvé définitivement → déduire solde + push salarié + libérer créneaux
   if (nextStatus === 'approved') {
     const lt = db_.get('SELECT slug, label FROM leave_types WHERE id=?', [leave.type_id]);
-    if (lt?.slug === 'cp')
-      db_.run('UPDATE staff SET cp_balance = MAX(0, cp_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
-    else if (lt?.slug === 'rtt')
-      db_.run('UPDATE staff SET rtt_balance = MAX(0, rtt_balance - ?) WHERE id=?', [leave.days_count, leave.staff_id]);
+    deductBalance({ ...leave, days_count: leave.days_count, type_id: leave.type_id, staff_id: leave.staff_id });
 
-    // Push notification au salarié concerné
     const staffUser = db_.get('SELECT id FROM users WHERE staff_id=? AND active=1', [leave.staff_id]);
     if (staffUser) {
       sendPush(staffUser.id, {
@@ -340,9 +437,13 @@ router.put('/:id/approve', AUTH, (req, res) => {
         body:  `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été validé.`,
         url:   '/conges',
       });
+      notify(staffUser.id, 'leave',
+        '✅ Congé approuvé',
+        `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été validé.`,
+        'leave', leave.id
+      );
     }
 
-    // Libérer les créneaux planifiés sur la période du congé + notifier le manager
     releaseStaffSlots(db_, notify, {
       staffId:   leave.staff_id,
       dateStart: leave.start_date,
@@ -365,33 +466,46 @@ router.put('/:id/refuse', AUTH, (req, res) => {
   if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
 
   const uid = req.user.id;
+  const isOverride = ['admin','superadmin'].includes(req.user.role);
   if (leave.n1_approver_id !== uid && leave.n2_approver_id !== uid &&
-      leave.n3_approver_id !== uid && !['admin','superadmin'].includes(req.user.role))
+      leave.n3_approver_id !== uid && !isOverride)
     return res.status(403).json({ error: 'Non autorisé' });
 
+  // Mettre à jour le bon niveau Nx selon qui refuse
   db_.run(`UPDATE leaves SET status='refused', updated_at=datetime('now'),
-           n1_status=CASE WHEN n1_approver_id=? THEN 'refused' ELSE n1_status END,
-           n1_comment=CASE WHEN n1_approver_id=? THEN ? ELSE n1_comment END,
-           n1_reviewed_at=CASE WHEN n1_approver_id=? THEN datetime('now') ELSE n1_reviewed_at END
+           n1_status=CASE WHEN n1_approver_id=? OR (? AND n1_status='pending') THEN 'refused' ELSE n1_status END,
+           n1_comment=CASE WHEN n1_approver_id=? OR (? AND n1_status='pending') THEN ? ELSE n1_comment END,
+           n1_reviewed_at=CASE WHEN n1_approver_id=? OR (? AND n1_status='pending') THEN datetime('now') ELSE n1_reviewed_at END,
+           n2_status=CASE WHEN n2_approver_id=? THEN 'refused' ELSE n2_status END,
+           n2_comment=CASE WHEN n2_approver_id=? THEN ? ELSE n2_comment END,
+           n2_reviewed_at=CASE WHEN n2_approver_id=? THEN datetime('now') ELSE n2_reviewed_at END,
+           n3_status=CASE WHEN n3_approver_id=? THEN 'refused' ELSE n3_status END,
+           n3_comment=CASE WHEN n3_approver_id=? THEN ? ELSE n3_comment END,
+           n3_reviewed_at=CASE WHEN n3_approver_id=? THEN datetime('now') ELSE n3_reviewed_at END
            WHERE id=?`,
-    [uid, uid, comment||null, uid, leave.id]);
+    [
+      uid, isOverride ? 1 : 0,
+      uid, isOverride ? 1 : 0, comment||null,
+      uid, isOverride ? 1 : 0,
+      uid, comment||null, uid,
+      uid, comment||null, uid,
+      leave.id,
+    ]);
 
-  // Push notification au salarié
+  // Notifier le salarié (push + notification in-app)
   const staffUser = db_.get('SELECT id FROM users WHERE staff_id=? AND active=1', [leave.staff_id]);
+  const lt = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
   if (staffUser) {
-    const lt = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
-    sendPush(staffUser.id, {
-      title: '❌ Congé refusé',
-      body:  `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été refusé.${comment ? ' Motif : ' + comment : ''}`,
-      url:   '/conges',
-    });
+    const body = `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été refusé.${comment ? ' Motif : ' + comment : ''}`;
+    sendPush(staffUser.id, { title: '❌ Congé refusé', body, url: '/conges' });
+    notify(staffUser.id, 'leave', '❌ Congé refusé', body, 'leave', leave.id);
   }
 
   auditLog(req, 'LEAVE_REFUSE', 'leaves', leave.id, null, { comment });
   res.json({ message: 'Congé refusé' });
 });
 
-// ── DELETE /api/leaves/:id (annulation par le salarié) ───────
+// ── DELETE /api/leaves/:id (annulation) ──────────────────────
 router.delete('/:id', AUTH, (req, res) => {
   const leave = db_.get('SELECT * FROM leaves WHERE id=?', [req.params.id]);
   if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
@@ -401,9 +515,59 @@ router.delete('/:id', AUTH, (req, res) => {
   if (leave.status === 'approved' && req.user.role === 'staff')
     return res.status(400).json({ error: 'Un congé approuvé ne peut être annulé que par un manager' });
 
+  // Restituer le solde si le congé était approuvé et déjà déduit
+  if (leave.status === 'approved') restoreBalance(leave);
+
   db_.run(`UPDATE leaves SET status='cancelled', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+
+  // Notifier le salarié si annulation par un tiers
+  if (req.user.staff_id !== leave.staff_id) {
+    const lt = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+    notifyStaff(leave.staff_id, 'leave',
+      'Congé annulé',
+      `Votre ${lt?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} a été annulé par un responsable.`,
+      'leave', leave.id
+    );
+  }
+
   auditLog(req, 'LEAVE_CANCEL', 'leaves', leave.id);
   res.json({ message: 'Congé annulé' });
+});
+
+// ── POST /api/leaves/:id/document ────────────────────────────
+// Upload d'un justificatif pour une demande existante
+router.post('/:id/document', AUTH, docUpload.single('document'), async (req, res) => {
+  const leave = db_.get('SELECT * FROM leaves WHERE id=?', [req.params.id]);
+  if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
+
+  // Vérification droits : salarié concerné ou admin/manager/rh
+  const isPrivileged = ['admin','superadmin','manager','rh'].includes(req.user.role);
+  if (!isPrivileged && req.user.staff_id !== leave.staff_id)
+    return res.status(403).json({ error: 'Non autorisé' });
+
+  if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+
+  const docsDir = require('path').join(__dirname, '..', 'uploads', 'documents');
+  if (!require('fs').existsSync(docsDir))
+    require('fs').mkdirSync(docsDir, { recursive: true });
+
+  // Supprimer ancien fichier s'il existait
+  if (leave.document_url) {
+    const old = require('path').join(__dirname, '..', leave.document_url.replace(/^\//, ''));
+    if (require('fs').existsSync(old)) { try { require('fs').unlinkSync(old); } catch (_) {} }
+  }
+
+  const ext = req.file.mimetype === 'application/pdf' ? '.pdf' : '.jpg';
+  const filename = `leave_${leave.id}_${Date.now()}${ext}`;
+  const dest = require('path').join(docsDir, filename);
+
+  require('fs').writeFileSync(dest, req.file.buffer);
+
+  const url = `/uploads/documents/${filename}`;
+  db_.run("UPDATE leaves SET document_url=?, updated_at=datetime('now') WHERE id=?", [url, leave.id]);
+
+  auditLog(req, 'LEAVE_DOC_UPLOAD', 'leaves', leave.id);
+  res.json({ document_url: url });
 });
 
 module.exports = router;

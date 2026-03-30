@@ -214,10 +214,122 @@ const CongesConfig = ({ settings, setSettings }) => {
           );
         })}
       </div>
+
+      <SectionTitle>Jours fériés</SectionTitle>
+      <HolidaysManager />
     </div>
   );
 };
 
+
+/* ─── Gestionnaire de jours fériés ──────────────────────────── */
+const HolidaysManager = () => {
+  const curYear = new Date().getFullYear();
+  const [year,       setYear]       = useState(curYear);
+  const [holidays,   setHolidays]   = useState([]);
+  const [showAdd,    setShowAdd]    = useState(false);
+  const [addForm,    setAddForm]    = useState({ date: '', label: '', recurring: true });
+  const [addErr,     setAddErr]     = useState('');
+
+  const load = (y) => {
+    api.get(`/holidays?year=${y}`).then(r => setHolidays(r.data || [])).catch(() => {});
+  };
+  useEffect(() => { load(year); }, [year]);
+
+  const handleAdd = async () => {
+    if (!addForm.date || !addForm.label.trim()) { setAddErr('Date et libellé requis'); return; }
+    try {
+      await api.post('/holidays', { date: addForm.date, label: addForm.label.trim(), recurring: addForm.recurring });
+      setShowAdd(false);
+      setAddForm({ date: '', label: '', recurring: true });
+      setAddErr('');
+      load(year);
+    } catch (e) { setAddErr(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Supprimer ce jour férié ?')) return;
+    try { await api.delete(`/holidays/${id}`); load(year); }
+    catch (e) { alert(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const monthLabel = (dateStr) => {
+    const d = new Date(dateStr + 'T12:00:00');
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', weekday: 'short' });
+  };
+
+  return (
+    <div style={{ fontSize: 13 }}>
+      <div style={{ fontSize: 12, color: '#9B9890', marginBottom: 10 }}>
+        Les jours fériés sont automatiquement exclus du décompte des congés. Les jours <strong>récurrents</strong> s'appliquent chaque année sur le même jour/mois. Les jours <strong>ponctuels</strong> ne s'appliquent que pour la date exacte saisie (utile pour les fériés mobiles : Pâques, Ascension, etc.).
+      </div>
+
+      {/* Sélecteur d'année + bouton ajouter */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={() => setYear(y => y - 1)} style={{ ...btnSm, fontWeight: 800, lineHeight: 1 }}>‹</button>
+          <span style={{ fontWeight: 700, minWidth: 38, textAlign: 'center' }}>{year}</span>
+          <button onClick={() => setYear(y => y + 1)} style={{ ...btnSm, fontWeight: 800, lineHeight: 1 }}>›</button>
+        </div>
+        <button onClick={() => { setShowAdd(v => !v); setAddErr(''); }} style={{ ...btnSm, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
+          + Ajouter
+        </button>
+      </div>
+
+      {/* Formulaire ajout */}
+      {showAdd && (
+        <div style={{ background: '#F9F8F6', borderRadius: 8, padding: 12, marginBottom: 10, border: '1px solid #ECEAE4', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {addErr && <div style={{ color: '#DC2626', fontSize: 11 }}>{addErr}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 8, alignItems: 'center' }}>
+            <label style={{ fontSize: 11, color: '#6B6860', whiteSpace: 'nowrap' }}>Date</label>
+            <input type="date" value={addForm.date} onChange={e => setAddForm(p => ({ ...p, date: e.target.value }))} style={{ ...inputSt, fontSize: 12 }} />
+            <label style={{ fontSize: 11, color: '#6B6860' }}>Libellé</label>
+            <input value={addForm.label} onChange={e => setAddForm(p => ({ ...p, label: e.target.value }))} placeholder="ex. Lundi de Pâques" style={{ ...inputSt, fontSize: 12 }} />
+            <label style={{ fontSize: 11, color: '#6B6860' }}>Récurrent</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+              <input type="checkbox" checked={addForm.recurring} onChange={e => setAddForm(p => ({ ...p, recurring: e.target.checked }))} />
+              <span style={{ color: addForm.recurring ? '#15803D' : '#9B9890' }}>
+                {addForm.recurring ? 'Chaque année (même jour/mois)' : 'Ponctuel (date exacte uniquement)'}
+              </span>
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+            <button onClick={() => setShowAdd(false)} style={btnSm}>Annuler</button>
+            <button onClick={handleAdd} style={{ ...btnSm, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', fontWeight: 700 }}>Enregistrer</button>
+          </div>
+        </div>
+      )}
+
+      {/* Liste */}
+      {holidays.length === 0
+        ? <div style={{ color: '#9B9890', fontSize: 12 }}>Aucun jour férié pour {year}.</div>
+        : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {holidays.map(h => (
+              <div key={`${h.id}-${h.date}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#fff', borderRadius: 8, border: '1px solid #ECEAE4' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, minWidth: 36, color: '#C5753A' }}>{h.date.slice(5)}</span>
+                <span style={{ flex: 1, fontSize: 12 }}>{h.label}</span>
+                <span style={{
+                  padding: '2px 6px', borderRadius: 10, fontSize: 9, fontWeight: 700,
+                  background: h.recurring ? '#DBEAFE' : '#FEF9C3',
+                  color: h.recurring ? '#1D4ED8' : '#A16207',
+                }}>
+                  {h.recurring ? 'récurrent' : 'ponctuel'}
+                </span>
+                <button onClick={() => handleDelete(h.id)} title="Supprimer" style={{ ...btnSm, color: '#DC2626', border: '1px solid #FECACA', background: '#FEF2F2', padding: '2px 6px' }}>🗑</button>
+              </div>
+            ))}
+          </div>
+        )
+      }
+    </div>
+  );
+};
+
+const btnSm = {
+  padding: '4px 10px', border: '1px solid #E4E0D8', borderRadius: 6,
+  background: '#fff', cursor: 'pointer', fontSize: 11, color: '#5B5855', fontFamily: 'inherit',
+};
 
 /* ─── Onglet Planning ────────────────────────────────── */
 const PlanningConfig = ({ settings, setSettings }) => {

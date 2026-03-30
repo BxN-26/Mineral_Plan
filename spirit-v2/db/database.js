@@ -53,6 +53,8 @@ function getDb() {
       ["users_must_change_password","ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"],
       ["task_types_function_id",    "ALTER TABLE task_types ADD COLUMN function_id INTEGER REFERENCES functions(id) ON DELETE SET NULL"],
       ["teams_show_course_slots",    "ALTER TABLE teams ADD COLUMN show_course_slots INTEGER NOT NULL DEFAULT 0"],
+      ["leaves_half_start",          "ALTER TABLE leaves ADD COLUMN half_start INTEGER NOT NULL DEFAULT 0"],
+      ["leaves_half_end",            "ALTER TABLE leaves ADD COLUMN half_end   INTEGER NOT NULL DEFAULT 0"],
     ];
     for (const [name, sql] of migrations) {
       const done = _db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(name);
@@ -658,6 +660,63 @@ function getDb() {
     seed.run('unavailability_approval_required', 'true', 'boolean',
       'Activer la validation manager pour les indisponibilités déclarées hors délai', 'planning');
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('unavailability_settings_seed')").run();
+  }
+
+  // ── Migration : table jours fériés ───────────────────────────
+  const holidaysDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='public_holidays_table'").get();
+  if (!holidaysDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS public_holidays (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        date       TEXT    NOT NULL UNIQUE, -- YYYY-MM-DD (année de référence pour les récurrents)
+        label      TEXT    NOT NULL,
+        recurring  INTEGER NOT NULL DEFAULT 1, -- 1 = se répète chaque année (même MM-DD)
+        created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_ph_date ON public_holidays(date);
+    `);
+    // Seed : jours fériés légaux français (date fixe, année 2025 comme référence)
+    const insH = _db.prepare("INSERT OR IGNORE INTO public_holidays (date, label, recurring) VALUES (?, ?, 1)");
+    const fixed = [
+      ['2025-01-01', 'Jour de l\'An'],
+      ['2025-05-01', 'Fête du Travail'],
+      ['2025-05-08', 'Victoire 1945'],
+      ['2025-07-14', 'Fête Nationale'],
+      ['2025-08-15', 'Assomption'],
+      ['2025-11-01', 'Toussaint'],
+      ['2025-11-11', 'Armistice'],
+      ['2025-12-25', 'Noël'],
+    ];
+    for (const [d, l] of fixed) insH.run(d, l);
+    // Seed : jours fériés mobiles 2025 - 2027 (Pâques, Ascension, Lundi de Pentecôte, Lundi de Pâques)
+    const mobile = [
+      ['2025-04-18', 'Vendredi Saint (Alsace-Moselle)'],
+      ['2025-04-21', 'Lundi de Pâques'],
+      ['2025-05-29', 'Ascension'],
+      ['2025-06-09', 'Lundi de Pentecôte'],
+      ['2026-04-06', 'Lundi de Pâques'],
+      ['2026-05-14', 'Ascension'],
+      ['2026-05-25', 'Lundi de Pentecôte'],
+      ['2027-03-29', 'Lundi de Pâques'],
+      ['2027-05-06', 'Ascension'],
+      ['2027-05-17', 'Lundi de Pentecôte'],
+    ];
+    const insMobile = _db.prepare("INSERT OR IGNORE INTO public_holidays (date, label, recurring) VALUES (?, ?, 0)");
+    for (const [d, l] of mobile) insMobile.run(d, l);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('public_holidays_table')").run();
+  }
+
+  // ── Migration : paramètre jours ouvrés pour congés ──────────
+  const workingDaysDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='leave_working_days_seed'").get();
+  if (!workingDaysDone) {
+    _db.prepare(
+      "INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)"
+    ).run(
+      'leave_working_days', '[1,2,3,4,5,6]', 'json',
+      'Jours ouvrés comptabilisés pour le décompte des congés (JSON, 0=Dim, 1=Lun, …, 6=Sam). Ex: [1,2,3,4,5] = Lun-Ven, [1,2,3,4,5,6] = Lun-Sam',
+      'conges'
+    );
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('leave_working_days_seed')").run();
   }
 
   return _db;

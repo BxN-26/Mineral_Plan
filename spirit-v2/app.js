@@ -28,6 +28,7 @@ const leaveTypesRouter       = require('./routes/leave-types');
 const taskTypesRouter        = require('./routes/task-types');
 const unavailabilitiesRouter  = require('./routes/unavailabilities');
 const hourDeclRouter          = require('./routes/hour-declarations');
+const holidaysRouter          = require('./routes/holidays');
 
 // ── Initialisation DB ─────────────────────────────────────────
 initSchema();
@@ -81,7 +82,7 @@ app.use(express.static(distPath, {
   },
 }));
 
-// Servir les uploads (avatars, etc.)
+// Servir les uploads (avatars, documents justificatifs, etc.)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Servir les PDFs de documentation (accès public, lecture seule)
@@ -97,6 +98,7 @@ app.use('/api/leaves',    leavesRouter);
 app.use('/api/schedules', schedulesRouter);
 app.use('/api/settings',       settingsRouter);
 app.use('/api/notifications',  notificationsRouter);
+app.use('/api/holidays',       holidaysRouter);
 app.use('/api/stats',          statsRouter);
 app.use('/api/costs',          costsRouter);
 app.use('/api/swaps',          swapsRouter);
