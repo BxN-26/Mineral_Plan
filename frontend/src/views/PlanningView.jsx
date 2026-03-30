@@ -240,7 +240,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
 
   return (
     <div ref={colRef} onDragOver={e => { e.preventDefault(); onDragEnter(dayIndex); }} onDragLeave={onDragLeave}
-      style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isDragOver ? 'rgba(197,117,58,.07)' : isToday ? '#FFFCF9' : isWeekend ? '#FDFBF8' : '#fff', borderLeft: '1px solid #E8E5DF' }}>
+      style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isDragOver ? 'rgba(197,117,58,.07)' : isToday ? '#FFFCF9' : isWeekend ? '#FDFBF8' : '#fff', borderLeft: '2px solid #D0CBC2' }}>
       {/* Lignes heure */}
       {HOUR_LABELS.slice(0, -1).map(h => (
         <div key={h} style={{ position: 'absolute', left: 0, right: 0, top: (h - DAY_START) * HOUR_H, borderTop: '1px solid #F0EDE8', height: HOUR_H, pointerEvents: 'none' }}>
@@ -1177,18 +1177,27 @@ const PlanningView = () => {
     );
 
     const placed = useMemo(() => {
-      const sorted = [...daySpans].sort((a, b) => a.start - b.start);
+      const courseGroups = groupOverlapping(dayCourses);
+      const allItems = [
+        ...courseGroups.map(g => ({
+          type: 'course', group: g,
+          start: Math.min(...g.map(c => c.hour_start)),
+          end:   Math.max(...g.map(c => c.hour_end)),
+        })),
+        ...daySpans.map(sp => ({ type: 'span', sp, start: sp.start, end: sp.end })),
+      ];
+      const sorted = [...allItems].sort((a, b) => a.start - b.start);
       const cols = [];
-      const result = sorted.map(sp => {
-        let col = cols.findIndex(end => end <= sp.start);
-        if (col === -1) { cols.push(sp.end); col = cols.length - 1; } else cols[col] = sp.end;
-        return { sp, col };
+      const result = sorted.map(item => {
+        let col = cols.findIndex(end => end <= item.start);
+        if (col === -1) { cols.push(item.end); col = cols.length - 1; } else cols[col] = item.end;
+        return { ...item, col };
       });
       return { result, colCount: Math.max(1, cols.length) };
-    }, [daySpans]);
+    }, [daySpans, dayCourses]);
 
     return (
-      <div style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isToday ? '#FFFCF9' : isWeekend ? '#FDFBF8' : '#fff', borderLeft: '1px solid #E8E5DF' }}>
+      <div style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isToday ? '#FFFCF9' : isWeekend ? '#FDFBF8' : '#fff', borderLeft: '2px solid #D0CBC2' }}>
         {HOUR_LABELS.slice(0, -1).map(h => (
           <div key={h} style={{ position: 'absolute', left: 0, right: 0, top: (h - DAY_START) * HOUR_H, borderTop: '1px solid #F0EDE8', pointerEvents: 'none' }}>
             {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
@@ -1229,16 +1238,21 @@ const PlanningView = () => {
               }} />
           ))
         }
-        {/* Blocs cours (toutes fonctions) */}
-        {groupOverlapping(dayCourses).map((group, gi) => (
-          <CourseSlotCompactBlock
-            key={`g${gi}-${group[0].id}`}
-            courses={group}
-            assignments={assignments}
-            onOpen={() => setCourseGroupModal({ courses: group })}
-          />
-        ))}
-        {placed.result.map(({ sp, col }) => {
+        {/* Blocs cours + spans — placement unifié côte à côte */}
+        {placed.result.map((item, idx) => {
+          if (item.type === 'course') {
+            return (
+              <CourseSlotCompactBlock
+                key={`g${idx}-${item.group[0].id}`}
+                courses={item.group}
+                assignments={assignments}
+                onOpen={() => setCourseGroupModal({ courses: item.group })}
+                col={item.col}
+                colCount={placed.colCount}
+              />
+            );
+          }
+          const { sp, col } = item;
           const s = staff.find(x => x.id === sp.staffId);
           if (!s) return null;
           const top = timeToY(sp.start);
@@ -1538,7 +1552,7 @@ const PlanningView = () => {
             {DAYS.map((day, di) => {
               const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
               return (
-                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '1px solid #E4E0D8' }}>
+                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '2px solid #D0CBC2' }}>
                   <div style={{ fontSize: 9, fontWeight: 600, color: isToday?'#C5753A':'#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
                   <div style={{ fontSize: 15, fontWeight: isToday?800:600, color: isToday?'#C5753A':'#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
                 </div>

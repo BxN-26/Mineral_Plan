@@ -20,7 +20,23 @@ function weekStart(offset) {
   mon.setDate(now.getDate() + diff + offset * 7);
   return mon.toISOString().slice(0, 10);
 }
-
+/* ─── Algorithme de placement en colonnes (anti-chevauchement) ── */
+function computeColumns(items) {
+  if (!items.length) return { result: [], colCount: 1 };
+  const withIdx = items.map((item, idx) => ({ ...item, _idx: idx }));
+  const sorted  = [...withIdx].sort((a, b) => a.start - b.start);
+  const cols    = [];
+  for (const item of sorted) {
+    let col = cols.findIndex(end => end <= item.start);
+    if (col === -1) { cols.push(item.end); col = cols.length - 1; }
+    else cols[col] = item.end;
+    item.col = col;
+  }
+  const colCount = Math.max(1, cols.length);
+  const result   = new Array(items.length);
+  for (const item of sorted) result[item._idx] = item;
+  return { result, colCount };
+}
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
 const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
   return (
@@ -38,6 +54,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
       {dates.map((date, d) => {
         const isToday = date.toDateString() === new Date().toDateString();
         const daySpans = spans[d] || [];
+        const { result: placedSpans, colCount } = computeColumns(daySpans);
         return (
           <div key={d} style={{ flex: 1, minWidth: 100, position: 'relative' }}>
             <div style={{
@@ -52,7 +69,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
             <div style={{
               position: 'relative', height: TOTAL_H,
               background: isToday ? '#FFFCF8' : '#fff',
-              borderRight: '1px solid #F0EDE8',
+              borderRight: '2px solid #D0CBC2',
             }}>
               {HOURS.map(h => (
                 <div key={h} style={{
@@ -61,16 +78,19 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {} }) => {
                   pointerEvents: 'none',
                 }} />
               ))}
-              {daySpans.map((sp, si) => {
+              {placedSpans.map((sp, si) => {
                 const s = staff.find(x => x.id === sp.staffId);
                 if (!s) return null;
                 const fn  = functions.find(f => f.slug === sp.fnSlug);
                 const tt  = sp.taskType ? ttMap[sp.taskType] : null;
                 const top = timeToY(sp.start);
                 const h   = Math.max(SLOT_H, timeToY(sp.end) - timeToY(sp.start));
+                const col = sp.col ?? 0;
+                const spW = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
+                const spL = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
                 return (
                   <div key={si} style={{
-                    position: 'absolute', top, left: 2, right: 2, height: h,
+                    position: 'absolute', top, left: spL, width: spW, height: h,
                     background: `${s.color}20`,
                     border: `1.5px solid ${s.color}50`,
                     borderRadius: 6, overflow: 'hidden', padding: '2px 5px',

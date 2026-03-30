@@ -25,7 +25,23 @@ function weekStart(offset) {
   mon.setDate(now.getDate() + diff + offset * 7);
   return mon.toISOString().slice(0, 10);
 }
-
+/* ─── Algorithme de placement en colonnes (anti-chevauchement) ── */
+function computeColumns(items) {
+  if (!items.length) return { result: [], colCount: 1 };
+  const withIdx = items.map((item, idx) => ({ ...item, _idx: idx }));
+  const sorted  = [...withIdx].sort((a, b) => a.start - b.start);
+  const cols    = [];
+  for (const item of sorted) {
+    let col = cols.findIndex(end => end <= item.start);
+    if (col === -1) { cols.push(item.end); col = cols.length - 1; }
+    else cols[col] = item.end;
+    item.col = col;
+  }
+  const colCount = Math.max(1, cols.length);
+  const result   = new Array(items.length);
+  for (const item of sorted) result[item._idx] = item;
+  return { result, colCount };
+}
 /* ─── Modale détail créneau ────────────────────────────────── */
 const SpanDetailModal = ({ sp, date, myStaff, ttMap, onClose }) => {
   const tt  = sp.taskType ? ttMap[sp.taskType] : null;
@@ -284,7 +300,7 @@ const MonPlanningView = () => {
             {DAYS.map((day, di) => {
               const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
               return (
-                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '1px solid #E4E0D8' }}>
+                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '2px solid #D0CBC2' }}>
                   <div style={{ fontSize: 9, fontWeight: 600, color: isToday?'#C5753A':'#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
                   <div style={{ fontSize: 15, fontWeight: isToday?800:600, color: isToday?'#C5753A':'#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
                 </div>
@@ -306,8 +322,9 @@ const MonPlanningView = () => {
           {(dayMode ? [currentDay] : DAYS.map((_, i) => i)).map((di) => {
             const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
             const daySpans = mySpans[di] || [];
+            const { result: placedSpans, colCount } = computeColumns(daySpans);
             return (
-              <div key={di} style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isToday?'#FFFCF9':di>=5?'#FDFBF8':'#fff', borderLeft: '1px solid #E8E5DF' }}>
+              <div key={di} style={{ flex: 1, position: 'relative', height: TOTAL_H, background: isToday?'#FFFCF9':di>=5?'#FDFBF8':'#fff', borderLeft: '2px solid #D0CBC2' }}>
                 {HOUR_LABELS.slice(0, -1).map(h => (
                   <div key={h} style={{ position: 'absolute', left: 0, right: 0, top: (h - DAY_START) * HOUR_H, borderTop: '1px solid #F0EDE8', pointerEvents: 'none' }}>
                     {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
@@ -353,11 +370,14 @@ const MonPlanningView = () => {
                         }} />
                     ));
                 })()}
-                {daySpans.map((sp, i) => {
+                {placedSpans.map((sp, i) => {
                   const top = timeToY(sp.start);
                   const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
                   const tt  = sp.taskType ? ttMap[sp.taskType] : null;
                   const cs  = sp.courseSlot;
+                  const col = sp.col ?? 0;
+                  const spW = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
+                  const spL = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
 
                   // ── Déclaration reliquat ─────────────────────────────
                   if (sp.isDeclaration) {
@@ -367,7 +387,7 @@ const MonPlanningView = () => {
                     const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
                     return (
                       <div key={i} style={{
-                        position: 'absolute', top, left: 2, right: 2, height: h,
+                      position: 'absolute', top, left: spL, width: spW, height: h,
                         background: declBg,
                         border: `1.5px dashed ${declBorder}`,
                         borderLeft: `3.5px solid ${declBorder}`,
@@ -392,7 +412,7 @@ const MonPlanningView = () => {
                   const blockColor = cs ? cs.color : (sp.fn?.color || myStaff.color);
                   const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${myStaff.color}18`;
                   return (
-                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: 2, right: 2, height: h, background: cs ? (cs.bg_color || '#EBF0FE') : blockBg, border: `1.5px solid ${blockColor}60`, borderLeft: `3.5px solid ${blockColor}`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', cursor: 'pointer' }}>
+                    <div key={i} onClick={() => setSelectedSpan({ sp, date: dates[di] })} style={{ position: 'absolute', top, left: spL, width: spW, height: h, background: cs ? (cs.bg_color || '#EBF0FE') : blockBg, border: `1.5px solid ${blockColor}60`, borderLeft: `3.5px solid ${blockColor}`, borderRadius: 5, overflow: 'hidden', boxSizing: 'border-box', zIndex: 2, padding: '2px 5px', cursor: 'pointer' }}>
                       {/* Fond hachuré points si cours */}
                       {cs && <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${blockColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, pointerEvents: 'none' }} />}
                       {/* Tampon COURS centré */}

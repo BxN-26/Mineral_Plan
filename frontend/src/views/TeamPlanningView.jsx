@@ -25,45 +25,24 @@ function weekStart(offset) {
 }
 
 /* ─── Grouper les cours par intervalles qui se chevauchent ──── */
-function groupCoursesByOverlap(courses) {
-  const sorted = [...courses].sort((a, b) => a.hour_start - b.hour_start);
-  const groups = [];
-  let group = [], maxEnd = -Infinity;
-  for (const c of sorted) {
-    if (c.hour_start < maxEnd) {
-      group.push(c); maxEnd = Math.max(maxEnd, c.hour_end);
-    } else {
-      if (group.length) groups.push(group);
-      group = [c]; maxEnd = c.hour_end;
-    }
+/* ─── Algorithme de placement en colonnes (anti-chevauchement) ── */
+function computeColumns(items) {
+  if (!items.length) return { result: [], colCount: 1 };
+  const withIdx = items.map((item, idx) => ({ ...item, _idx: idx }));
+  const sorted  = [...withIdx].sort((a, b) => a.start - b.start);
+  const cols    = [];
+  for (const item of sorted) {
+    let col = cols.findIndex(end => end <= item.start);
+    if (col === -1) { cols.push(item.end); col = cols.length - 1; }
+    else cols[col] = item.end;
+    item.col = col;
   }
-  if (group.length) groups.push(group);
-  return groups;
+  const colCount = Math.max(1, cols.length);
+  const result   = new Array(items.length);
+  for (const item of sorted) result[item._idx] = item;
+  return { result, colCount };
 }
 
-/* ─── Bande cours lecture seule ─────────────────────────────── */
-const ROCourseBand = ({ courses }) => {
-  const minS = Math.min(...courses.map(c => c.hour_start));
-  const maxE = Math.max(...courses.map(c => c.hour_end));
-  const top  = timeToY(minS);
-  const h    = Math.max(SLOT_H * 2, timeToY(maxE) - top);
-  const primaryColor = courses[0]?.color || '#5B75DB';
-  const primaryBg    = courses[0]?.bg_color || '#EBF0FE';
-  return (
-    <div style={{ position: 'absolute', top, left: 0, right: 0, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box' }}>
-      <div style={{ position: 'absolute', inset: 0, background: primaryBg, borderLeft: `4px solid ${primaryColor}`, opacity: 0.65, boxSizing: 'border-box' }} />
-      <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${primaryColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9 }} />
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <span style={{ fontSize: Math.max(11, Math.min(20, h * 0.28)), fontWeight: 900, letterSpacing: '0.18em', color: primaryColor, opacity: 0.35, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', fontFamily: 'Impact, "Arial Black", sans-serif' }}>COURS</span>
-      </div>
-      {h >= 36 && (
-        <div style={{ position: 'absolute', bottom: 3, left: 6, right: 4, fontSize: 8, color: primaryColor, fontWeight: 600, opacity: 0.85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {courses.map(c => c.group_name).join(' · ')}
-        </div>
-      )}
-    </div>
-  );
-};
 
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
 const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], courseSlotsFns = [] }) => {
@@ -82,14 +61,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
       {dates.map((date, d) => {
         const isToday = date.toDateString() === new Date().toDateString();
         const daySpans = spans[d] || [];
-        // Cours visibles = uniquement ceux auxquels au moins un membre visible est assigné
-        const visibleCourseIds = new Set(daySpans.filter(sp => sp.courseSlotId).map(sp => sp.courseSlotId));
-        const dayCourses = courseSlots.filter(cs =>
-          cs.day_of_week === d &&
-          (courseSlotsFns.length === 0 || courseSlotsFns.includes(cs.fn_slug)) &&
-          visibleCourseIds.has(cs.id)
-        );
-        const courseGroups = groupCoursesByOverlap(dayCourses);
+        const { result: placedSpans, colCount } = computeColumns(daySpans);
         return (
           <div key={d} style={{ flex: 1, minWidth: 100, position: 'relative' }}>
             {/* En-tête jour */}
@@ -106,7 +78,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
             <div style={{
               position: 'relative', height: TOTAL_H,
               background: isToday ? '#FFFCF8' : '#fff',
-              borderRight: '1px solid #F0EDE8',
+              borderRight: '2px solid #D0CBC2',
             }}>
               {/* Lignes heure */}
               {HOURS.map(h => (
@@ -116,10 +88,8 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                   pointerEvents: 'none',
                 }} />
               ))}
-              {/* Bandes cours */}
-              {courseGroups.map((group, gi) => <ROCourseBand key={gi} courses={group} />)}
               {/* Blocs spans */}
-              {daySpans.map((sp, si) => {
+              {placedSpans.map((sp, si) => {
                 const s = staff.find(x => x.id === sp.staffId);
                 if (!s) return null;
                 const fn = functions.find(f => f.slug === sp.fnSlug);
@@ -127,6 +97,9 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                 const cs = sp.courseSlotId ? courseSlots.find(c => c.id === sp.courseSlotId) : null;
                 const top = timeToY(sp.start);
                 const h   = Math.max(SLOT_H, timeToY(sp.end) - timeToY(sp.start));
+                const col = sp.col ?? 0;
+                const spW = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
+                const spL = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
 
                 // ── Déclaration reliquat ──────────────────────────────
                 if (sp.isDeclaration) {
@@ -136,7 +109,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                   const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
                   return (
                     <div key={si} style={{
-                      position: 'absolute', top, left: 2, right: 2, height: h,
+                    position: 'absolute', top, left: spL, width: spW, height: h,
                       background: declBg,
                       border: `1.5px dashed ${declBorder}`,
                       borderLeft: `3.5px solid ${declBorder}`,
@@ -161,7 +134,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
                 const blockBg    = cs ? (cs.bg_color || '#EBF0FE') : `${s.color}20`;
                 return (
                   <div key={si} style={{
-                    position: 'absolute', top, left: 2, right: 2, height: h,
+                    position: 'absolute', top, left: spL, width: spW, height: h,
                     background: blockBg,
                     border: `1.5px solid ${blockColor}50`,
                     borderLeft: `3.5px solid ${blockColor}`,
