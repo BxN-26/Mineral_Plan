@@ -9,7 +9,15 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
   const isMgr   = ['manager', 'rh', 'admin', 'superadmin'].includes(user?.role);
   const isRh    = ['rh', 'admin', 'superadmin'].includes(user?.role);
   const isStaff = !isMgr;
-  const pending  = leaves.filter(l => l.status === 'pending' || l.status === 'approved_n1').length;
+  // Badge : approbations actives pour le gestionnaire connecté, sinon demandes en attente
+  const myApprovalsCount = isMgr
+    ? leaves.filter(l =>
+        (l.n1_approver_id === user?.id && l.n1_status === 'pending') ||
+        (l.n2_approver_id === user?.id && l.n2_status === 'pending') ||
+        (l.n3_approver_id === user?.id && l.n3_status === 'pending')
+      ).length
+    : leaves.filter(l => l.status === 'pending' || l.status === 'approved_n1').length;
+  const pending  = myApprovalsCount;
 
   const nav = [
     { id: 'mon-planning',       label: 'Mon Planning',        icon: '👤', sub: 'Ma vue personnelle' },
