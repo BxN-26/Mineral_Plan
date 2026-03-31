@@ -187,10 +187,11 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
   const totalNeeded   = courses.reduce((s, c) => s + (c.capacity || 2), 0);
   const totalAssigned = courses.reduce((s, c) => s + (assignments[c.id]?.length || 0), 0);
   const ok = totalAssigned >= totalNeeded;
-  const w    = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
-  const left = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
+  const w      = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
+  const left   = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
+  const narrow = colCount > 1;
   return (
-    <div style={{ position: 'absolute', top, left, width: w, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box' }}>
+    <div style={{ position: 'absolute', top, left, width: w, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0, background: primaryBg, borderLeft: `4px solid ${primaryColor}`, borderTop: `1px solid ${primaryColor}40`, borderBottom: `1px solid ${primaryColor}40`, opacity: 0.72, boxSizing: 'border-box' }} />
       {/* Fond hachuré en points */}
       <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${primaryColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, boxSizing: 'border-box' }} />
@@ -201,9 +202,11 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
         </span>
       </div>
       {/* Badge cliquable en haut à droite */}
-      <div onClick={onOpen} title={`${courses.length} cours — cliquer pour gérer les moniteurs`} style={{ position: 'absolute', top: 3, right: 3, display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(255,255,255,.96)', border: `1.5px solid ${ok ? '#22C55E50' : '#F59E0B80'}`, borderRadius: 5, padding: '2px 5px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 1px 4px rgba(0,0,0,.14)', zIndex: 4, userSelect: 'none' }}>
-        {courses.slice(0, 3).map((c, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: c.color, flexShrink: 0 }} />)}
-        {courses.length > 3 && <span style={{ fontSize: 8, color: '#9B9890' }}>+{courses.length - 3}</span>}
+      <div onClick={onOpen} title={`${courses.length} cours — cliquer pour gérer les moniteurs`} style={{ position: 'absolute', top: 3, right: 3, display: 'flex', flexDirection: narrow ? 'column' : 'row', alignItems: 'center', gap: narrow ? 2 : 3, background: 'rgba(255,255,255,.96)', border: `1.5px solid ${ok ? '#22C55E50' : '#F59E0B80'}`, borderRadius: 5, padding: narrow ? '3px 2px' : '2px 5px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 1px 4px rgba(0,0,0,.14)', zIndex: 4, userSelect: 'none' }}>
+        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {courses.slice(0, narrow ? 2 : 3).map((c, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: c.color, flexShrink: 0 }} />)}
+          {courses.length > (narrow ? 2 : 3) && <span style={{ fontSize: 8, color: '#9B9890' }}>+{courses.length - (narrow ? 2 : 3)}</span>}
+        </div>
         <span style={{ fontSize: 9, fontWeight: 700, color: '#1E2235' }}>×{courses.length}</span>
         <span style={{ fontSize: 9, fontWeight: 800, color: ok ? '#16A34A' : '#D97706' }}>{totalAssigned}/{totalNeeded}👤</span>
       </div>
