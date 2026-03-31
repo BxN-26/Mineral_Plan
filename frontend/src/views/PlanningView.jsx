@@ -677,7 +677,7 @@ const CourseGroupModal = ({ courses, week, fnStaff, staff: allStaff, assignments
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#9B9890', lineHeight: 1 }}>×</button>
         </div>
         {/* Corps */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {courses.map(cs => {
             const assigned    = localAssign[cs.id] || [];
             const remaining   = (cs.capacity || 2) - assigned.length;
