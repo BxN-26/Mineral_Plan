@@ -685,7 +685,7 @@ const CourseGroupModal = ({ courses, week, fnStaff, staff: allStaff, assignments
             const available   = fnStaff.filter(s => !assignedSet.has(s.id));
             const full        = assigned.length >= (cs.capacity || 2);
             return (
-              <div key={cs.id} style={{ borderRadius: 10, border: `1.5px solid ${cs.color}40`, overflow: 'hidden' }}>
+              <div key={cs.id} style={{ borderRadius: 10, border: `1.5px solid ${cs.color}40`, overflow: 'hidden', flexShrink: 0 }}>
                 {/* Entête du cours */}
                 <div style={{ background: cs.bg_color || '#EBF0FE', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: `1px solid ${cs.color}30` }}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: cs.color, flexShrink: 0 }} />
