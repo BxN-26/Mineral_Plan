@@ -223,7 +223,7 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
 const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '', declSpans = [], onSpanClick, onDeclClick }) => {
   const placed = useMemo(() => {
-    // Unification cours + spans + déclarations reliquat dans le même algorithme de colonnes
+    // Unification cours + spans + déclarations dans le même algorithme de colonnes
     const courseGroups = groupOverlapping(courseSlots || []);
     const allItems = [
       ...courseGroups.map(g => ({
@@ -237,14 +237,56 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
         .filter(d => ['pending', 'approved'].includes(d.status))
         .map(d => ({ type: 'decl', decl: d, start: d.hour_start, end: d.hour_end })),
     ];
-    const sorted = [...allItems].sort((a, b) => a.start - b.start);
-    const cols = [];
-    const result = sorted.map(item => {
-      let col = cols.findIndex(end => end <= item.start);
-      if (col === -1) { cols.push(item.end); col = cols.length - 1; } else cols[col] = item.end;
-      return { ...item, col };
-    });
-    return { result, colCount: Math.max(1, cols.length) };
+    if (!allItems.length) return { result: [] };
+    const sorted = [...allItems].sort((a, b) => a.start - b.start || a.end - b.end);
+
+    // ── Clustering par chevauchement transitif ─────────────────
+    // Chaque cluster regroupe les items qui s'intersectent directement ou indirectement.
+    // Le colCount est calculé par cluster, pas globalement, pour éviter
+    // qu'un item isolé hérite du colCount d'items distants dans le temps.
+    const clusterIdx = new Array(sorted.length).fill(-1);
+    const clusters   = []; // clusters[c] = tableau d'indices dans sorted
+
+    for (let i = 0; i < sorted.length; i++) {
+      let assigned = -1;
+      for (let c = 0; c < clusters.length; c++) {
+        if (!clusters[c].length) continue;
+        const clusterMaxEnd = Math.max(...clusters[c].map(j => sorted[j].end));
+        if (sorted[i].start < clusterMaxEnd) {
+          if (assigned === -1) {
+            assigned = c;
+            clusters[c].push(i);
+          } else {
+            // Fusion de deux clusters
+            for (const j of clusters[c]) { clusters[assigned].push(j); clusterIdx[j] = assigned; }
+            clusters[c] = [];
+          }
+        }
+      }
+      if (assigned === -1) { assigned = clusters.length; clusters.push([i]); }
+      clusterIdx[i] = assigned;
+    }
+
+    // ── Attribution col + colCount par cluster ─────────────────
+    const colAssign   = new Array(sorted.length);
+    const colCountArr = new Array(sorted.length);
+
+    for (const cluster of clusters) {
+      if (!cluster.length) continue;
+      const clusterSorted = [...cluster].sort((a, b) => sorted[a].start - sorted[b].start);
+      const cols = [];
+      for (const i of clusterSorted) {
+        let col = cols.findIndex(end => end <= sorted[i].start);
+        if (col === -1) { cols.push(sorted[i].end); col = cols.length - 1; }
+        else cols[col] = sorted[i].end;
+        colAssign[i] = col;
+      }
+      const cc = Math.max(1, cols.length);
+      for (const i of cluster) colCountArr[i] = cc;
+    }
+
+    const result = sorted.map((item, i) => ({ ...item, col: colAssign[i], colCount: colCountArr[i] }));
+    return { result };
   }, [spans, courseSlots, declSpans]);
 
   return (
@@ -301,7 +343,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
               assignments={assignments || {}}
               onOpen={() => onOpenCourseGroup && onOpenCourseGroup(item.group)}
               col={item.col}
-              colCount={placed.colCount}
+              colCount={item.colCount}
             />
           );
         }
@@ -315,8 +357,8 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
           const isApproved = decl.status === 'approved';
           const declBg     = isPending ? '#FEF9C3' : isApproved ? '#DCFCE7' : '#F3F4F6';
           const declBorder = isPending ? '#A16207' : isApproved ? '#15803D' : '#9CA3AF';
-          const w = placed.colCount > 1 ? `calc(${100 / placed.colCount}% - 2px)` : 'calc(100% - 4px)';
-          const l = placed.colCount > 1 ? `calc(${col * 100 / placed.colCount}% + 1px)` : '2px';
+          const w = item.colCount > 1 ? `calc(${100 / item.colCount}% - 2px)` : 'calc(100% - 4px)';
+          const l = item.colCount > 1 ? `calc(${item.col * 100 / item.colCount}% + 1px)` : '2px';
           return (
             <div key={`decl-${decl.id}`}
               onClick={() => onDeclClick?.(decl, dayIndex)}
@@ -342,7 +384,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
         }
         const s = staff.find(x => x.id === item.sp.staffId);
         if (!s) return null;
-        return <SpanBlock key={`${item.sp.staffId}-${item.sp.start}-${item.col}`} span={item.sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={item.col} colCount={placed.colCount} highlighted={!!(highlightStaffId && item.sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} onSpanClick={onSpanClick} />;
+        return <SpanBlock key={`${item.sp.staffId}-${item.sp.start}-${item.col}`} span={item.sp} s={s} dayIndex={dayIndex} mode={mode} onResizeStart={onResizeStart} onMoveStart={onMoveStart} onRemove={onRemove} onTaskTypeChange={onTaskTypeChange} col={item.col} colCount={item.colCount} highlighted={!!(highlightStaffId && item.sp.staffId === highlightStaffId)} ttMap={ttMap} activeFnId={activeFnId} onSpanClick={onSpanClick} />;
       })}
     </div>
   );
@@ -1257,14 +1299,40 @@ const PlanningView = () => {
         })),
         ...daySpans.map(sp => ({ type: 'span', sp, start: sp.start, end: sp.end })),
       ];
-      const sorted = [...allItems].sort((a, b) => a.start - b.start);
-      const cols = [];
-      const result = sorted.map(item => {
-        let col = cols.findIndex(end => end <= item.start);
-        if (col === -1) { cols.push(item.end); col = cols.length - 1; } else cols[col] = item.end;
-        return { ...item, col };
-      });
-      return { result, colCount: Math.max(1, cols.length) };
+      if (!allItems.length) return { result: [] };
+      const sorted = [...allItems].sort((a, b) => a.start - b.start || a.end - b.end);
+      // Clustering par chevauchement transitif → colCount local par cluster
+      const clusterIdx = new Array(sorted.length).fill(-1);
+      const clusters   = [];
+      for (let i = 0; i < sorted.length; i++) {
+        let assigned = -1;
+        for (let c = 0; c < clusters.length; c++) {
+          if (!clusters[c].length) continue;
+          const maxEnd = Math.max(...clusters[c].map(j => sorted[j].end));
+          if (sorted[i].start < maxEnd) {
+            if (assigned === -1) { assigned = c; clusters[c].push(i); }
+            else { for (const j of clusters[c]) { clusters[assigned].push(j); clusterIdx[j] = assigned; } clusters[c] = []; }
+          }
+        }
+        if (assigned === -1) { assigned = clusters.length; clusters.push([i]); }
+        clusterIdx[i] = assigned;
+      }
+      const colAssign   = new Array(sorted.length);
+      const colCountArr = new Array(sorted.length);
+      for (const cluster of clusters) {
+        if (!cluster.length) continue;
+        const cs = [...cluster].sort((a, b) => sorted[a].start - sorted[b].start);
+        const cols = [];
+        for (const i of cs) {
+          let col = cols.findIndex(end => end <= sorted[i].start);
+          if (col === -1) { cols.push(sorted[i].end); col = cols.length - 1; } else cols[col] = sorted[i].end;
+          colAssign[i] = col;
+        }
+        const cc = Math.max(1, cols.length);
+        for (const i of cluster) colCountArr[i] = cc;
+      }
+      const result = sorted.map((item, i) => ({ ...item, col: colAssign[i], colCount: colCountArr[i] }));
+      return { result };
     }, [daySpans, dayCourses]);
 
     return (
@@ -1319,17 +1387,17 @@ const PlanningView = () => {
                 assignments={assignments}
                 onOpen={() => setCourseGroupModal({ courses: item.group })}
                 col={item.col}
-                colCount={placed.colCount}
+                colCount={item.colCount}
               />
             );
           }
-          const { sp, col } = item;
+          const { sp } = item;
           const s = staff.find(x => x.id === sp.staffId);
           if (!s) return null;
           const top = timeToY(sp.start);
           const h   = Math.max(SLOT_H, timeToY(sp.end) - top);
-          const w   = placed.colCount > 1 ? `calc(${100 / placed.colCount}% - 2px)` : 'calc(100% - 4px)';
-          const l   = placed.colCount > 1 ? `calc(${col * 100 / placed.colCount}% + 1px)` : '2px';
+          const w   = item.colCount > 1 ? `calc(${100 / item.colCount}% - 2px)` : 'calc(100% - 4px)';
+          const l   = item.colCount > 1 ? `calc(${item.col * 100 / item.colCount}% + 1px)` : '2px';
 
           // ── Déclaration reliquat ──────────────────────────────
           if (sp.isDeclaration) {
