@@ -269,16 +269,6 @@ CREATE TABLE IF NOT EXISTS leaves (
   updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
--- Notifications de congés
-CREATE TABLE IF NOT EXISTS leave_notifications (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  leave_id    INTEGER NOT NULL REFERENCES leaves(id) ON DELETE CASCADE,
-  user_id     INTEGER NOT NULL REFERENCES users(id),
-  type        TEXT    NOT NULL, -- 'new_request','approved','refused','reminder'
-  read_at     TEXT,
-  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
 -- ────────────────────────────────────────────────────────────
 -- RELEVÉS D'HEURES (heures réellement effectuées)
 -- ────────────────────────────────────────────────────────────
@@ -347,8 +337,6 @@ CREATE INDEX IF NOT EXISTS idx_leaves_staff      ON leaves(staff_id, start_date)
 CREATE INDEX IF NOT EXISTS idx_leaves_status     ON leaves(status, approval_step);
 CREATE INDEX IF NOT EXISTS idx_timesheets_staff  ON timesheets(staff_id, work_date);
 CREATE INDEX IF NOT EXISTS idx_audit_created     ON audit_log(created_at);
-CREATE INDEX IF NOT EXISTS idx_notif_user        ON leave_notifications(user_id, read_at);
-
 -- ════════════════════════════════════════════════════════════
 -- DONNÉES INITIALES
 -- ════════════════════════════════════════════════════════════

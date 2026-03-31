@@ -385,9 +385,15 @@ router.put('/:id/approve', AUTH, (req, res) => {
         nextStatus = 'approved';
       } else {
         db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-        if (leave.n2_approver_id !== userId)
-          db_.run('INSERT INTO leave_notifications (leave_id,user_id,type) VALUES (?,?,?)',
-            [leave.id, leave.n2_approver_id, 'new_request']);
+        if (leave.n2_approver_id !== userId) {
+          const lt2r = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+          const sf2r = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+          notify(leave.n2_approver_id, 'approval',
+            'Demande de congé à valider',
+            `${sf2r ? sf2r.firstname + ' ' + sf2r.lastname : 'Un salarié'} — ${lt2r?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1 validé, en attente de votre approbation).`,
+            'leave', leave.id, { action: 'approve' }
+          );
+        }
         nextStatus = 'approved_n1';
       }
     } else if (leave.n2_status === 'pending') {

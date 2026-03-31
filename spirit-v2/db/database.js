@@ -56,6 +56,12 @@ function getDb() {
       ["leaves_half_start",          "ALTER TABLE leaves ADD COLUMN half_start INTEGER NOT NULL DEFAULT 0"],
       ["leaves_half_end",            "ALTER TABLE leaves ADD COLUMN half_end   INTEGER NOT NULL DEFAULT 0"],
     ];
+    // ── Migration : suppression table orpheline leave_notifications ──
+    const dropLnDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='drop_leave_notifications'").get();
+    if (!dropLnDone) {
+      try { _db.exec('DROP TABLE IF EXISTS leave_notifications'); } catch (_) {}
+      _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('drop_leave_notifications')").run();
+    }
     for (const [name, sql] of migrations) {
       const done = _db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(name);
       if (!done) {
