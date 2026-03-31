@@ -298,27 +298,6 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
           {[1,2,3].map(q => <div key={q} style={{ position: 'absolute', left: 0, right: 0, top: q * SLOT_H, borderTop: '1px dashed #F5F2ED', pointerEvents: 'none' }} />)}
         </div>
       ))}
-      {/* Zones d'indisponibilité hachurées */}
-      {dateStr && unavailabilities
-        .filter(u => u.status !== 'refused' && u.date_start <= dateStr && u.date_end >= dateStr)
-        .map((u, i) => {
-          const top    = u.all_day ? 0 : Math.max(0, timeToY(u.hour_start));
-          const bottom = u.all_day ? TOTAL_H : Math.max(top + SLOT_H, timeToY(u.hour_end));
-          const isP    = u.status === 'pending';
-          return (
-            <div key={`unavail-${i}`}
-              title={`${u.firstname} ${u.lastname}${u.note ? ' — ' + u.note : ''}${isP ? ' (en attente)' : ''}`}
-              style={{
-                position: 'absolute', left: 0, right: 0, top, height: bottom - top,
-                background: isP ? 'rgba(251,191,36,0.07)' : 'rgba(229,231,235,0.35)',
-                backgroundImage: isP
-                  ? 'repeating-linear-gradient(45deg,rgba(251,191,36,0.3),rgba(251,191,36,0.3) 3px,transparent 3px,transparent 10px)'
-                  : 'repeating-linear-gradient(45deg,#D1D5DB,#D1D5DB 3px,transparent 3px,transparent 10px)',
-                zIndex: 1, pointerEvents: 'none',
-              }} />
-          );
-        })
-      }
       {/* Zones de congés approuvés hachurées (vert) */}
       {dateStr && leaves
         .filter(l => l.start_date <= dateStr && l.end_date >= dateStr)
@@ -1768,7 +1747,7 @@ const PlanningView = () => {
                   highlightStaffId={highlightStaffId}
                   ttMap={ttMap}
                   activeFnId={activeFnId}
-                  unavailabilities={unavailabilities.filter(u => fnStaff.some(s => s.id === u.staff_id))}
+                  unavailabilities={[]}
                   leaves={leaves.filter(l => fnStaff.some(s => s.id === l.staff_id))}
                   dateStr={dates[di].toISOString().slice(0, 10)}
                   declSpans={declarations.filter(d => d.date === dates[di].toISOString().slice(0, 10))}
