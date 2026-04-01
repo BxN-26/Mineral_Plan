@@ -226,6 +226,10 @@ router.put('/:id/respond', AUTH, (req, res) => {
   const { accept, swap_week, swap_fn_slug, swap_day_index, swap_hour_start, swap_hour_end } = req.body;
   const responderId = su.staff_id;
 
+  // N3 — un salarié ne peut pas accepter sa propre demande d'échange
+  if (responderId === swap.requester_id)
+    return res.status(403).json({ error: 'Vous ne pouvez pas répondre à votre propre demande d\'\u00e9change' });
+
   const dayNames = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
   const creneauLabel = `${dayNames[swap.day_index]} ${fmtH(swap.hour_start)}–${fmtH(swap.hour_end)} — sem. ${swap.week_start.slice(5)}`;
   const requester = getStaff(swap.requester_id);

@@ -32,8 +32,9 @@ const holidaysRouter          = require('./routes/holidays');
 
 // ── Vérifications sécurité au démarrage ─────────────────────
 if (process.env.NODE_ENV === 'production' && !process.env.CLIENT_URL)
-  throw new Error('[SÉCURITÉ] CLIENT_URL doit être défini dans le .env en production.');
-
+  throw new Error('[SÉCURITÉ] CLIENT_URL doit être défini dans le .env en production.');// N2 — JWT_SECRET obligatoire (toute l'auth repose dessus)
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
+  throw new Error('[SÉCURITÉ] JWT_SECRET doit être défini dans le .env et faire au moins 32 caractères.');
 // ── Initialisation DB ─────────────────────────────────────────
 initSchema();
 

@@ -37,12 +37,18 @@ function expandRecurrences(unavail, from, to) {
 // ?staff_id=  &from=YYYY-MM-DD  &to=YYYY-MM-DD  &status=pending
 router.get('/', AUTH, (req, res) => {
   const { staff_id, from, to, status } = req.query;
+  const isPrivileged = ['admin','superadmin','manager','rh'].includes(req.user.role);
+
+  // N6 — un salarié ne voit que ses propres indisponibilités
+  const effectiveStaffId = isPrivileged
+    ? (staff_id ? Number(staff_id) : null)
+    : req.user.staff_id; // forcé pour les salariés
   let sql = `SELECT u.*, s.firstname, s.lastname, s.color, s.initials
              FROM unavailabilities u
              JOIN staff s ON s.id = u.staff_id
              WHERE 1=1`;
   const params = [];
-  if (staff_id) { sql += ' AND u.staff_id = ?'; params.push(Number(staff_id)); }
+  if (effectiveStaffId) { sql += ' AND u.staff_id = ?'; params.push(effectiveStaffId); }
   if (status)   { sql += ' AND u.status = ?';   params.push(status); }
   if (from && to) {
     // On récupère aussi les récurrentes dont la date de départ est antérieure

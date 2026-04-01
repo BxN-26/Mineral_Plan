@@ -47,7 +47,22 @@ function withFunctions(staffRows) {
   });
 }
 
-// ── GET /api/staff ────────────────────────────────────────────
+// Champs sensibles à masquer pour les salariés (RH/finances)
+const SENSITIVE_FIELDS = ['hourly_rate','charge_rate','cp_balance','rtt_balance',
+                          'siret','hire_date','end_date','note','contract_h','contract_base'];
+
+/** Supprime les champs financiers/RH d'une fiche staff pour les rôles non-privilégiés */
+function stripSensitive(staffArr, role) {
+  const isPrivileged = ['admin','superadmin','manager','rh'].includes(role);
+  if (isPrivileged) return staffArr;
+  return staffArr.map(s => {
+    const safe = { ...s };
+    for (const f of SENSITIVE_FIELDS) delete safe[f];
+    return safe;
+  });
+}
+
+// ── GET /api/staff ────────────────────────────────────────
 router.get('/', AUTH, (req, res) => {
   const { team_id, type, active = '1' } = req.query;
   let sql = `
@@ -64,7 +79,8 @@ router.get('/', AUTH, (req, res) => {
   if (team_id) { sql += ' AND s.team_id = ?'; p.push(team_id); }
   if (type)    { sql += ' AND s.type = ?';    p.push(type); }
   sql += ' ORDER BY s.firstname, s.lastname';
-  res.json(withFunctions(db_.all(sql, p)));
+  // N1 — masquer champs financiers/RH pour les salariés
+  res.json(stripSensitive(withFunctions(db_.all(sql, p)), req.user.role));
 });
 
 // ── GET /api/staff/:id ────────────────────────────────────────
@@ -82,7 +98,12 @@ router.get('/:id', AUTH, (req, res) => {
     [req.params.id]
   );
   if (!s) return res.status(404).json({ error: 'Salarié introuvable' });
-  res.json(withFunctions([s])[0]);
+  // Un staff qui consulte sa PROPRE fiche voit ses soldes CP/RTT mais pas les autres champs financiers équipe
+  const fullRow = withFunctions([s])[0];
+  const result = req.user.role === 'staff' && req.user.staff_id === Number(req.params.id)
+    ? fullRow  // sa propre fiche : tout est visible
+    : stripSensitive([fullRow], req.user.role)[0];
+  res.json(result);
 });
 
 // ── POST /api/staff ───────────────────────────────────────────

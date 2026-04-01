@@ -239,7 +239,8 @@ router.get('/balance/:staffId', AUTH, (req, res) => {
 
 // ── POST /api/leaves ─────────────────────────────────────────
 router.post('/', AUTH, (req, res) => {
-  const { staff_id, type_id, start_date, end_date, reason, document_url } = req.body;
+  // N5 — ignorer document_url du body : l'URL ne doit être définie que via le endpoint /document
+  const { staff_id, type_id, start_date, end_date, reason } = req.body;
   if (!staff_id || !type_id || !start_date || !end_date)
     return res.status(400).json({ error: 'Champs requis manquants' });
 
@@ -310,14 +311,14 @@ router.post('/', AUTH, (req, res) => {
     if (c) return { conflict: c };
     const ins = db_.run(
       `INSERT INTO leaves
-         (staff_id, type_id, start_date, end_date, days_count, reason, document_url,
+         (staff_id, type_id, start_date, end_date, days_count, reason,
           status, approval_step, submitted_at,
           half_start, half_end,
           n1_approver_id, n1_status,
           n2_approver_id, n2_status,
           n3_approver_id, n3_status)
-       VALUES (?,?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
-      [staff_id, type_id, start_date, end_date, days, reason||null, document_url||null,
+       VALUES (?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
+      [staff_id, type_id, start_date, end_date, days, reason||null,
        half_start, half_end,
        n1?.id||null, n1 ? 'pending' : null,
        n2?.id||null, n2 ? 'pending' : null,
@@ -600,6 +601,16 @@ router.post('/:id/document', AUTH, docUpload.single('document'), async (req, res
     return res.status(403).json({ error: 'Non autorisé' });
 
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+
+  // N4 — vérification magic bytes (ne pas se fier au MIME déclaré)
+  const hdrD = req.file.buffer;
+  const isJpegD = hdrD[0]===0xFF && hdrD[1]===0xD8 && hdrD[2]===0xFF;
+  const isPngD  = hdrD[0]===0x89 && hdrD[1]===0x50 && hdrD[2]===0x4E && hdrD[3]===0x47;
+  const isPdfD  = hdrD[0]===0x25 && hdrD[1]===0x50 && hdrD[2]===0x44 && hdrD[3]===0x46; // %PDF
+  const isWebpD = hdrD[0]===0x52 && hdrD[1]===0x49 && hdrD[2]===0x46 && hdrD[3]===0x46
+               && hdrD[8]===0x57 && hdrD[9]===0x45 && hdrD[10]===0x42 && hdrD[11]===0x50;
+  if (!isJpegD && !isPngD && !isPdfD && !isWebpD)
+    return res.status(400).json({ error: 'Format invalide — JPEG, PNG, WebP ou PDF uniquement' });
 
   const docsDir = require('path').join(__dirname, '..', 'uploads', 'documents');
   if (!require('fs').existsSync(docsDir))
