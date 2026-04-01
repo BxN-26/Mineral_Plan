@@ -638,6 +638,34 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('swap_urgent_alert_seed')").run();
   }
 
+  // ── Migration : type 'planning_conflict' dans notifications ──
+  const notifPlanningConflictDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='notifications_type_planning_conflict'").get();
+  if (!notifPlanningConflictDone) {
+    _db.exec(`
+      PRAGMA foreign_keys = OFF;
+      CREATE TABLE IF NOT EXISTS notifications_v4 (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        type         TEXT    NOT NULL DEFAULT 'info'
+                             CHECK(type IN ('leave','leave_planning','overtime','approval','info','swap','urgent','planning_conflict')),
+        title        TEXT    NOT NULL,
+        body         TEXT    NOT NULL DEFAULT '',
+        read         INTEGER NOT NULL DEFAULT 0,
+        related_type TEXT,
+        related_id   INTEGER,
+        created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+        meta         TEXT    DEFAULT NULL
+      );
+      INSERT OR IGNORE INTO notifications_v4
+        SELECT id, user_id, type, title, body, read, related_type, related_id, created_at, meta
+        FROM notifications;
+      DROP TABLE notifications;
+      ALTER TABLE notifications_v4 RENAME TO notifications;
+      PRAGMA foreign_keys = ON;
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('notifications_type_planning_conflict')").run();
+  }
+
   // ── Migration : table unavailabilities ───────────────────────
   const unavailDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='unavailabilities_table'").get();
   if (!unavailDone) {

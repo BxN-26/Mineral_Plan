@@ -62,9 +62,14 @@ router.get('/:id/staff', AUTH, (req, res) => {
 // ── GET /api/staff/:id/functions ─────────────────────────────
 // Toutes les fonctions d'un salarié
 router.get('/staff/:staffId', AUTH, (req, res) => {
+  const isPrivileged = ['admin', 'superadmin', 'manager', 'rh'].includes(req.user.role);
+  const isSelf = req.user.staff_id === Number(req.params.staffId);
+  // Un staff ne peut voir que ses propres données ou celles d'autrui sans champs sensibles
   const rows = db_.all(
-    `SELECT f.*, sf.hourly_rate as fn_rate, sf.level, sf.is_primary, sf.active as sf_active,
-            sf.certified_until, sf.since, sf.note as fn_note
+    `SELECT f.id, f.name, f.slug, f.color, f.bg_color, f.icon, f.sort_order,
+            sf.level, sf.is_primary, sf.active as sf_active, sf.certified_until, sf.since,
+            ${(isPrivileged || isSelf) ? 'sf.hourly_rate as fn_rate, sf.note as fn_note,' : ''}
+            1 as _pad
      FROM staff_functions sf
      JOIN functions f ON f.id = sf.function_id
      WHERE sf.staff_id=? AND f.active=1
