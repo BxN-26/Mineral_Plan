@@ -154,11 +154,12 @@ router.get('/', AUTH, (req, res) => {
   `;
   const p = [];
 
-  // Un viewer/staff ne voit que ses propres congés
+  // Un viewer/staff ne voit QUE ses propres congés, quel que soit le query param
   if (req.user.role === 'staff') {
     sql += ' AND l.staff_id = ?'; p.push(req.user.staff_id);
   } else if (staff_id) {
-    sql += ' AND l.staff_id = ?'; p.push(staff_id);
+    // Managers/RH/admin peuvent filtrer par staff_id
+    sql += ' AND l.staff_id = ?'; p.push(Number(staff_id));
   }
 
   if (status)   { sql += ' AND l.status = ?';   p.push(status); }
@@ -194,6 +195,11 @@ router.get('/pending-count', AUTH, (req, res) => {
 
 // ── GET /api/leaves/balance/:staffId ───────────────────────
 router.get('/balance/:staffId', AUTH, (req, res) => {
+  const targetId = Number(req.params.staffId);
+  // Un salarié ne peut consulter que son propre solde
+  const isPrivilegedRole = ['admin','superadmin','manager','rh'].includes(req.user.role);
+  if (req.user.role === 'staff' && req.user.staff_id !== targetId)
+    return res.status(403).json({ error: 'Accès non autorisé' });
   const year = req.query.year || new Date().getFullYear();
   const used = db_.all(
     `SELECT lt.slug, lt.label, lt.color,
@@ -204,9 +210,9 @@ router.get('/balance/:staffId', AUTH, (req, res) => {
        AND l.status='approved' AND strftime('%Y',l.start_date)=?
      WHERE lt.active=1
      GROUP BY lt.id ORDER BY lt.sort_order`,
-    [req.params.staffId, String(year)]
+    [targetId, String(year)]
   );
-  const staff = db_.get('SELECT cp_balance, rtt_balance FROM staff WHERE id=?', [req.params.staffId]);
+  const staff = db_.get('SELECT cp_balance, rtt_balance FROM staff WHERE id=?', [targetId]);
   res.json({ used, balances: staff, year });
 });
 

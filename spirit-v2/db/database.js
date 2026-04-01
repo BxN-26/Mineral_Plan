@@ -496,10 +496,20 @@ function getDb() {
   const firstInstallDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='first_install_accounts'").get();
   if (!firstInstallDone) {
     const bcrypt   = require('bcryptjs');
-    const saEmail  = (process.env.SUPERADMIN_EMAIL         || 'dev@spirit-app.internal').toLowerCase().trim();
-    const saPass   =  process.env.SUPERADMIN_PASSWORD      || 'ChangeMe2025!Dev';
-    const adEmail  = (process.env.ADMIN_EMAIL              || 'admin@spirit-app.local').toLowerCase().trim();
-    const adPass   =  process.env.ADMIN_INITIAL_PASSWORD   || 'Admin2025!';
+    const saEmail  = (process.env.SUPERADMIN_EMAIL       || 'dev@spirit-app.internal').toLowerCase().trim();
+    const adEmail  = (process.env.ADMIN_EMAIL            || 'admin@spirit-app.local').toLowerCase().trim();
+
+    // En production, les mots de passe DOIVENT être définis dans le .env
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd && !process.env.SUPERADMIN_PASSWORD) {
+      throw new Error('[SÉCURITÉ] SUPERADMIN_PASSWORD doit être défini dans le .env en production.');
+    }
+    if (isProd && !process.env.ADMIN_INITIAL_PASSWORD) {
+      throw new Error('[SÉCURITÉ] ADMIN_INITIAL_PASSWORD doit être défini dans le .env en production.');
+    }
+
+    const saPass   = process.env.SUPERADMIN_PASSWORD    || 'ChangeMe2025!Dev';
+    const adPass   = process.env.ADMIN_INITIAL_PASSWORD || 'Admin2025!';
 
     const saHash = bcrypt.hashSync(saPass, 12);
     const adHash = bcrypt.hashSync(adPass, 12);

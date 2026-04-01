@@ -1,13 +1,24 @@
 'use strict';
-const router  = require('express').Router();
-const bcrypt  = require('bcryptjs');
-const crypto  = require('crypto');
-const jwt     = require('jsonwebtoken');
-const { db_ } = require('../db/database');
+const router    = require('express').Router();
+const bcrypt    = require('bcryptjs');
+const crypto    = require('crypto');
+const jwt       = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+const { db_ }   = require('../db/database');
 const { issueTokens, revokeRefreshToken, requireAuth } = require('../middleware/auth');
 
+// ── Rate limiter : 10 tentatives / 15 min par IP ─────────────
+const loginLimiter = rateLimit({
+  windowMs : 15 * 60 * 1000, // 15 minutes
+  max      : 10,
+  message  : { error: 'Trop de tentatives de connexion. Réessayez dans 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders  : false,
+  skipSuccessfulRequests: true, // ne compte que les échecs
+});
+
 // ── POST /api/auth/login ──────────────────────────────────────
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
     return res.status(400).json({ error: 'Email et mot de passe requis' });
