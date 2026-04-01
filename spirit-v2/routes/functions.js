@@ -42,8 +42,12 @@ router.delete('/:id', ...ADMIN, (req, res) => {
 // ── GET /api/functions/:id/staff ─────────────────────────────
 // Salariés ayant cette fonction
 router.get('/:id/staff', AUTH, (req, res) => {
+  const isPrivileged = ['admin', 'superadmin', 'manager', 'rh'].includes(req.user.role);
   const rows = db_.all(
-    `SELECT s.*, sf.hourly_rate as fn_rate, sf.level, sf.is_primary, sf.since, sf.note as fn_note,
+    `SELECT s.id, s.firstname, s.lastname, s.initials, s.color, s.avatar_url,
+            s.type, s.active, s.team_id,
+            ${isPrivileged ? 's.hourly_rate, s.charge_rate, s.hire_date, s.end_date, s.contract_h, s.phone, s.email, s.note,' : ''}
+            sf.hourly_rate as fn_rate, sf.level, sf.is_primary, sf.since, sf.note as fn_note,
             t.name as team_name, t.color as team_color
      FROM staff_functions sf
      JOIN staff s  ON s.id = sf.staff_id

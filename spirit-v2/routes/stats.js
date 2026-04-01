@@ -31,8 +31,12 @@ router.get('/', requireAuth, (req, res) => {
   } else if (period === 'fiscal') {
     const startStr = req.query.start || `${new Date().getFullYear()}-01-01`;
     const endStr   = req.query.end   || `${new Date().getFullYear()}-12-31`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startStr) || !/^\d{4}-\d{2}-\d{2}$/.test(endStr))
+      return res.status(400).json({ error: 'Format de date invalide (YYYY-MM-DD attendu)' });
     periodRef = `${startStr}|${endStr}`;
     weeksToProcess = weeksInDateRange(startStr, endStr);
+    if (weeksToProcess.length > 260) // cap à 5 ans (~260 semaines)
+      return res.status(400).json({ error: 'Plage trop large (5 ans maximum)' });
   } else {
     periodRef = week || currentMonday();
     weeksToProcess = [periodRef];
@@ -277,8 +281,12 @@ router.get('/balance', requireAuth, (req, res) => {
 
   const { start, end } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start et end requis' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end))
+    return res.status(400).json({ error: 'Format de date invalide (YYYY-MM-DD attendu)' });
 
   const weeks = weeksInDateRange(start, end);
+  if (weeks.length > 260) // cap à 5 ans (~260 semaines)
+    return res.status(400).json({ error: 'Plage trop large (5 ans maximum)' });
   const days  = Math.round((new Date(end + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000) + 1;
   const weeksCount = Math.round(days / 7);
 
