@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Field, inputSt } from '../components/common';
 
+// F1 — credentials démo via .env.local (jamais en dur dans le source)
+// Définir VITE_DEMO_PASS_ADMIN, _MANAGER, _STAFF, _VACATION dans frontend/.env.local
 const PRESETS = [
-  { label: 'Admin',            email: 'admin@mineral-spirit.fr',     pass: 'Spirit2025!', color: '#C5753A' },
-  { label: 'Marion (Manager)', email: 'marion@mineral-spirit.fr',    pass: 'Marion2025',  color: '#6366F1' },
-  { label: 'Eva (Salarié)',    email: 'eva@mineral-spirit.fr',       pass: 'Eva2025',     color: '#14B8A6' },
-  { label: 'Matéo (Vacation)', email: 'mateo@email.fr',              pass: 'Mateo2025',   color: '#F59E0B' },
+  { label: 'Admin',            email: 'admin@mineral-spirit.fr',     pass: import.meta.env.VITE_DEMO_PASS_ADMIN    || '', color: '#C5753A' },
+  { label: 'Marion (Manager)', email: 'marion@mineral-spirit.fr',    pass: import.meta.env.VITE_DEMO_PASS_MANAGER  || '', color: '#6366F1' },
+  { label: 'Eva (Salarié)',    email: 'eva@mineral-spirit.fr',       pass: import.meta.env.VITE_DEMO_PASS_STAFF    || '', color: '#14B8A6' },
+  { label: 'Matéo (Vacation)', email: 'mateo@email.fr',              pass: import.meta.env.VITE_DEMO_PASS_VACATION || '', color: '#F59E0B' },
 ];
 
 const LoginView = () => {

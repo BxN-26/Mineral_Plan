@@ -161,6 +161,12 @@ export default function MonProfilView() {
                     </div>
                   );
                 })}
+                {/* M1 — indiquer si la liste est tronquée */}
+                {myLeaves.length > 20 && (
+                  <div style={{ fontSize: 12, color: '#9B9890', textAlign: 'center', paddingTop: 4 }}>
+                    {myLeaves.length - 20} demande(s) plus ancienne(s) non affichée(s) — consultez l'onglet Congés pour l'historique complet.
+                  </div>
+                )}
               </div>
             </div>
           )}

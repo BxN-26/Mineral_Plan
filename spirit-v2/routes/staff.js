@@ -317,6 +317,15 @@ router.post('/:id/avatar', AUTH, upload.single('avatar'), async (req, res) => {
 
   if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
+  // M3 — vérification magic bytes (ne pas se fier uniquement au MIME déclaré par le client)
+  const hdr = req.file.buffer;
+  const isJpeg = hdr[0] === 0xFF && hdr[1] === 0xD8 && hdr[2] === 0xFF;
+  const isPng  = hdr[0] === 0x89 && hdr[1] === 0x50 && hdr[2] === 0x4E && hdr[3] === 0x47;
+  const isWebp = hdr[0] === 0x52 && hdr[1] === 0x49 && hdr[2] === 0x46 && hdr[3] === 0x46
+              && hdr[8] === 0x57 && hdr[9] === 0x45 && hdr[10] === 0x42 && hdr[11] === 0x50;
+  if (!isJpeg && !isPng && !isWebp)
+    return res.status(400).json({ error: 'Format image invalide — JPEG, PNG ou WebP uniquement' });
+
   const s = db_.get('SELECT * FROM staff WHERE id = ?', [staffId]);
   if (!s) return res.status(404).json({ error: 'Salarié introuvable' });
 

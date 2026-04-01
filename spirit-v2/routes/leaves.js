@@ -177,6 +177,28 @@ router.get('/', AUTH, (req, res) => {
     p.push(req.user.id, req.user.id, req.user.id);
   }
 
+  // F2 — pagination optionnelle (?page=1&limit=50, rétrocompatible)
+  const page    = req.query.page  ? Math.max(1, parseInt(req.query.page,  10)) : null;
+  const perPage = req.query.limit ? Math.min(200, Math.max(1, parseInt(req.query.limit, 10))) : 50;
+
+  if (page !== null) {
+    // Requête de comptage avec les mêmes filtres
+    const countSql = `SELECT COUNT(*) AS total FROM leaves l
+      JOIN staff s ON s.id = l.staff_id
+      LEFT JOIN teams t ON t.id = s.team_id
+      JOIN leave_types lt ON lt.id = l.type_id
+      LEFT JOIN users u1 ON u1.id = l.n1_approver_id
+      LEFT JOIN staff s1 ON s1.id = u1.staff_id
+      LEFT JOIN users u2 ON u2.id = l.n2_approver_id
+      LEFT JOIN staff s2 ON s2.id = u2.staff_id
+      WHERE 1=1` + sql.split('WHERE 1=1')[1];
+    const { total } = db_.get(countSql, p);
+    const items = db_.all(sql + ' ORDER BY l.created_at DESC LIMIT ? OFFSET ?',
+      [...p, perPage, (page - 1) * perPage]);
+    return res.json({ items, total, page, pages: Math.ceil(total / perPage), limit: perPage });
+  }
+
+  // Sans paramètre page : liste complète jusqu'à 500 (rétrocompatible)
   sql += ' ORDER BY l.created_at DESC LIMIT 500';
   res.json(db_.all(sql, p));
 });

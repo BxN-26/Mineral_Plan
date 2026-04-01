@@ -82,6 +82,15 @@ router.post('/', AUTH, (req, res) => {
       fnId = fn.id;
     }
 
+    // M5 — bloquer la déclaration si le salarié est en congé approuvé ce jour
+    const onLeave = db_.get(
+      `SELECT id FROM leaves WHERE staff_id=? AND status='approved'
+       AND start_date <= ? AND end_date >= ?`,
+      [staffId, date, date]
+    );
+    if (onLeave)
+      return res.status(409).json({ error: 'Impossible de déclarer des heures sur une journée de congé approuvé' });
+
     // Si le salarié n'a pas de N+1 (manager_id NULL), auto-approbation immédiate
     const staffFull  = db_.get('SELECT manager_id FROM staff WHERE id = ?', [staffId]);
     const autoApprove = !staffFull?.manager_id;

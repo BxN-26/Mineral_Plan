@@ -969,19 +969,22 @@ const PlanningView = () => {
   const activeFnId = fn?.id ?? null;
   useEffect(() => { loadAssignments(currentWeek, activeFnId); }, [currentWeek, activeFnId]);
 
+  // M2 — protection race condition : ignore les réponses d'une semaine périmée
   useEffect(() => {
+    let ignore = false;
     const mon = new Date(currentWeek + 'T12:00:00');
     const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
     const to = sun.toISOString().slice(0, 10);
     api.get(`/unavailabilities?from=${currentWeek}&to=${to}`)
-      .then(d => setUnavailabilities(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .then(d => { if (!ignore) setUnavailabilities(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []); })
       .catch(() => {});
     api.get(`/leaves?status=approved&from=${currentWeek}&to=${to}`)
-      .then(d => setLeaves(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []))
+      .then(d => { if (!ignore) setLeaves(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : []); })
       .catch(() => {});
     api.get(`/hour-declarations?from=${currentWeek}&to=${to}`)
-      .then(d => setDeclarations(Array.isArray(d.data) ? d.data : []))
+      .then(d => { if (!ignore) setDeclarations(Array.isArray(d.data) ? d.data : []); })
       .catch(() => {});
+    return () => { ignore = true; };
   }, [currentWeek]);
   // Tâches filtrées pour la fonction active (communes + spécifiques à cette fn)
   const fnTaskTypes = useMemo(
