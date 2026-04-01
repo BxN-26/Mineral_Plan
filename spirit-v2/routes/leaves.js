@@ -197,7 +197,6 @@ router.get('/pending-count', AUTH, (req, res) => {
 router.get('/balance/:staffId', AUTH, (req, res) => {
   const targetId = Number(req.params.staffId);
   // Un salarié ne peut consulter que son propre solde
-  const isPrivilegedRole = ['admin','superadmin','manager','rh'].includes(req.user.role);
   if (req.user.role === 'staff' && req.user.staff_id !== targetId)
     return res.status(403).json({ error: 'Accès non autorisé' });
   const year = req.query.year || new Date().getFullYear();
@@ -257,17 +256,16 @@ router.post('/', AUTH, (req, res) => {
     }
   }
 
-  // Chevauchement
-  const conflict = db_.get(
-    `SELECT id FROM leaves WHERE staff_id=? AND status NOT IN ('refused','cancelled')
-     AND NOT (end_date < ? OR start_date > ?)`,
-    [staff_id, start_date, end_date]
-  );
-  if (conflict) return res.status(409).json({ error: 'Conflit avec un congé existant', conflict_id: conflict.id });
+  // M4 — conversion correcte des demi-journées (évite 'false' truthy)
+  const toFlag = v => (v === true || v === 1 || v === 'true' || v === '1') ? 1 : 0;
+  const half_start = toFlag(req.body.half_start);
+  const half_end   = toFlag(req.body.half_end);
+  // M6 — JSON.parse sécurisé
+  let levels;
+  try { levels = JSON.parse(leaveType.approval_levels || '["manager"]'); }
+  catch (_) { levels = ['manager']; }
 
-  const { half_start = 0, half_end = 0 } = req.body;
-  const days   = calcDays(start_date, end_date, leaveType.count_method, Number(half_start), Number(half_end));
-  const levels = JSON.parse(leaveType.approval_levels || '["manager"]');
+  const days   = calcDays(start_date, end_date, leaveType.count_method, half_start, half_end);
 
   // Résolution & compaction des approbateurs (niveaux null sautés, doublons dédupliqués)
   const { n1, n2, n3 } = resolveApprovers(Number(staff_id), levels);
@@ -280,21 +278,34 @@ router.post('/', AUTH, (req, res) => {
     if (days > bal) balance_warning = `Solde insuffisant : il reste ${bal}j, vous en demandez ${days}j.`;
   }
 
-  const r = db_.run(
-    `INSERT INTO leaves
-       (staff_id, type_id, start_date, end_date, days_count, reason, document_url,
-        status, approval_step, submitted_at,
-        half_start, half_end,
-        n1_approver_id, n1_status,
-        n2_approver_id, n2_status,
-        n3_approver_id, n3_status)
-     VALUES (?,?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
-    [staff_id, type_id, start_date, end_date, days, reason||null, document_url||null,
-     half_start ? 1 : 0, half_end ? 1 : 0,
-     n1?.id||null, n1 ? 'pending' : null,
-     n2?.id||null, n2 ? 'pending' : null,
-     n3?.id||null, n3 ? 'pending' : null]
-  );
+  // E3 — chevauchement + insertion atomiques (protection race condition)
+  const txInsert = db_.transaction(() => {
+    const c = db_.get(
+      `SELECT id FROM leaves WHERE staff_id=? AND status NOT IN ('refused','cancelled')
+       AND NOT (end_date < ? OR start_date > ?)`,
+      [staff_id, start_date, end_date]
+    );
+    if (c) return { conflict: c };
+    const ins = db_.run(
+      `INSERT INTO leaves
+         (staff_id, type_id, start_date, end_date, days_count, reason, document_url,
+          status, approval_step, submitted_at,
+          half_start, half_end,
+          n1_approver_id, n1_status,
+          n2_approver_id, n2_status,
+          n3_approver_id, n3_status)
+       VALUES (?,?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
+      [staff_id, type_id, start_date, end_date, days, reason||null, document_url||null,
+       half_start, half_end,
+       n1?.id||null, n1 ? 'pending' : null,
+       n2?.id||null, n2 ? 'pending' : null,
+       n3?.id||null, n3 ? 'pending' : null]
+    );
+    return { insertId: ins.lastInsertRowid };
+  })();
+
+  if (txInsert.conflict)
+    return res.status(409).json({ error: 'Conflit avec un congé existant', conflict_id: txInsert.conflict.id });
 
   // Notifier le premier approbateur via notifications unifiées
   if (n1) {
@@ -303,12 +314,12 @@ router.post('/', AUTH, (req, res) => {
     notify(n1.id, 'approval',
       'Nouvelle demande de congé',
       `${staffName} a demandé un ${leaveType.label} du ${start_date} au ${end_date}.`,
-      'leave', r.lastInsertRowid, { action: 'approve' }
+      'leave', txInsert.insertId, { action: 'approve' }
     );
   }
 
-  auditLog(req, 'LEAVE_CREATE', 'leaves', r.lastInsertRowid, null, req.body);
-  res.status(201).json({ id: r.lastInsertRowid, days_count: days, n1_approver: n1?.email, balance_warning });
+  auditLog(req, 'LEAVE_CREATE', 'leaves', txInsert.insertId, null, req.body);
+  res.status(201).json({ id: txInsert.insertId, days_count: days, n1_approver: n1?.email, balance_warning });
 });
 
 // ── PUT /api/leaves/:id/approve ──────────────────────────────
@@ -321,13 +332,18 @@ router.put('/:id/approve', AUTH, (req, res) => {
   if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
 
   const userId  = req.user.id;
-  const levels  = JSON.parse(leave.approval_levels || '["manager"]');
+  // M6 — JSON.parse sécurisé
+  let levels;
+  try { levels = JSON.parse(leave.approval_levels || '["manager"]'); }
+  catch (_) { levels = ['manager']; }
   let nextStatus = leave.status;
 
   // Déterminer quel niveau approuve
   if (leave.n1_approver_id === userId && leave.n1_status === 'pending') {
-    db_.run(`UPDATE leaves SET n1_status='approved', n1_comment=?, n1_reviewed_at=datetime('now'),
-             approval_step=2, updated_at=datetime('now') WHERE id=?`, [comment||null, leave.id]);
+    // E2 — verrou optimiste : protection race condition
+    const chk1 = db_.run(`UPDATE leaves SET n1_status='approved', n1_comment=?, n1_reviewed_at=datetime('now'),
+             approval_step=2, updated_at=datetime('now') WHERE id=? AND n1_status='pending'`, [comment||null, leave.id]);
+    if (chk1.changes === 0) return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
 
     if (levels.length < 2 || !leave.n2_approver_id) {
       // Approbation finale
@@ -346,9 +362,11 @@ router.put('/:id/approve', AUTH, (req, res) => {
       nextStatus = 'approved_n1';
     }
 
-  } else if (leave.n2_approver_id === userId && leave.n2_status === 'pending') {
-    db_.run(`UPDATE leaves SET n2_status='approved', n2_comment=?, n2_reviewed_at=datetime('now'),
-             approval_step=3, updated_at=datetime('now') WHERE id=?`, [comment||null, leave.id]);
+  } else if (leave.n2_approver_id === userId && leave.n2_status === 'pending' && leave.n1_status === 'approved') {
+    // E1+E2 — N1 doit être approuvé + verrou optimiste
+    const chk2 = db_.run(`UPDATE leaves SET n2_status='approved', n2_comment=?, n2_reviewed_at=datetime('now'),
+             approval_step=3, updated_at=datetime('now') WHERE id=? AND n2_status='pending'`, [comment||null, leave.id]);
+    if (chk2.changes === 0) return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
 
     if (levels.length < 3 || !leave.n3_approver_id) {
       db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
@@ -365,10 +383,12 @@ router.put('/:id/approve', AUTH, (req, res) => {
       nextStatus = 'approved_n2';
     }
 
-  } else if (leave.n3_approver_id === userId && leave.n3_status === 'pending') {
-    db_.run(`UPDATE leaves SET n3_status='approved', n3_comment=?, n3_reviewed_at=datetime('now'),
-             status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
+  } else if (leave.n3_approver_id === userId && leave.n3_status === 'pending' && leave.n2_status === 'approved') {
+    // E1+E2 — N2 doit être approuvé + verrou optimiste
+    const chk3 = db_.run(`UPDATE leaves SET n3_status='approved', n3_comment=?, n3_reviewed_at=datetime('now'),
+             status='approved', approval_step=99, updated_at=datetime('now') WHERE id=? AND n3_status='pending'`,
       [comment||null, leave.id]);
+    if (chk3.changes === 0) return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
     nextStatus = 'approved';
 
   } else if (['admin','superadmin'].includes(req.user.role) &&

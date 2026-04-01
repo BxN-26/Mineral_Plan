@@ -7,6 +7,7 @@ const multer  = require('multer');
 const sharp   = require('sharp');
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { notify }                             = require('./notifications');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
@@ -266,6 +267,31 @@ router.put('/:id', ...ADMIN, (req, res) => {
 router.delete('/:id', ...ADMIN, (req, res) => {
   const s = db_.get('SELECT * FROM staff WHERE id = ?', [req.params.id]);
   if (!s) return res.status(404).json({ error: 'Salarié introuvable' });
+
+  // E7 — si ce salarié est approbateur de congés en attente, notifier les admins
+  const staffUser = db_.get('SELECT id FROM users WHERE staff_id=? AND active=1', [req.params.id]);
+  if (staffUser) {
+    const stuckLeaves = db_.all(
+      `SELECT id FROM leaves WHERE status IN ('pending','approved_n1','approved_n2')
+       AND (
+         (n1_approver_id=? AND n1_status='pending') OR
+         (n2_approver_id=? AND n2_status='pending') OR
+         (n3_approver_id=? AND n3_status='pending')
+       )`,
+      [staffUser.id, staffUser.id, staffUser.id]
+    );
+    if (stuckLeaves.length > 0) {
+      const admins = db_.all(`SELECT u.id FROM users u WHERE u.active=1 AND u.role IN ('admin','superadmin')`);
+      for (const admin of admins) {
+        notify(admin.id, 'info',
+          '⚠️ Congés en attente sans approbateur',
+          `${stuckLeaves.length} demande(s) n'ont plus d'approbateur suite à la désactivation de ${s.firstname} ${s.lastname}. Traitez-les manuellement.`,
+          'leave', null
+        );
+      }
+    }
+  }
+
   db_.run("UPDATE staff SET active = 0, updated_at = datetime('now') WHERE id = ?", [req.params.id]);
   auditLog(req, 'STAFF_DELETE', 'staff', req.params.id, s, null);
   res.json({ message: 'Salarié supprimé' });

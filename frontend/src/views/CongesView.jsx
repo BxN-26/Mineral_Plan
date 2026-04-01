@@ -244,7 +244,10 @@ const CongesView = () => {
                 const fd = new FormData();
                 fd.append('document', docFile);
                 try { await api.post(`/leaves/${id}/document`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }); }
-                catch (_) {}
+                catch (_) {
+                  // E6 — informer l'utilisateur : la demande est créée mais le justificatif n'a pas été envoyé
+                  setTimeout(() => alert('⚠️ La demande a été créée, mais le justificatif n\'a pas pu être envoyé. Vous pouvez le joindre ultérieurement.'), 300);
+                }
               }
               await reloadLeaves();
               setShowForm(false);

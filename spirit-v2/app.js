@@ -30,6 +30,10 @@ const unavailabilitiesRouter  = require('./routes/unavailabilities');
 const hourDeclRouter          = require('./routes/hour-declarations');
 const holidaysRouter          = require('./routes/holidays');
 
+// ── Vérifications sécurité au démarrage ─────────────────────
+if (process.env.NODE_ENV === 'production' && !process.env.CLIENT_URL)
+  throw new Error('[SÉCURITÉ] CLIENT_URL doit être défini dans le .env en production.');
+
 // ── Initialisation DB ─────────────────────────────────────────
 initSchema();
 
@@ -121,9 +125,13 @@ app.get('*', (req, res, next) => {
 
 // ── Gestionnaire d'erreurs global ─────────────────────────────
 app.use((err, req, res, _next) => {
-  console.error('[ERROR]', err.message);
+  console.error('[ERROR]', err);
   const status = err.status || 500;
-  res.status(status).json({ error: err.message || 'Erreur serveur' });
+  // E4 — ne pas exposer les détails internes (SQLite, stack) en production
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Erreur serveur interne'
+    : (err.message || 'Erreur serveur');
+  res.status(status).json({ error: message });
 });
 
 const PORT = Number(process.env.PORT) || 3000;
