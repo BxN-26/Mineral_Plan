@@ -294,13 +294,24 @@ router.put('/:id', ...ADMIN, (req, res) => {
 
   auditLog(req, 'STAFF_UPDATE', 'staff', req.params.id, old, req.body);
 
-  // Mettre à jour le rôle du compte lié si permission_level fourni
+  // Mettre à jour le rôle + email du compte lié
   const { permission_level } = req.body;
-  if (permission_level !== undefined) {
-    const role   = PERM_TO_ROLE[permission_level] || 'staff';
-    const existU = db_.get('SELECT id FROM users WHERE staff_id = ?', [req.params.id]);
-    if (existU) {
+  const existU = db_.get('SELECT id, email FROM users WHERE staff_id = ?', [req.params.id]);
+  if (existU) {
+    if (permission_level !== undefined) {
+      const role = PERM_TO_ROLE[permission_level] || 'staff';
       db_.run('UPDATE users SET role = ? WHERE id = ?', [role, existU.id]);
+    }
+    // Synchroniser l'email du compte si l'email salarié a changé
+    if (email && email.toLowerCase().trim() !== existU.email) {
+      const conflict = db_.get(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [email.toLowerCase().trim(), existU.id]
+      );
+      if (conflict) {
+        return res.status(409).json({ error: `L'adresse email "${email}" est déjà utilisée par un autre compte.` });
+      }
+      db_.run('UPDATE users SET email = ? WHERE id = ?', [email.toLowerCase().trim(), existU.id]);
     }
   }
 
