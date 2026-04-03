@@ -5,6 +5,8 @@ import { PageHeader, Btn } from '../components/common';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
 import { computeFiscalYear } from '../utils/fiscal';
+import { useIsMobile } from '../hooks/useDimensions';
+import { weekStart, addMonths, currentMonth } from '../utils/dates';
 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -15,37 +17,6 @@ const fmtH = (h) => {
   const mm = Math.round((h - hh) * 60);
   return mm ? `${hh}h${String(mm).padStart(2, '0')}` : `${hh}h`;
 };
-
-function useIsMobile() {
-  const [v, set] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const h = () => set(window.innerWidth < 768);
-    window.addEventListener('resize', h);
-    return () => window.removeEventListener('resize', h);
-  }, []);
-  return v;
-}
-
-/* ── Helpers date ──────────────────────────────────────────────── */
-function weekStart(offset) {
-  const now  = new Date();
-  const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
-  const mon  = new Date(now);
-  mon.setDate(now.getDate() + diff + offset * 7);
-  const y = mon.getFullYear(), m = String(mon.getMonth()+1).padStart(2,'0'), d = String(mon.getDate()).padStart(2,'0');
-  return `${y}-${m}-${d}`;
-}
-
-function currentMonthStr() {
-  const n = new Date();
-  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;
-}
-
-function addMonths(mStr, n) {
-  const [y, m] = mStr.split('-').map(Number);
-  const d = new Date(y, m - 1 + n, 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
 
 function fmtMonthLabel(mStr) {
   return new Date(mStr + '-01T12:00:00').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
@@ -84,7 +55,7 @@ const RelevesView = () => {
   const [mode,          setMode]         = useState(isStaffRole ? 'balance' : 'heures');
   const [search,        setSearch]       = useState('');
   const [period,        setPeriod]       = useState('week');
-  const [viewMonth,     setViewMonth]    = useState(currentMonthStr);
+  const [viewMonth,     setViewMonth]    = useState(currentMonth);
   const [viewYear,      setViewYear]     = useState(() => String(new Date().getFullYear()));
   const [fiscalOffset,  setFiscalOffset] = useState(0);
   const [aggData,       setAggData]      = useState(null);
@@ -280,7 +251,7 @@ const RelevesView = () => {
         {period === 'month' && (
           <div style={{ display: 'flex', gap: 3, marginLeft: isMobile ? undefined : 'auto' }}>
             <button onClick={() => setViewMonth(m => addMonths(m, -1))} style={navBtn}>◀</button>
-            <button onClick={() => setViewMonth(currentMonthStr())}     style={navBtn}>{isMobile ? '●' : 'Auj.'}</button>
+            <button onClick={() => setViewMonth(currentMonth())}     style={navBtn}>{isMobile ? '●' : 'Auj.'}</button>
             <button onClick={() => setViewMonth(m => addMonths(m, 1))}  style={navBtn}>▶</button>
           </div>
         )}

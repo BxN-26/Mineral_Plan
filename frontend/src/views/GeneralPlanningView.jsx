@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../App';
 import api from '../api/client';
 import SpanDetailModal from '../components/SpanDetailModal';
+import { weekStart, todayDayIdx } from '../utils/dates';
 
 const DAYS      = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAY_START = 7;
@@ -13,15 +14,7 @@ const HOURS     = Array.from({ length: DAY_END - DAY_START }, (_, i) => i + DAY_
 
 const timeToY     = (t) => (t - DAY_START) * HOUR_H;
 const fmtTime     = (t) => `${Math.floor(t)}h${String(Math.round((t % 1) * 60)).padStart(2, '0').replace(/^0$/, '')}`;
-const todayDayIdx = () => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; };
 
-function weekStart(offset) {
-  const now  = new Date();
-  const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
-  const mon  = new Date(now);
-  mon.setDate(now.getDate() + diff + offset * 7);
-  return mon.toISOString().slice(0, 10);
-}
 /* ─── Algorithme de placement en colonnes (anti-chevauchement) ── */
 function computeColumns(items) {
   if (!items.length) return { result: [], colCount: 1 };

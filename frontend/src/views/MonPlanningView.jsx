@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
 import SpanDetailModal from '../components/SpanDetailModal';
+import { weekStart, todayDayIdx } from '../utils/dates';
 
 const DAYS    = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -14,18 +15,10 @@ const HOUR_H    = 56;  // 14px × 4 quarts
 const TOTAL_H   = (DAY_END - DAY_START) * HOUR_H;
 const HOUR_LABELS = Array.from({ length: DAY_END - DAY_START + 1 }, (_, i) => DAY_START + i);
 const SLOT_H    = 14;
-const todayDayIdx = () => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; };
 
 const timeToY  = (t) => (t - DAY_START) * HOUR_H;
 const fmtTime  = (t) => { const h = Math.floor(t); const m = Math.round((t - h) * 60); return `${h}h${m === 0 ? '' : String(m).padStart(2, '0')}`; };
 
-function weekStart(offset) {
-  const now  = new Date();
-  const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
-  const mon  = new Date(now);
-  mon.setDate(now.getDate() + diff + offset * 7);
-  return mon.toISOString().slice(0, 10);
-}
 /* ─── Algorithme de placement en colonnes (anti-chevauchement) ── */
 function computeColumns(items) {
   if (!items.length) return { result: [], colCount: 1 };

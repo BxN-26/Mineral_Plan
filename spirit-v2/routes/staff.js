@@ -15,25 +15,48 @@ const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
 const PERM_TO_ROLE  = { standard: 'staff', bureau: 'manager', direction: 'admin' };
 const ROLE_TO_PERM  = { staff: 'standard', viewer: 'standard', manager: 'bureau', rh: 'bureau', admin: 'direction', superadmin: 'direction' };
 
-/** Enrichit chaque staff avec ses fonctions (slugs) et ses équipes */
+/** Enrichit chaque staff avec ses fonctions (slugs) et ses équipes — requête unique par lots */
 function withFunctions(staffRows) {
+  if (!staffRows.length) return [];
+  const ids = staffRows.map(s => s.id);
+  const placeholders = ids.map(() => '?').join(',');
+
+  // Une seule requête pour toutes les fonctions de tous les staff
+  const fnRows = db_.all(
+    `SELECT sf.staff_id, f.slug, f.id, f.name, f.color, f.bg_color, f.icon, sf.is_primary
+     FROM staff_functions sf
+     JOIN functions f ON f.id = sf.function_id
+     WHERE sf.staff_id IN (${placeholders}) AND sf.active = 1 AND f.active = 1
+     ORDER BY sf.is_primary DESC, f.sort_order`,
+    ids
+  );
+  // Une seule requête pour toutes les équipes de tous les staff
+  const teamRows = db_.all(
+    `SELECT st.staff_id, t.id, t.name, t.slug, t.color, t.bg_color, t.icon, st.is_primary
+     FROM staff_teams st JOIN teams t ON t.id = st.team_id
+     WHERE st.staff_id IN (${placeholders}) AND t.active = 1
+     ORDER BY st.is_primary DESC, t.sort_order`,
+    ids
+  );
+  // Une seule requête pour tous les comptes utilisateurs liés
+  const userRows = db_.all(
+    `SELECT staff_id, role FROM users WHERE staff_id IN (${placeholders}) AND active = 1`,
+    ids
+  );
+
+  // Indexer par staff_id
+  const fnMap   = {};
+  const teamMap = {};
+  const userMap = {};
+  for (const r of fnRows) { if (!fnMap[r.staff_id]) fnMap[r.staff_id] = []; fnMap[r.staff_id].push(r); }
+  for (const r of teamRows) { if (!teamMap[r.staff_id]) teamMap[r.staff_id] = []; teamMap[r.staff_id].push(r); }
+  for (const r of userRows) userMap[r.staff_id] = r;
+
   return staffRows.map(s => {
-    const fns = db_.all(
-      `SELECT f.slug, f.id, f.name, f.color, f.bg_color, f.icon, sf.is_primary
-       FROM staff_functions sf
-       JOIN functions f ON f.id = sf.function_id
-       WHERE sf.staff_id = ? AND sf.active = 1 AND f.active = 1
-       ORDER BY sf.is_primary DESC, f.sort_order`,
-      [s.id]
-    );
-    const primaryFn = fns.find(f => f.is_primary);
-    const teams = db_.all(
-      `SELECT t.id, t.name, t.slug, t.color, t.bg_color, t.icon, st.is_primary
-       FROM staff_teams st JOIN teams t ON t.id = st.team_id
-       WHERE st.staff_id = ? AND t.active = 1 ORDER BY st.is_primary DESC, t.sort_order`,
-      [s.id]
-    );
-    const linkedUser = db_.get('SELECT role FROM users WHERE staff_id = ? AND active = 1', [s.id]);
+    const fns       = fnMap[s.id]   || [];
+    const teams     = teamMap[s.id] || [];
+    const linkedUser = userMap[s.id] || null;
+    const primaryFn  = fns.find(f => f.is_primary);
     return {
       ...s,
       functions:        fns.map(f => f.slug),
@@ -391,3 +414,5 @@ router.delete('/:id/avatar', AUTH, (req, res) => {
 });
 
 module.exports = router;
+module.exports.withFunctions  = withFunctions;
+module.exports.stripSensitive = stripSensitive;

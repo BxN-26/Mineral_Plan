@@ -4,6 +4,7 @@ require('dotenv').config();
 const express      = require('express');
 const helmet       = require('helmet');
 const cors         = require('cors');
+const compression  = require('compression');
 const cookieParser = require('cookie-parser');
 const path         = require('path');
 
@@ -29,6 +30,7 @@ const taskTypesRouter        = require('./routes/task-types');
 const unavailabilitiesRouter  = require('./routes/unavailabilities');
 const hourDeclRouter          = require('./routes/hour-declarations');
 const holidaysRouter          = require('./routes/holidays');
+const bootstrapRouter         = require('./routes/bootstrap');
 
 // ── Vérifications sécurité au démarrage ─────────────────────
 if (process.env.NODE_ENV === 'production' && !process.env.CLIENT_URL)
@@ -43,6 +45,15 @@ const app = express();
 
 app.use(helmet({
   contentSecurityPolicy: false, // géré par Caddy en prod
+}));
+
+// ── Compression gzip/brotli ────────────────────────────────────
+app.use(compression({
+  threshold: 1024, // ne compresse que les réponses > 1 Ko
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
 }));
 
 app.use(cors({
@@ -61,19 +72,22 @@ let connectionsToday = { date: '', count: 0 };
 function trackActivity(req, res, next) {
   const auth = req.headers.authorization || req.cookies?.token;
   if (auth) {
-    const key = auth.slice(-16);
-    const today = new Date().toISOString().slice(0,10);
+    const key   = auth.slice(-16);
+    const today = new Date().toISOString().slice(0, 10);
     if (!activeSessions.has(key) || activeSessions.get(key).date !== today) {
       if (connectionsToday.date !== today) { connectionsToday = { date: today, count: 0 }; }
       connectionsToday.count++;
     }
     activeSessions.set(key, { last_seen: Date.now(), date: today });
-    // Nettoyer les sessions inactives depuis plus de 15min
-    const limit = Date.now() - 15 * 60 * 1000;
-    for (const [k, v] of activeSessions) { if (v.last_seen < limit) activeSessions.delete(k); }
   }
   next();
 }
+// Nettoyage des sessions inactives (>15 min) toutes les 5 minutes via setInterval
+setInterval(() => {
+  const limit = Date.now() - 15 * 60 * 1000;
+  for (const [k, v] of activeSessions) { if (v.last_seen < limit) activeSessions.delete(k); }
+}, 5 * 60 * 1000);
+
 app.use(trackActivity);
 global._hubStats = { activeSessions, connectionsToday };
 
@@ -82,7 +96,14 @@ const distPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(distPath, {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('index.html')) {
+      // index.html : jamais mis en cache (rechargement pour nouvelles versions)
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (/\.[0-9a-f]{8,}\.(js|css|woff2?|png|svg|ico)$/.test(filePath)) {
+      // Assets Vite avec hash dans le nom : immuables 1 an
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      // Autres fichiers statiques : 1h
+      res.setHeader('Cache-Control', 'public, max-age=3600');
     }
   },
 }));
@@ -114,6 +135,7 @@ app.use('/api/leave-types',    leaveTypesRouter);
 app.use('/api/task-types',          taskTypesRouter);
 app.use('/api/unavailabilities',   unavailabilitiesRouter);
 app.use('/api/hour-declarations',  hourDeclRouter);
+app.use('/api/bootstrap',          bootstrapRouter);
 
 // ── SPA fallback (renvoie index.html pour les routes React) ──
 app.get('*', (req, res, next) => {

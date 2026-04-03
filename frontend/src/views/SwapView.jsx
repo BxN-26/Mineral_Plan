@@ -4,6 +4,8 @@ import AvatarImg from '../components/AvatarImg';
 import { useAuth } from '../context/AuthContext';
 import { useApp }  from '../App';
 import api from '../api/client';
+import { toast } from 'sonner';
+import { toMonday } from '../utils/dates';
 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -33,11 +35,6 @@ const STATUS_CFG = {
   cancelled: { label: 'Annulé',      color: '#9B9890', bg: '#F5F3EF' },
 };
 
-function toMonday(d) {
-  const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
-  const m = new Date(d); m.setDate(d.getDate() + diff);
-  return m.toISOString().slice(0, 10);
-}
 function toDayIndex(dateStr) {
   const dow = new Date(dateStr + 'T12:00:00').getDay();
   return dow === 0 ? 6 : dow - 1; // 0=lun … 6=dim

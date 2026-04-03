@@ -1,5 +1,6 @@
 // ── Composants de base partagés ────────────────────────────────
 // Extraits et fidèles au design de spirit-staff-v3.html
+import { useState, useEffect, useRef, forwardRef } from 'react';
 import AvatarImg from './AvatarImg';
 
 /** Affiche la photo si disponible, sinon les initiales colorées */
@@ -24,8 +25,8 @@ const VARIANTS = {
   ghost:   { background: 'transparent', border: '1px solid #E4E0D8', color: '#8B8880' },
 };
 
-export const Btn = ({ onClick, children, variant = 'default', small, disabled, style: extra = {} }) => (
-  <button onClick={onClick} disabled={disabled} style={{
+export const Btn = forwardRef(({ onClick, children, variant = 'default', small, disabled, style: extra = {} }, ref) => (
+  <button ref={ref} onClick={onClick} disabled={disabled} style={{
     padding: small ? '4px 10px' : '7px 14px',
     borderRadius: 7, cursor: disabled ? 'default' : 'pointer',
     display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -34,7 +35,7 @@ export const Btn = ({ onClick, children, variant = 'default', small, disabled, s
   }}>
     {children}
   </button>
-);
+));
 
 export const inputSt = {
   width: '100%', padding: '8px 10px', border: '1px solid #E4E0D8',
@@ -53,14 +54,38 @@ export const Field = ({ label, children }) => (
 );
 
 export const Modal = ({ open = true, onClose, title, children, width = 520 }) => {
+  const dialogRef = useRef(null);
+
+  // Fermeture sur Escape
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [open, onClose]);
+
+  // Focus trap minimal : ramener le focus dans la modal si Tab sort
+  useEffect(() => {
+    if (!open || !dialogRef.current) return;
+    const focusable = dialogRef.current.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusable.length) focusable[0].focus();
+  }, [open]);
+
   if (!open) return null;
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-    }}>
-      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }} />
-      <div className="fade-in" style={{
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }} aria-hidden="true" />
+      <div ref={dialogRef} className="fade-in" style={{
         position: 'relative', width, maxWidth: '95vw', maxHeight: '92vh',
         overflow: 'auto', background: '#fff', borderRadius: 14,
         boxShadow: '0 20px 60px rgba(0,0,0,.2)', zIndex: 1,
@@ -70,8 +95,8 @@ export const Modal = ({ open = true, onClose, title, children, width = 520 }) =>
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           position: 'sticky', top: 0, background: '#fff', zIndex: 2,
         }}>
-          <div style={{ fontWeight: 700, fontSize: 16, color: '#1E2235' }}>{title}</div>
-          <button onClick={onClose} style={{
+          <div id="modal-title" style={{ fontWeight: 700, fontSize: 16, color: '#1E2235' }}>{title}</div>
+          <button onClick={onClose} aria-label="Fermer" style={{
             background: 'none', border: 'none', cursor: 'pointer',
             padding: 4, color: '#9B9890', fontSize: 18, display: 'flex',
           }}>✕</button>
@@ -110,3 +135,82 @@ export const Spinner = () => (
     </div>
   </div>
 );
+
+/** Petit spinner inline pour les boutons en attente */
+export const BtnSpinner = () => (
+  <span style={{
+    display: 'inline-block', width: 12, height: 12,
+    border: '2px solid currentColor', borderTopColor: 'transparent',
+    borderRadius: '50%', animation: 'spin .6s linear infinite',
+  }} />
+);
+
+// Injecter l'animation spin une seule fois
+if (typeof document !== 'undefined' && !document.getElementById('spirit-spin-style')) {
+  const el = document.createElement('style');
+  el.id = 'spirit-spin-style';
+  el.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+  document.head.appendChild(el);
+}
+
+/**
+ * Modale de confirmation native-free.
+ * Props : message, confirmLabel, onConfirm, onClose, variant ('danger'|'default')
+ */
+export const ConfirmModal = ({ message, confirmLabel = 'Confirmer', onConfirm, onClose, variant = 'danger' }) => {
+  const btnRef = useRef(null);
+  // Focus trap : focus sur le bouton de confirmation à l'ouverture
+  useEffect(() => { btnRef.current?.focus(); }, []);
+  // Fermeture sur Escape
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-modal-title"
+      style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+    >
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)' }} aria-hidden="true" />
+      <div style={{
+        position: 'relative', background: '#fff', borderRadius: 12, padding: '24px 28px',
+        maxWidth: 400, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,.25)',
+        zIndex: 1,
+      }}>
+        <div id="confirm-modal-title" style={{ fontWeight: 700, fontSize: 15, color: '#1E2235', marginBottom: 12 }}>
+          Confirmation requise
+        </div>
+        <p style={{ fontSize: 13, color: '#4B4840', marginBottom: 20, lineHeight: 1.5 }}>{message}</p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Btn onClick={onClose}>Annuler</Btn>
+          <Btn ref={btnRef} variant={variant} onClick={() => { onConfirm(); onClose(); }}>
+            {confirmLabel}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Skeleton block animé (placeholder de chargement) */
+export const SkeletonBlock = ({ width = '100%', height = 14, borderRadius = 6, style: extra = {} }) => (
+  <div style={{
+    width, height, borderRadius,
+    background: 'linear-gradient(90deg, #F0EDE8 25%, #E8E4DF 50%, #F0EDE8 75%)',
+    backgroundSize: '200% 100%',
+    animation: 'skeleton-shimmer 1.4s infinite',
+    ...extra,
+  }} />
+);
+
+// Injecter l'animation skeleton une seule fois
+if (typeof document !== 'undefined' && !document.getElementById('spirit-skeleton-style')) {
+  const el = document.createElement('style');
+  el.id = 'spirit-skeleton-style';
+  el.textContent = '@keyframes skeleton-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }';
+  document.head.appendChild(el);
+}

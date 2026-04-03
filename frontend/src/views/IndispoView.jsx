@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useApp } from '../App';
 import { Btn, Modal, Field, inputSt, PageHeader, Tag } from '../components/common';
 import api from '../api/client';
+import { toast } from 'sonner';
 
 const STATUS_CFG = {
   approved: { label: 'Acceptée',   bg: '#DCFCE7', color: '#15803D' },
@@ -152,7 +153,7 @@ function ReviewModal({ item, onClose, onDone }) {
       await api.put(`/unavailabilities/${item.id}/review`, { status, review_note: reviewNote });
       onDone();
     } catch (e) {
-      alert(e.response?.data?.error || 'Erreur');
+      toast.error(e.response?.data?.error || 'Erreur');
     } finally { setSaving(false); }
   };
 
@@ -282,7 +283,7 @@ export default function IndispoView() {
     try {
       await api.delete(`/unavailabilities/${id}`);
       await loadMyList();
-    } catch (e) { alert(e.response?.data?.error || 'Erreur'); }
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur'); }
   };
 
   const handleSaved = async () => {

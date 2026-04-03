@@ -2,8 +2,10 @@ import { useState, useMemo } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { Avatar, Btn, Modal, PageHeader } from '../components/common';
+import { SkeletonCards } from '../components/Skeleton';
 import StaffForm from '../components/StaffForm';
 import api from '../api/client';
+import { toast } from 'sonner';
 
 const EquipeView = () => {
   const { user }                                                         = useAuth();
@@ -14,6 +16,8 @@ const EquipeView = () => {
   const [editStaff,  setEditStaff]                                       = useState(null);
   const [showForm,   setShowForm]                                        = useState(false);
   const [err,        setErr]                                             = useState('');
+  const [hoveredCard, setHoveredCard]                                    = useState(null); // id de la carte survolée
+  const [isReloading, setIsReloading]                                    = useState(false);
 
   const isAdmin = ['admin', 'superadmin'].includes(user?.role);
 
@@ -35,11 +39,15 @@ const EquipeView = () => {
     try {
       if (editStaff) {
         await api.put(`/staff/${editStaff.id}`, data);
+        toast.success('Salarié mis à jour');
       } else {
         await api.post('/staff', data);
+        toast.success('Salarié créé');
       }
-      await reloadStaff();
       setShowForm(false);
+      setIsReloading(true);
+      await reloadStaff();
+      setIsReloading(false);
     } catch (e) {
       setErr(e.response?.data?.error || 'Erreur de sauvegarde');
     }
@@ -48,9 +56,13 @@ const EquipeView = () => {
   const handleToggleActive = async (s) => {
     try {
       await api.put(`/staff/${s.id}`, { active: s.active ? 0 : 1 });
+      toast.success(s.active ? 'Salarié désactivé' : 'Salarié réactivé');
+      setIsReloading(true);
       await reloadStaff();
+      setIsReloading(false);
     } catch (e) {
-      console.error(e);
+      setIsReloading(false);
+      toast.error('Erreur lors de la modification');
     }
   };
 
@@ -85,14 +97,21 @@ const EquipeView = () => {
 
       {/* Liste */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
+        {isReloading ? <SkeletonCards count={Math.max(filtered.length, 6)} /> : (
+        <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(290px,1fr))', gap: 12 }}>
           {filtered.map(s => {
             const team  = teamMap[s.team_id];
             const fns   = (s.functions || []).map(slug => functions.find(f => f.slug === slug)).filter(Boolean);
             return (
-              <div key={s.id} style={{ background: '#fff', borderRadius: 12, border: '1px solid #ECEAE4', padding: '14px 14px 12px', opacity: s.active ? 1 : .55, transition: 'box-shadow .15s' }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,.08)'}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
+              <div key={s.id}
+                style={{ background: '#fff', borderRadius: 12, border: '1px solid #ECEAE4', padding: '14px 14px 12px',
+                  opacity: s.active ? 1 : .55,
+                  transition: 'box-shadow .15s',
+                  boxShadow: hoveredCard === s.id ? '0 2px 12px rgba(0,0,0,.08)' : 'none',
+                }}
+                onMouseEnter={() => setHoveredCard(s.id)}
+                onMouseLeave={() => setHoveredCard(null)}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 8 }}>
                   <Avatar s={s} size={38} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -146,6 +165,8 @@ const EquipeView = () => {
           <div style={{ textAlign: 'center', color: '#9B9890', padding: 40, fontSize: 13 }}>
             <div style={{ fontSize: 32, marginBottom: 10 }}>🔍</div>Aucun résultat
           </div>
+        )}
+        </>
         )}
       </div>
 

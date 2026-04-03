@@ -4,42 +4,12 @@ import {
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { PageHeader, Btn } from '../components/common';
+import { SkeletonStats } from '../components/Skeleton';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
 import { useApp } from '../App';
 import { computeFiscalYear } from '../utils/fiscal';
-
-/* ── Helpers date ─────────────────────────────────────────────── */
-function toMonday(d) {
-  const day = d.getDay() === 0 ? -6 : 1 - d.getDay();
-  const m = new Date(d);
-  m.setDate(d.getDate() + day);
-  const y = m.getFullYear(), mo = String(m.getMonth()+1).padStart(2,'0'), dd = String(m.getDate()).padStart(2,'0');
-  return `${y}-${mo}-${dd}`;
-}
-function addWeeks(w, n) {
-  const d = new Date(w + 'T12:00:00');
-  d.setDate(d.getDate() + n * 7);
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
-}
-function addMonths(mStr, n) {
-  const [y, m] = mStr.split('-').map(Number);
-  const d = new Date(y, m - 1 + n, 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-}
-function fmtWeek(w) {
-  const d = new Date(w + 'T12:00:00');
-  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-function fmtMonth(m) {
-  const d = new Date(m + '-01T12:00:00');
-  return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
-}
-function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-}
+import { toMonday, addWeeks, addMonths, fmtWeek, fmtMonth, currentMonth } from '../utils/dates';
 
 /* ── KPI card ─────────────────────────────────────────────────── */
 const KpiCard = ({ label, value, sub, color = '#C5753A', icon }) => (
@@ -180,7 +150,7 @@ export default function StatsView() {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-        {loading && <div style={{ textAlign: 'center', padding: 40, color: '#9B9890' }}>Chargement…</div>}
+        {loading && <SkeletonStats />}
 
         {!loading && data && (
           <>

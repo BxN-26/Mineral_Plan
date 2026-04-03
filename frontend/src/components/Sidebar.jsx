@@ -1,6 +1,7 @@
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import NotifBell from './NotifBell';
+import { isMyApproval } from '../utils/leaveUtils';
 
 const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClose = () => {} }) => {
   const { user, logout } = useAuth();
@@ -11,11 +12,7 @@ const Sidebar = ({ view, setView, leaves, isOpen = true, isMobile = false, onClo
   const isStaff = !isMgr;
   // Badge : approbations actives pour le gestionnaire connecté, sinon demandes en attente
   const myApprovalsCount = isMgr
-    ? leaves.filter(l =>
-        (l.n1_approver_id === user?.id && l.n1_status === 'pending') ||
-        (l.n2_approver_id === user?.id && l.n2_status === 'pending') ||
-        (l.n3_approver_id === user?.id && l.n3_status === 'pending')
-      ).length
+    ? leaves.filter(l => isMyApproval(l, user)).length
     : leaves.filter(l => l.status === 'pending' || l.status === 'approved_n1').length;
   const pending  = myApprovalsCount;
 

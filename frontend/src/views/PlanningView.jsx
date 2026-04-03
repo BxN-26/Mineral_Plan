@@ -1,8 +1,10 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { useApp } from '../App';
 import { Btn } from '../components/common';
 import api from '../api/client';
 import SpanDetailModal from '../components/SpanDetailModal';
+import { useIsMobile, useIsTouch } from '../hooks/useDimensions';
+import { weekStart, todayDayIdx } from '../utils/dates';
 
 /* ── Injection CSS animation highlight (une seule fois) ──────── */
 if (typeof document !== 'undefined' && !document.getElementById('spirit-highlight-style')) {
@@ -27,28 +29,6 @@ const yToTime  = (y) => Math.round(Math.max(DAY_START, Math.min(DAY_END, DAY_STA
 const timeToY  = (t) => (t - DAY_START) * HOUR_H;
 const fmtTime  = (t) => { const h = Math.floor(t); const m = Math.round((t - h) * 60); return `${h}h${m === 0 ? '' : String(m).padStart(2, '0')}`; };
 
-function useIsMobile() {
-  const [v, set] = useState(() => window.innerWidth < 768);
-  useEffect(() => { const h = () => set(window.innerWidth < 768); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
-  return v;
-}
-
-function useIsTouch() {
-  const [v, set] = useState(() => window.innerWidth < 1024);
-  useEffect(() => { const h = () => set(window.innerWidth < 1024); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, []);
-  return v;
-}
-
-const todayDayIdx = () => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; };
-
-function weekStart(offset) {
-  const now = new Date();
-  const diff = now.getDay() === 0 ? -6 : 1 - now.getDay();
-  const mon = new Date(now);
-  mon.setDate(now.getDate() + diff + offset * 7);
-  return mon.toISOString().slice(0, 10);
-}
-
 const cloneSpans = (spans) => {
   const out = {};
   for (let d = 0; d < 7; d++) out[d] = (spans?.[d] ?? spans?.[String(d)] ?? []).map(s => ({ ...s }));
@@ -65,7 +45,7 @@ const totalHoursForStaff = (spans, staffId) => {
 };
 
 /* ─── Bloc span individuel ──────────────────────────────────── */
-const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {}, activeFnId = null, onSpanClick }) => {
+const SpanBlock = memo(({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemove, onTaskTypeChange, col, colCount, highlighted, ttMap = {}, activeFnId = null, onSpanClick }) => {
   const [showTT, setShowTT] = useState(false);
   const [ddPos,  setDdPos]  = useState({ top: 0, left: 0 });
   const badgeRef = useRef(null);
@@ -153,7 +133,7 @@ const SpanBlock = ({ span, s, dayIndex, mode, onResizeStart, onMoveStart, onRemo
       )}
     </div>
   );
-};
+});
 
 /* ─── Grouper les cours par intervalles qui se chevauchent ────── */
 function groupOverlapping(slots) {
@@ -221,7 +201,7 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
 };
 
 /* ─── Colonne d'un jour ─────────────────────────────────────── */
-const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '', declSpans = [], onSpanClick, onDeclClick }) => {
+const DayColumn = memo(({ dayIndex, spans, staff, mode, courseSlots, assignments, onOpenCourseGroup, onDragEnter, onDragLeave, isDragOver, colRef, onMoveStart, onResizeStart, onRemove, onTaskTypeChange, isToday, isWeekend, highlightStaffId, ttMap = {}, activeFnId = null, unavailabilities = [], leaves = [], dateStr = '', declSpans = [], onSpanClick, onDeclClick }) => {
   const placed = useMemo(() => {
     // Unification cours + spans + déclarations dans le même algorithme de colonnes
     const courseGroups = groupOverlapping(courseSlots || []);
@@ -367,7 +347,7 @@ const DayColumn = ({ dayIndex, spans, staff, mode, courseSlots, assignments, onO
       })}
     </div>
   );
-};
+});
 
 /* ═══════════════════════════════════════════════════════════════ */
 /*  Panneau Modèles (templates)                                    */

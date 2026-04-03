@@ -763,6 +763,21 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('leave_working_days_seed')").run();
   }
 
+  // ── Migration : index de performance sur leaves + schedule_slots ─────────────
+  // Assure que les index définis dans schema.sql existent aussi sur les DBs existantes
+  const perfIndexDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='perf_indexes_v1'").get();
+  if (!perfIndexDone) {
+    _db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_leaves_staff        ON leaves(staff_id, start_date);
+      CREATE INDEX IF NOT EXISTS idx_leaves_status       ON leaves(status, approval_step);
+      CREATE INDEX IF NOT EXISTS idx_leaves_dates        ON leaves(start_date, end_date);
+      CREATE INDEX IF NOT EXISTS idx_leaves_staff_status ON leaves(staff_id, status);
+      CREATE INDEX IF NOT EXISTS idx_ss_sched_day        ON schedule_slots(schedule_id, day_of_week);
+      CREATE INDEX IF NOT EXISTS idx_ss_staff_day        ON schedule_slots(staff_id, day_of_week);
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('perf_indexes_v1')").run();
+  }
+
   return _db;
 }
 

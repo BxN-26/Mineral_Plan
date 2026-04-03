@@ -1,9 +1,12 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { toast } from 'sonner';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
-import { Btn, Modal, Field, PageHeader } from '../components/common';
+import { Btn, BtnSpinner, Modal, Field, PageHeader, ConfirmModal } from '../components/common';
+import { SkeletonLeaves } from '../components/Skeleton';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
+import { isMyApproval } from '../utils/leaveUtils';
 
 const STATUS_CONFIG = {
   pending:     { label: 'En attente',              bg: '#FEF9C3', color: '#A16207', icon: '⏳' },
@@ -22,23 +25,21 @@ const CongesView = () => {
   const [tab,          setTab]                                  = useState('all'); // 'all' | 'mine'
   const [showForm,     setShowForm]                             = useState(false);
   const [refuseModal,  setRefuseModal]                          = useState(null); // { id, label }
+  const [confirmDelete, setConfirmDelete]                       = useState(null); // { id, label }
   const [err,          setErr]                                  = useState('');
+  const [loadingIds,   setLoadingIds]                           = useState({});   // { [id]: 'approve'|'refuse'|'delete' }
+  const [skeletonDone, setSkeletonDone]                         = useState(false); // true une fois les feuilles chargées au moins une fois
 
   const isAdmin    = ['admin', 'superadmin'].includes(user?.role);
   const isMgr      = ['manager', 'rh', 'admin', 'superadmin'].includes(user?.role);
   const myStaffId  = staff.find(s => s.id === user?.staff_id)?.id || null;
 
-  // Congés dont JE suis l'approbateur actif
-  const isMyApproval = (l) => {
-    if (!user?.id) return false;
-    return (l.n1_approver_id === user.id && l.n1_status === 'pending') ||
-           (l.n2_approver_id === user.id && l.n2_status === 'pending') ||
-           (l.n3_approver_id === user.id && l.n3_status === 'pending');
-  };
+  // Utilise la fonction centralisée isMyApproval
+  const checkApproval = useCallback((l) => isMyApproval(l, user), [user?.id]);
 
   const canApproveOrRefuse = (l) => {
     if (!['pending','approved_n1','approved_n2'].includes(l.status)) return false;
-    return isAdmin || isMyApproval(l);
+    return isAdmin || checkApproval(l);
   };
 
   const leaveTypesMap = useMemo(
@@ -49,12 +50,12 @@ const CongesView = () => {
   const filtered = useMemo(() => {
     return leaves.filter(l => {
       if (!isMgr && l.staff_id !== myStaffId) return false;
-      if (tab === 'mine' && !isMyApproval(l)) return false;
+      if (tab === 'mine' && !checkApproval(l)) return false;
       if (filterStatus !== 'all' && l.status !== filterStatus) return false;
       if (filterType   !== 'all' && l.type_slug !== filterType)  return false;
       return true;
     });
-  }, [leaves, filterStatus, filterType, isMgr, myStaffId, tab, user?.id]);
+  }, [leaves, filterStatus, filterType, isMgr, myStaffId, tab, checkApproval]);
 
   const grouped = useMemo(() => {
     const g = {};
@@ -67,22 +68,62 @@ const CongesView = () => {
   }, [filtered]);
 
   const staffMap       = useMemo(() => Object.fromEntries(staff.map(s => [s.id, s])), [staff]);
-  const myApprovalsCount = useMemo(() => leaves.filter(isMyApproval).length, [leaves, user?.id]);
+  const myApprovalsCount = useMemo(() => leaves.filter(l => checkApproval(l)).length, [leaves, checkApproval]);
+
+  // Marquer le skeleton comme terminé dès que les données sont disponibles
+  useEffect(() => { if (leaves.length > 0 || staff.length > 0) setSkeletonDone(true); }, [leaves.length, staff.length]);
+
+  const setLoading = (id, action) => setLoadingIds(p => ({ ...p, [id]: action }));
+  const clearLoading = (id) => setLoadingIds(p => { const n = { ...p }; delete n[id]; return n; });
 
   const handleApprove = async (id) => {
-    try { await api.put(`/leaves/${id}/approve`); await reloadLeaves(); }
-    catch (e) { alert(e.response?.data?.error || 'Erreur lors de l\'approbation'); }
+    setLoading(id, 'approve');
+    // Optimistic : retire immédiatement de la vue "Mes approbations"
+    setLeaves(prev => prev.map(l => l.id === id
+      ? { ...l, n1_status: l.n1_approver_id === user.id ? 'approved' : l.n1_status,
+                n2_status: l.n2_approver_id === user.id ? 'approved' : l.n2_status,
+                n3_status: l.n3_approver_id === user.id ? 'approved' : l.n3_status }
+      : l
+    ));
+    try {
+      await api.put(`/leaves/${id}/approve`);
+      toast.success('Congé approuvé ✓');
+      reloadLeaves();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erreur lors de l\'approbation');
+      reloadLeaves(); // rétablir l'état réel
+    } finally {
+      clearLoading(id);
+    }
   };
 
   const handleRefuse = async (id, comment) => {
-    try { await api.put(`/leaves/${id}/refuse`, { comment }); await reloadLeaves(); setRefuseModal(null); }
-    catch (e) { alert(e.response?.data?.error || 'Erreur lors du refus'); }
+    setLoading(id, 'refuse');
+    try {
+      await api.put(`/leaves/${id}/refuse`, { comment });
+      toast.success('Congé refusé');
+      reloadLeaves();
+      setRefuseModal(null);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erreur lors du refus');
+    } finally {
+      clearLoading(id);
+    }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Annuler cette demande de congé ?')) return;
-    try { await api.delete(`/leaves/${id}`); await reloadLeaves(); }
-    catch (e) { alert(e.response?.data?.error || 'Erreur'); }
+    setLoading(id, 'delete');
+    try {
+      await api.delete(`/leaves/${id}`);
+      // Optimistic : retirer immédiatement de la liste locale
+      setLeaves(prev => prev.filter(l => l.id !== id));
+      toast.success('Demande annulée');
+      setConfirmDelete(null);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erreur lors de la suppression');
+    } finally {
+      clearLoading(id);
+    }
   };
 
   const canDelete = (l) => {
@@ -138,13 +179,14 @@ const CongesView = () => {
 
       {/* Liste */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
-        {Object.entries(grouped).length === 0 && (
+        {!skeletonDone && <SkeletonLeaves rows={5} />}
+        {skeletonDone && Object.entries(grouped).length === 0 && (
           <div style={{ textAlign: 'center', color: '#9B9890', padding: 40, fontSize: 13 }}>
             <div style={{ fontSize: 32, marginBottom: 10 }}>🌴</div>
             {tab === 'mine' ? 'Aucune approbation en attente' : 'Aucune demande'}
           </div>
         )}
-        {Object.entries(grouped).map(([sid, sidLeaves]) => {
+        {skeletonDone && Object.entries(grouped).map(([sid, sidLeaves]) => {
           const s = staffMap[Number(sid)];
           return (
             <div key={sid} style={{ marginBottom: 16 }}>
@@ -197,15 +239,33 @@ const CongesView = () => {
                         </div>
                         {canApproveOrRefuse(l) && (
                           <>
-                            <button onClick={() => handleApprove(l.id)} title="Approuver"
-                              style={{ padding: '4px 8px', border: '1px solid #BBF7D0', borderRadius: 6, background: '#F0FDF4', cursor: 'pointer', fontSize: 11, color: '#15803D', fontFamily: 'inherit' }}>✓</button>
-                            <button onClick={() => setRefuseModal({ id: l.id, label: `${lt.label || 'congé'} du ${formatDate(l.start_date)} au ${formatDate(l.end_date)}` })} title="Refuser"
-                              style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 6, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626', fontFamily: 'inherit' }}>✕</button>
+                            <button
+                              onClick={() => handleApprove(l.id)}
+                              disabled={!!loadingIds[l.id]}
+                              title="Approuver"
+                              aria-label="Approuver ce congé"
+                              style={{ padding: '4px 8px', border: '1px solid #BBF7D0', borderRadius: 6, background: '#F0FDF4', cursor: loadingIds[l.id] ? 'default' : 'pointer', fontSize: 11, color: '#15803D', fontFamily: 'inherit', opacity: loadingIds[l.id] ? .6 : 1, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              {loadingIds[l.id] === 'approve' ? <BtnSpinner /> : '✓'}
+                            </button>
+                            <button
+                              onClick={() => setRefuseModal({ id: l.id, label: `${lt.label || 'congé'} du ${formatDate(l.start_date)} au ${formatDate(l.end_date)}` })}
+                              disabled={!!loadingIds[l.id]}
+                              title="Refuser"
+                              aria-label="Refuser ce congé"
+                              style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 6, background: '#FEF2F2', cursor: loadingIds[l.id] ? 'default' : 'pointer', fontSize: 11, color: '#DC2626', fontFamily: 'inherit', opacity: loadingIds[l.id] ? .6 : 1, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              {loadingIds[l.id] === 'refuse' ? <BtnSpinner /> : '✕'}
+                            </button>
                           </>
                         )}
                         {canDelete(l) && (
-                          <button onClick={() => handleDelete(l.id)} title="Annuler"
-                            style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 11, color: '#9B9890', fontFamily: 'inherit' }}>🗑</button>
+                          <button
+                            onClick={() => setConfirmDelete({ id: l.id, label: `la demande du ${formatDate(l.start_date)} au ${formatDate(l.end_date)}` })}
+                            disabled={!!loadingIds[l.id]}
+                            title="Annuler"
+                            aria-label="Annuler cette demande de congé"
+                            style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 6, background: '#fff', cursor: loadingIds[l.id] ? 'default' : 'pointer', fontSize: 11, color: '#9B9890', fontFamily: 'inherit', opacity: loadingIds[l.id] ? .6 : 1, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            {loadingIds[l.id] === 'delete' ? <BtnSpinner /> : '🗑'}
+                          </button>
                         )}
                       </div>
                     </div>
@@ -223,6 +283,16 @@ const CongesView = () => {
           label={refuseModal.label}
           onConfirm={(comment) => handleRefuse(refuseModal.id, comment)}
           onClose={() => setRefuseModal(null)}
+        />
+      )}
+
+      {/* Modal confirmation annulation */}
+      {confirmDelete && (
+        <ConfirmModal
+          message={`Annuler ${confirmDelete.label} ?`}
+          confirmLabel="Oui, annuler"
+          onConfirm={() => handleDelete(confirmDelete.id)}
+          onClose={() => setConfirmDelete(null)}
         />
       )}
 
@@ -246,12 +316,13 @@ const CongesView = () => {
                 try { await api.post(`/leaves/${id}/document`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }); }
                 catch (_) {
                   // E6 — informer l'utilisateur : la demande est créée mais le justificatif n'a pas été envoyé
-                  setTimeout(() => alert('⚠️ La demande a été créée, mais le justificatif n\'a pas pu être envoyé. Vous pouvez le joindre ultérieurement.'), 300);
+                  toast.warning('La demande a été créée, mais le justificatif n\'a pas pu être envoyé. Vous pouvez le joindre ultérieurement.');
                 }
               }
               await reloadLeaves();
               setShowForm(false);
-              if (balance_warning) setTimeout(() => alert(`⚠️ ${balance_warning}`), 200);
+              if (balance_warning) toast.warning(balance_warning);
+              else toast.success('Demande de congé envoyée ✓');
             } catch (e) {
               setErr(e.response?.data?.error || 'Erreur lors de la création');
             }

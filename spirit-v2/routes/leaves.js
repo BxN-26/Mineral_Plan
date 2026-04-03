@@ -25,25 +25,44 @@ const docUpload = multer({
 
 // ── Helpers ──────────────────────────────────────────────────
 
+// Cache des jours ouvrés (invalidé si les settings changent, TTL 5 min)
+let _workingDaysCache = null;
+let _workingDaysCacheAt = 0;
+const WORKING_DAYS_TTL = 5 * 60 * 1000;
+
 /** Lit les jours ouvrés depuis les paramètres (Set de getDay() : 0=Dim, 1=Lun…6=Sam) */
 function getWorkingDaysSet() {
+  const now = Date.now();
+  if (_workingDaysCache && now - _workingDaysCacheAt < WORKING_DAYS_TTL) return _workingDaysCache;
   const setting = db_.get("SELECT value FROM settings WHERE key='leave_working_days'");
+  let result;
   if (setting?.value) {
     try {
       const arr = JSON.parse(setting.value);
       if (Array.isArray(arr) && arr.every(n => Number.isInteger(n) && n >= 0 && n <= 6))
-        return new Set(arr);
+        result = new Set(arr);
     } catch (_) {}
   }
-  return new Set([1, 2, 3, 4, 5, 6]); // Lun-Sam par défaut
+  if (!result) result = new Set([1, 2, 3, 4, 5, 6]); // Lun-Sam par défaut
+  _workingDaysCache   = result;
+  _workingDaysCacheAt = now;
+  return result;
 }
+
+// Cache des jours fériés par plage YYYY-MM-DD|YYYY-MM-DD (TTL 30 min)
+const _holidaysCache = new Map();
+const HOLIDAYS_TTL   = 30 * 60 * 1000;
 
 /**
  * Construit un Set des dates "YYYY-MM-DD" fériées comprises dans la plage [start, end].
  * Les jours récurrents (recurring=1) sont étendus à toutes les années couvertes.
  */
 function getHolidaysSet(start, end) {
-  const holidays = db_.all('SELECT date, recurring FROM public_holidays');
+  const cacheKey = `${start}|${end}`;
+  const cached   = _holidaysCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < HOLIDAYS_TTL) return cached.set;
+
+  const holidays  = db_.all('SELECT date, recurring FROM public_holidays');
   const startYear = new Date(start + 'T12:00:00').getFullYear();
   const endYear   = new Date(end   + 'T12:00:00').getFullYear();
   const set = new Set();
@@ -55,6 +74,12 @@ function getHolidaysSet(start, end) {
       set.add(h.date);
     }
   }
+  // Éviction simple : on nettoie les entrées expirées au moment d'une miss
+  if (_holidaysCache.size > 200) {
+    const limit = Date.now() - HOLIDAYS_TTL;
+    for (const [k, v] of _holidaysCache) { if (v.at < limit) _holidaysCache.delete(k); }
+  }
+  _holidaysCache.set(cacheKey, { set, at: Date.now() });
   return set;
 }
 

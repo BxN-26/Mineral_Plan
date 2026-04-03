@@ -1,27 +1,29 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import NotifBell from './components/NotifBell';
 import LoginView from './views/LoginView';
-import PlanningView from './views/PlanningView';
-import MonPlanningView from './views/MonPlanningView';
-import EquipeView from './views/EquipeView';
-import CongesView from './views/CongesView';
-import RelevesView from './views/RelevesView';
-import ConfigView from './views/ConfigView';
-import StatsView from './views/StatsView';
-import CostsView from './views/CostsView';
-import MonProfilView from './views/MonProfilView';
-import SwapView from './views/SwapView';
-import TeamPlanningView from './views/TeamPlanningView';
-import GeneralPlanningView from './views/GeneralPlanningView';
-import IndispoView from './views/IndispoView';
-import HourDeclarationView from './views/HourDeclarationView';
-import { Spinner } from './components/common';
+import { Spinner, SkeletonBlock } from './components/common';
 import api from './api/client';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import ForceChangePassword from './components/ForceChangePassword';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+
+/* ─── Imports lazy des vues (code-splitting) ─────────────────── */
+const PlanningView       = lazy(() => import('./views/PlanningView'));
+const MonPlanningView    = lazy(() => import('./views/MonPlanningView'));
+const EquipeView         = lazy(() => import('./views/EquipeView'));
+const CongesView         = lazy(() => import('./views/CongesView'));
+const RelevesView        = lazy(() => import('./views/RelevesView'));
+const ConfigView         = lazy(() => import('./views/ConfigView'));
+const StatsView          = lazy(() => import('./views/StatsView'));
+const CostsView          = lazy(() => import('./views/CostsView'));
+const MonProfilView      = lazy(() => import('./views/MonProfilView'));
+const SwapView           = lazy(() => import('./views/SwapView'));
+const TeamPlanningView   = lazy(() => import('./views/TeamPlanningView'));
+const GeneralPlanningView = lazy(() => import('./views/GeneralPlanningView'));
+const IndispoView        = lazy(() => import('./views/IndispoView'));
+const HourDeclarationView = lazy(() => import('./views/HourDeclarationView'));
 
 /* ─── Contexte global de l'app ──────────────────────────────── */
 const AppCtx = createContext(null);
@@ -69,7 +71,15 @@ function AppShell() {
 
   const { colors } = useTheme();
 
-  const [view,       setView]       = useState('mon-planning');
+  const VALID_VIEWS = Object.keys(VIEW_COMPONENTS);
+  const [view, setViewRaw] = useState(() => {
+    const saved = localStorage.getItem('spirit_view');
+    return saved && VALID_VIEWS.includes(saved) ? saved : 'mon-planning';
+  });
+  const setView = useCallback((v) => {
+    setViewRaw(v);
+    localStorage.setItem('spirit_view', v);
+  }, []);
   const [planningFocus, setPlanningFocus] = useState(null); // { week, staffId } pour deep-link notif
   const [swapTab,    setSwapTab]    = useState('mine');     // deep-link onglet échanges
   const [staff,      setStaff]      = useState([]);
@@ -88,24 +98,16 @@ function AppShell() {
   const loadAll = useCallback(async () => {
     setDataReady(false);
     try {
-      const [rs, rt, rf, rl, rlt, rset, rtt] = await Promise.all([
-        api.get('/staff'),
-        api.get('/teams'),
-        api.get('/functions'),
-        api.get('/leaves'),
-        api.get('/settings/leave-types'),
-        api.get('/settings'),
-        api.get('/task-types'),
-      ]);
-      setStaff(Array.isArray(rs.data)   ? rs.data   : []);
-      setTeams(Array.isArray(rt.data)   ? rt.data   : []);
-      setFunctions(Array.isArray(rf.data)  ? rf.data   : []);
-      setLeaves(Array.isArray(rl.data)  ? rl.data   : []);
-      setLeaveTypes(Array.isArray(rlt.data) ? rlt.data  : []);
-      setSettings(Array.isArray(rset.data) ? rset.data : rset.data ?? {});
-      setTaskTypes(Array.isArray(rtt.data) ? rtt.data : []);
+      const { data } = await api.get('/bootstrap');
+      setStaff(      Array.isArray(data.staff)      ? data.staff      : []);
+      setTeams(      Array.isArray(data.teams)      ? data.teams      : []);
+      setFunctions(  Array.isArray(data.functions)  ? data.functions  : []);
+      setLeaves(     Array.isArray(data.leaves)     ? data.leaves     : []);
+      setLeaveTypes( Array.isArray(data.leaveTypes) ? data.leaveTypes : []);
+      setSettings(   Array.isArray(data.settings)   ? data.settings   : data.settings ?? {});
+      setTaskTypes(  Array.isArray(data.taskTypes)  ? data.taskTypes  : []);
     } catch (e) {
-      console.error('[AppShell] Impossible de charger les données', e);
+      console.error('[AppShell] Impossible de charger les données bootstrap', e);
     } finally {
       setDataReady(true);
     }
@@ -134,18 +136,73 @@ function AppShell() {
 
   /* Chargement planning d'une semaine */
   const loadWeekSchedules = useCallback(async (weekStart) => {
-    if (schedules[weekStart]) return; // déjà chargé
+    if (schedules[weekStart]) return; // déjà en cache
     try {
       const r = await api.get(`/schedules?week=${weekStart}`);
-      setSchedules(prev => ({ ...prev, [weekStart]: r.data }));
+      setSchedules(prev => {
+        const next = { ...prev, [weekStart]: r.data };
+        // Évincer les entrées les plus anciennes si > 10 semaines (FIFO)
+        const keys = Object.keys(next);
+        if (keys.length > 10) {
+          const evict = keys.slice(0, keys.length - 10);
+          evict.forEach(k => delete next[k]);
+        }
+        return next;
+      });
     } catch (e) {
       console.error('[AppShell] Erreur chargement semaine', e);
     }
   }, [schedules]);
 
   if (!dataReady) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F5F3EF' }}>
-      <Spinner />
+    <div style={{ display: 'flex', height: '100vh', fontFamily: "'Inter','Segoe UI',system-ui,sans-serif", background: '#F5F3EF', overflow: 'hidden' }}>
+      {/* Sidebar fantôme */}
+      <div style={{ width: 230, flexShrink: 0, background: '#181C2E', display: 'flex', flexDirection: 'column', padding: '18px 14px', gap: 24 }}>
+        {/* Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+          <SkeletonBlock width={32} height={32} borderRadius={16} style={{ background: 'rgba(255,255,255,.15)' }} />
+          <SkeletonBlock width={90} height={13} style={{ background: 'rgba(255,255,255,.15)' }} />
+        </div>
+        {/* Nav items */}
+        {[80, 100, 90, 110, 70, 95, 80].map((w, i) => (
+          <SkeletonBlock key={i} width={w} height={12} style={{ background: 'rgba(255,255,255,.12)' }} />
+        ))}
+        {/* Avatar bas */}
+        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <SkeletonBlock width={30} height={30} borderRadius={15} style={{ background: 'rgba(255,255,255,.15)' }} />
+          <SkeletonBlock width={70} height={11} style={{ background: 'rgba(255,255,255,.12)' }} />
+        </div>
+      </div>
+      {/* Contenu principal */}
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Topbar */}
+        <div style={{ height: 50, background: '#181C2E', display: 'flex', alignItems: 'center', padding: '0 18px', gap: 12, flexShrink: 0 }}>
+          <SkeletonBlock width={120} height={14} style={{ background: 'rgba(255,255,255,.15)' }} />
+        </div>
+        {/* Corps */}
+        <div style={{ flex: 1, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, overflow: 'hidden' }}>
+          {/* Header */}
+          <SkeletonBlock width={200} height={22} style={{ marginBottom: 4 }} />
+          {/* Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(270px,1fr))', gap: 12 }}>
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} style={{ background: '#fff', borderRadius: 12, border: '1px solid #ECEAE4', padding: '14px 14px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <SkeletonBlock width={38} height={38} borderRadius={19} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <SkeletonBlock width="65%" height={13} />
+                    <SkeletonBlock width="40%" height={10} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <SkeletonBlock width={55} height={17} borderRadius={12} />
+                  <SkeletonBlock width={65} height={17} borderRadius={12} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   );
 
@@ -211,7 +268,9 @@ function AppShell() {
           {pushStatus === 'prompt' && (
             <PushBanner onAccept={subscribe} />
           )}
-          <ViewComp />
+          <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, padding: 40 }}><Spinner /></div>}>
+            <ViewComp />
+          </Suspense>
         </main>
       </div>
     </AppCtx.Provider>
