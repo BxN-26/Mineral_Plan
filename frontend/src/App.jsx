@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import NotifBell from './components/NotifBell';
 import LoginView from './views/LoginView';
+import ResetPasswordView from './views/ResetPasswordView';
 import { Spinner, SkeletonBlock } from './components/common';
 import api from './api/client';
 import { usePushNotifications } from './hooks/usePushNotifications';
@@ -318,6 +319,23 @@ export default function App() {
 
 function AppRouter() {
   const { user, loading } = useAuth();
+  const [resetToken, setResetToken] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('reset_token') || null;
+  });
+
+  // Si un token de reset est présent dans l'URL, afficher la page de reset (pas d'auth requise)
+  if (resetToken) {
+    return (
+      <ResetPasswordView
+        token={resetToken}
+        onDone={() => {
+          setResetToken(null);
+          if (window.history?.replaceState) window.history.replaceState({}, '', '/');
+        }}
+      />
+    );
+  }
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#F5F3EF' }}>

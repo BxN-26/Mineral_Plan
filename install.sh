@@ -353,6 +353,148 @@ else
   info "Caddy ignoré. Adaptez $SCRIPT_DIR/Caddyfile.example selon votre configuration."
 fi
 
+# ── Configuration email (reset de mot de passe) ───────────────────────────────
+section "Email — Réinitialisation de mot de passe (optionnel)"
+
+echo ""
+echo "  La réinitialisation de mot de passe par email nécessite un accès SMTP."
+echo "  Choisissez votre hébergeur / fournisseur email :"
+echo ""
+echo "    1) OVH / OVHcloud     (ssl0.ovh.net:587)"
+echo "    2) Gandi               (mail.gandi.net:587)"
+echo "    3) Infomaniak          (mail.infomaniak.com:587)"
+echo "    4) o2switch            (smtp de votre domaine:587)"
+echo "    5) Ionos / 1&1         (smtp.ionos.fr:587)"
+echo "    6) Gmail               (smtp.gmail.com:587)"
+echo "    7) Autre / SMTP libre  (saisie manuelle)"
+echo "    8) Ignorer             (reset de mot de passe désactivé)"
+echo ""
+read -r -p "  Votre choix [1-8] : " SMTP_CHOICE
+
+if [[ "$SMTP_CHOICE" =~ ^[1-7]$ ]]; then
+  # Pré-remplissage selon l'hébergeur
+  case "$SMTP_CHOICE" in
+    1) SMTP_HOST="ssl0.ovh.net";          SMTP_PORT="587"; SMTP_SECURE="false"
+       echo ""
+       info "OVH — où trouver vos identifiants SMTP :"
+       echo "  → Connectez-vous sur https://www.ovh.com/manager/"
+       echo "  → Allez dans : Email → votre domaine → Informations générales → SMTP"
+       echo "  → Le login SMTP = votre adresse email complète"
+       echo "  → Le mot de passe = celui de la boîte email"
+       ;;
+    2) SMTP_HOST="mail.gandi.net";        SMTP_PORT="587"; SMTP_SECURE="false"
+       echo ""
+       info "Gandi — où trouver vos identifiants SMTP :"
+       echo "  → Connectez-vous sur https://admin.gandi.net/"
+       echo "  → Allez dans : Messagerie → votre domaine → Boîtes email → Paramètres"
+       echo "  → Le login SMTP = votre adresse email complète"
+       ;;
+    3) SMTP_HOST="mail.infomaniak.com";   SMTP_PORT="587"; SMTP_SECURE="false"
+       echo ""
+       info "Infomaniak — où trouver vos identifiants SMTP :"
+       echo "  → Connectez-vous sur https://manager.infomaniak.com/"
+       echo "  → Allez dans : Hébergement mail → votre service → Paramètres SMTP"
+       ;;
+    4) echo ""
+       info "o2switch — le serveur SMTP dépend de votre domaine."
+       read -r -p "  Serveur SMTP (ex: mail.votredomaine.fr) : " SMTP_HOST
+       SMTP_HOST="${SMTP_HOST:-mail.votredomaine.fr}"
+       SMTP_PORT="587"; SMTP_SECURE="false"
+       echo ""
+       info "o2switch — vos identifiants sont ceux du compte email dans cPanel :"
+       echo "  → Connectez-vous sur votre cPanel o2switch"
+       echo "  → Allez dans : Comptes de messagerie → votre adresse → Paramètres du client"
+       ;;
+    5) SMTP_HOST="smtp.ionos.fr";         SMTP_PORT="587"; SMTP_SECURE="false"
+       echo ""
+       info "Ionos/1&1 — où trouver vos identifiants SMTP :"
+       echo "  → Connectez-vous sur https://my.ionos.fr/"
+       echo "  → Allez dans : Email → votre adresse → Paramètres"
+       ;;
+    6) SMTP_HOST="smtp.gmail.com";        SMTP_PORT="587"; SMTP_SECURE="false"
+       echo ""
+       warn "Gmail — nécessite un 'Mot de passe d'application' (pas votre mot de passe Google) :"
+       echo "  → Activez la validation en 2 étapes : https://myaccount.google.com/security"
+       echo "  → Créez un mot de passe d'appli : https://myaccount.google.com/apppasswords"
+       echo "  → Choisissez 'Autre' comme application, nommez-le 'Mineral Plan'"
+       echo "  → Copiez le mot de passe à 16 caractères généré"
+       ;;
+    7) echo ""
+       read -r -p "  Serveur SMTP (ex: smtp.monhebergeur.fr) : " SMTP_HOST
+       read -r -p "  Port SMTP [587] : " SMTP_PORT
+       SMTP_PORT="${SMTP_PORT:-587}"
+       read -r -p "  SSL complet (port 465) ? [o/N] : " USE_SSL
+       SMTP_SECURE="false"
+       [[ "$USE_SSL" =~ ^[oO]$ ]] && SMTP_SECURE="true"
+       ;;
+  esac
+
+  echo ""
+  read -r -p "  Adresse email expéditeur (ex: noreply@monclub.fr) : " SMTP_USER
+  if [ -z "$SMTP_USER" ]; then
+    warn "Email expéditeur vide — configuration email ignorée."
+    SMTP_CHOICE="8"
+  else
+    read -r -s -p "  Mot de passe SMTP (ne sera pas affiché) : " SMTP_PASS
+    echo ""
+    if [ -z "$SMTP_PASS" ]; then
+      warn "Mot de passe vide — configuration email ignorée."
+      SMTP_CHOICE="8"
+    else
+      read -r -p "  Nom affiché dans les emails [Minéral Plan <${SMTP_USER}>] : " SMTP_FROM_NAME
+      SMTP_FROM="${SMTP_FROM_NAME:-Minéral Plan} <${SMTP_USER}>"
+
+      # Écrire les variables SMTP dans le .env
+      {
+        echo ""
+        echo "# ── Email (réinitialisation de mot de passe) ─────────────────────"
+        echo "SMTP_HOST=$SMTP_HOST"
+        echo "SMTP_PORT=$SMTP_PORT"
+        echo "SMTP_SECURE=$SMTP_SECURE"
+        echo "SMTP_USER=$SMTP_USER"
+        echo "SMTP_PASS=$SMTP_PASS"
+        echo "SMTP_FROM=$SMTP_FROM"
+      } >> "$ENV_FILE"
+      success "Configuration SMTP enregistrée dans .env"
+
+      # Test d'envoi optionnel
+      echo ""
+      read -r -p "  Envoyer un email de test pour vérifier la configuration ? [O/n] : " TEST_SMTP
+      if [[ ! "$TEST_SMTP" =~ ^[nN]$ ]]; then
+        read -r -p "  Adresse de destination pour le test [${SMTP_USER}] : " TEST_TO
+        TEST_TO="${TEST_TO:-$SMTP_USER}"
+        info "Envoi de l'email de test vers $TEST_TO..."
+        TEST_RESULT=$(cd "$BACKEND_DIR" && node -e "
+          require('dotenv').config();
+          const { sendResetEmail, isConfigured } = require('./utils/mailer');
+          if (!isConfigured()) { console.error('SMTP non configuré'); process.exit(1); }
+          sendResetEmail({
+            to: '$TEST_TO',
+            resetUrl: '${CLIENT_URL:-http://localhost:3000}/?reset_token=TEST_TOKEN_DEMO',
+            appUrl: '${CLIENT_URL:-http://localhost:3000}'
+          }).then(() => {
+            console.log('OK');
+          }).catch(e => {
+            console.error('ERREUR:', e.message);
+            process.exit(1);
+          });
+        " 2>&1)
+        if echo "$TEST_RESULT" | grep -q "^OK"; then
+          success "Email de test envoyé avec succès à $TEST_TO !"
+        else
+          warn "Échec de l'envoi : $TEST_RESULT"
+          warn "Vérifiez vos paramètres SMTP dans $ENV_FILE"
+        fi
+      fi
+    fi
+  fi
+fi
+
+if [[ "$SMTP_CHOICE" == "8" ]] || [ -z "$SMTP_CHOICE" ]; then
+  info "Reset par email désactivé. Les administrateurs pourront réinitialiser"
+  info "les mots de passe manuellement depuis la gestion de l'équipe."
+fi
+
 # ── Démarrage final ───────────────────────────────────────────────────────────
 section "Installation terminée"
 

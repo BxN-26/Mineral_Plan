@@ -397,6 +397,31 @@ router.post('/:id/avatar', AUTH, upload.single('avatar'), async (req, res) => {
   res.json({ avatar_url: url });
 });
 
+// ── POST /api/staff/:id/reset-password ───────────────────────
+// Réservé admin/superadmin — force un nouveau mot de passe + must_change_password
+router.post('/:id/reset-password', requireAuth, requireRole('admin', 'superadmin'), (req, res) => {
+  const staffId    = Number(req.params.id);
+  const { new_password } = req.body;
+
+  if (!new_password || new_password.length < 8)
+    return res.status(400).json({ error: 'Mot de passe trop court (8 caractères minimum)' });
+
+  const user = db_.get('SELECT id FROM users WHERE staff_id = ? AND active = 1', [staffId]);
+  if (!user)
+    return res.status(404).json({ error: 'Aucun compte utilisateur trouvé pour ce salarié' });
+
+  const hash = bcrypt.hashSync(new_password, 12);
+  db_.run(
+    "UPDATE users SET password = ?, must_change_password = 1, updated_at = datetime('now') WHERE id = ?",
+    [hash, user.id]
+  );
+  // Révoquer toutes les sessions actives
+  db_.run('DELETE FROM refresh_tokens WHERE user_id = ?', [user.id]);
+
+  auditLog(req, 'ADMIN_RESET_PASSWORD', 'users', user.id, null, { staff_id: staffId });
+  res.json({ message: 'Mot de passe réinitialisé avec succès.' });
+});
+
 // ── DELETE /api/staff/:id/avatar ──────────────────────────────
 router.delete('/:id/avatar', AUTH, (req, res) => {
   const isAdmin = ['admin', 'superadmin', 'manager'].includes(req.user.role);

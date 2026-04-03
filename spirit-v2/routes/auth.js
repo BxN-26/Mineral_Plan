@@ -6,6 +6,7 @@ const jwt       = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { db_ }   = require('../db/database');
 const { issueTokens, revokeRefreshToken, requireAuth } = require('../middleware/auth');
+const { isConfigured, sendResetEmail } = require('../utils/mailer');
 
 // ── Rate limiter : 10 tentatives / 15 min par IP ─────────────
 const loginLimiter = rateLimit({
@@ -121,6 +122,121 @@ router.post('/force-change-password', requireAuth, (req, res) => {
   const hash = bcrypt.hashSync(new_password, 12);
   db_.run('UPDATE users SET password=?, must_change_password=0 WHERE id=?', [hash, req.user.id]);
   res.json({ message: 'Mot de passe défini avec succès' });
+});
+
+// ── Rate limiter reset : 3 demandes / heure / IP ─────────────
+const resetLimiter = rateLimit({
+  windowMs : 60 * 60 * 1000, // 1 heure
+  max      : 3,
+  message  : { error: 'Trop de demandes de réinitialisation. Réessayez dans 1 heure.' },
+  standardHeaders: true,
+  legacyHeaders  : false,
+});
+
+// ── POST /api/auth/reset-request ─────────────────────────────
+// Génère un token de reset et envoie l'email.
+// Répond toujours avec le même message (pas d'énumération d'emails).
+router.post('/reset-request', resetLimiter, async (req, res) => {
+  const GENERIC_OK = { message: 'Si cet email est associé à un compte actif, un lien de réinitialisation a été envoyé.' };
+
+  const { email } = req.body;
+  if (!email || typeof email !== 'string' || email.length > 254)
+    return res.json(GENERIC_OK);
+
+  // Vérifier que le SMTP est configuré avant de continuer
+  if (!isConfigured())
+    return res.status(503).json({ error: 'La réinitialisation par email n\'est pas configurée sur ce serveur. Contactez votre administrateur.' });
+
+  const user = db_.get(
+    'SELECT id, email FROM users WHERE email = ? AND active = 1',
+    [email.toLowerCase().trim()]
+  );
+
+  // Réponse identique que l'utilisateur existe ou non
+  if (!user) return res.json(GENERIC_OK);
+
+  // Invalider les tokens précédents de cet utilisateur
+  db_.run(
+    "UPDATE password_reset_tokens SET used_at = datetime('now') WHERE user_id = ? AND used_at IS NULL",
+    [user.id]
+  );
+
+  // Générer le token brut (256 bits) — seul le hash est stocké
+  const rawToken  = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000)
+    .toISOString().replace('T', ' ').slice(0, 19);
+
+  db_.run(
+    'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+    [user.id, tokenHash, expiresAt]
+  );
+
+  const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const resetUrl  = `${clientUrl}/?reset_token=${rawToken}`;
+
+  try {
+    await sendResetEmail({ to: user.email, resetUrl, appUrl: clientUrl });
+  } catch (e) {
+    // Logguer l'erreur sans exposer les détails à l'appelant
+    console.error('[reset-request] Erreur envoi email:', e.message);
+    // On renvoie quand même OK pour ne pas révéler que l'email existe
+  }
+
+  return res.json(GENERIC_OK);
+});
+
+// ── POST /api/auth/reset-confirm ──────────────────────────────
+// Valide le token et met à jour le mot de passe.
+router.post('/reset-confirm', async (req, res) => {
+  const { token, new_password } = req.body;
+
+  if (!token || typeof token !== 'string' || !new_password)
+    return res.status(400).json({ error: 'Token et nouveau mot de passe requis.' });
+
+  if (new_password.length < 8)
+    return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères.' });
+
+  if (new_password.length > 128)
+    return res.status(400).json({ error: 'Mot de passe trop long (128 caractères max).' });
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const record = db_.get(
+    `SELECT prt.id, prt.user_id, u.active
+     FROM password_reset_tokens prt
+     JOIN users u ON u.id = prt.user_id
+     WHERE prt.token_hash = ?
+       AND prt.used_at IS NULL
+       AND prt.expires_at > datetime('now')
+       AND u.active = 1`,
+    [tokenHash]
+  );
+
+  if (!record)
+    return res.status(400).json({ error: 'Ce lien est invalide ou a expiré. Faites une nouvelle demande.' });
+
+  const passwordHash = bcrypt.hashSync(new_password, 12);
+
+  // Marquer le token comme utilisé (avant le UPDATE password pour éviter les races)
+  db_.run(
+    "UPDATE password_reset_tokens SET used_at = datetime('now') WHERE id = ?",
+    [record.id]
+  );
+
+  // Mettre à jour le mot de passe
+  db_.run(
+    'UPDATE users SET password = ?, must_change_password = 0 WHERE id = ?',
+    [passwordHash, record.user_id]
+  );
+
+  // Révoquer toutes les sessions actives (sécurité)
+  db_.run(
+    'UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?',
+    [record.user_id]
+  );
+
+  return res.json({ message: 'Mot de passe réinitialisé avec succès. Vous pouvez vous connecter.' });
 });
 
 module.exports = router;

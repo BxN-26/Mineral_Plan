@@ -778,6 +778,27 @@ function getDb() {
     _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('perf_indexes_v1')").run();
   }
 
+  // ── Migration : table reset de mot de passe ──────────────────────────────
+  const resetTokensDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='password_reset_v1'").get();
+  if (!resetTokensDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash TEXT    NOT NULL UNIQUE,
+        expires_at TEXT    NOT NULL,
+        used_at    TEXT,
+        created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_tokens(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(user_id);
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('password_reset_v1')").run();
+  }
+
+  // Nettoyage au démarrage : supprimer les tokens expirés depuis plus de 24h
+  _db.prepare(`DELETE FROM password_reset_tokens WHERE created_at < datetime('now', '-24 hours')`).run();
+
   return _db;
 }
 

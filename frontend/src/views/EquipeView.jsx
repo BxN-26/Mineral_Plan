@@ -18,6 +18,11 @@ const EquipeView = () => {
   const [err,        setErr]                                             = useState('');
   const [hoveredCard, setHoveredCard]                                    = useState(null); // id de la carte survolée
   const [isReloading, setIsReloading]                                    = useState(false);
+  const [resetTarget, setResetTarget]                                    = useState(null);
+  const [resetPwd,    setResetPwd]                                       = useState('');
+  const [resetPwd2,   setResetPwd2]                                      = useState('');
+  const [resetLoading,setResetLoading]                                   = useState(false);
+  const [resetErr,    setResetErr]                                       = useState('');
 
   const isAdmin = ['admin', 'superadmin'].includes(user?.role);
 
@@ -34,6 +39,23 @@ const EquipeView = () => {
 
   const openNew  = () => { setEditStaff(null); setShowForm(true); setErr(''); };
   const openEdit = s  => { setEditStaff(s);    setShowForm(true); setErr(''); };
+
+  const openReset = s => { setResetTarget(s); setResetPwd(''); setResetPwd2(''); setResetErr(''); };
+
+  const handleReset = async () => {
+    if (resetPwd.length < 8) return setResetErr('8 caractères minimum');
+    if (resetPwd !== resetPwd2) return setResetErr('Les mots de passe ne correspondent pas');
+    setResetLoading(true); setResetErr('');
+    try {
+      await api.post(`/staff/${resetTarget.id}/reset-password`, { new_password: resetPwd });
+      toast.success(`Mot de passe de ${resetTarget.firstname} réinitialisé. Il devra le changer à la prochaine connexion.`);
+      setResetTarget(null);
+    } catch (e) {
+      setResetErr(e.response?.data?.error || 'Erreur lors de la réinitialisation');
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleSave = async (data) => {
     try {
@@ -130,6 +152,11 @@ const EquipeView = () => {
                     <div style={{ display: 'flex', gap: 5 }}>
                       <button onClick={() => openEdit(s)}
                         style={{ padding: '3px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11, color: '#5B5855' }}>✏️</button>
+                      {user?.role === 'superadmin' || (user?.role === 'admin' && s.user_role !== 'superadmin') ? (
+                      <button onClick={() => openReset(s)}
+                        title="Réinitialiser le mot de passe"
+                        style={{ padding: '3px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11, color: '#5B5855' }}>🔑</button>
+                      ) : null}
                       <button onClick={() => handleToggleActive(s)}
                         style={{ padding: '3px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11, color: '#5B5855' }}
                         title={s.active ? 'Désactiver' : 'Réactiver'}>
@@ -169,6 +196,34 @@ const EquipeView = () => {
         </>
         )}
       </div>
+
+      {/* Modal réinitialisation mot de passe */}
+      {resetTarget && (
+        <Modal onClose={() => setResetTarget(null)} title={`Réinitialiser le mot de passe — ${resetTarget.firstname} ${resetTarget.lastname}`}>
+          {resetErr && <div style={{ padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 6, color: '#DC2626', fontSize: 12, marginBottom: 10 }}>{resetErr}</div>}
+          <p style={{ fontSize: 12, color: '#6B6B6B', marginBottom: 16 }}>
+            Un nouveau mot de passe temporaire sera attribué. L'utilisateur devra le modifier à sa prochaine connexion.
+          </p>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#1E2235' }}>Nouveau mot de passe</label>
+            <input type="password" value={resetPwd} onChange={e => setResetPwd(e.target.value)}
+              placeholder="8 caractères minimum"
+              style={{ width: '100%', padding: '8px 10px', border: '1px solid #E4E0D8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#1E2235' }}>Confirmer le mot de passe</label>
+            <input type="password" value={resetPwd2} onChange={e => setResetPwd2(e.target.value)}
+              placeholder="Même mot de passe"
+              style={{ width: '100%', padding: '8px 10px', border: '1px solid #E4E0D8', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <Btn variant="secondary" onClick={() => setResetTarget(null)}>Annuler</Btn>
+            <Btn variant="primary" onClick={handleReset} disabled={resetLoading}>
+              {resetLoading ? 'En cours…' : 'Réinitialiser'}
+            </Btn>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal formulaire */}
       {showForm && (
