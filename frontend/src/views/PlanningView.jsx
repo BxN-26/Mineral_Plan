@@ -5,6 +5,7 @@ import api from '../api/client';
 import SpanDetailModal from '../components/SpanDetailModal';
 import { useIsMobile, useIsTouch } from '../hooks/useDimensions';
 import { weekStart, todayDayIdx } from '../utils/dates';
+import { getDayDecorations } from '../utils/holidayUtils';
 
 /* ── Injection CSS animation highlight (une seule fois) ──────── */
 if (typeof document !== 'undefined' && !document.getElementById('spirit-highlight-style')) {
@@ -844,7 +845,7 @@ const TouchSpanModal = ({ modal, dayIndex, fnStaff, staff, activeFn, courseSlots
 
 /* ═══════════════════════════════════════════════════════════════ */
 const PlanningView = () => {
-  const { staff, functions, taskTypes, teams, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings } = useApp();
+  const { staff, functions, taskTypes, teams, schedules, setSchedules, loadWeekSchedules, planningFocus, setPlanningFocus, settings, publicHolidays, schoolHolidays } = useApp();
   const ttMap = useMemo(() => Object.fromEntries((taskTypes||[]).map(t => [t.slug, t])), [taskTypes]);
   const isMobile  = useIsMobile();
   const isTouch   = useIsTouch();
@@ -1685,10 +1686,14 @@ const PlanningView = () => {
             <div />
             {DAYS.map((day, di) => {
               const date = dates[di]; const isToday = date.toDateString() === new Date().toDateString();
+              const dateStr = date.toLocaleDateString('en-CA');
+              const decos = getDayDecorations(dateStr, publicHolidays, schoolHolidays);
               return (
-                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '2px solid #D0CBC2' }}>
+                <div key={day} style={{ padding: '8px 6px 6px', textAlign: 'center', background: decos.isHoliday ? 'rgba(239,68,68,0.07)' : decos.isSchoolHoliday ? 'rgba(99,102,241,0.06)' : isToday?'#FFF4EC':di>=5?'#F9F7F4':'transparent', borderLeft: '2px solid #D0CBC2' }}>
                   <div style={{ fontSize: 9, fontWeight: 600, color: isToday?'#C5753A':'#9B9890', textTransform: 'uppercase' }}>{DAYS_SH[di]}</div>
                   <div style={{ fontSize: 15, fontWeight: isToday?800:600, color: isToday?'#C5753A':'#1E2235', lineHeight: 1.2, margin: '1px 0' }}>{date.getDate()}</div>
+                  {decos.isHoliday && <div style={{ fontSize: 8, color: '#DC2626', lineHeight: 1.2, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔴 {decos.holidayLabel}</div>}
+                  {decos.isSchoolHoliday && <div style={{ fontSize: 8, color: '#4F46E5', lineHeight: 1.2, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🏫 {decos.schoolLabel}</div>}
                 </div>
               );
             })}

@@ -30,6 +30,7 @@ const taskTypesRouter        = require('./routes/task-types');
 const unavailabilitiesRouter  = require('./routes/unavailabilities');
 const hourDeclRouter          = require('./routes/hour-declarations');
 const holidaysRouter          = require('./routes/holidays');
+const schoolHolidaysRouter    = require('./routes/school-holidays');
 const bootstrapRouter         = require('./routes/bootstrap');
 
 // ── Vérifications sécurité au démarrage ─────────────────────
@@ -124,7 +125,8 @@ app.use('/api/leaves',    leavesRouter);
 app.use('/api/schedules', schedulesRouter);
 app.use('/api/settings',       settingsRouter);
 app.use('/api/notifications',  notificationsRouter);
-app.use('/api/holidays',       holidaysRouter);
+app.use('/api/holidays',        holidaysRouter);
+app.use('/api/school-holidays', schoolHolidaysRouter);
 app.use('/api/stats',          statsRouter);
 app.use('/api/costs',          costsRouter);
 app.use('/api/swaps',          swapsRouter);

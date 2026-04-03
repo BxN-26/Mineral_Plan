@@ -91,6 +91,8 @@ function AppShell() {
   const [taskTypes,  setTaskTypes]  = useState([]);
   const [settings,   setSettings]   = useState({});
   const [schedules,  setSchedules]  = useState({}); // { [week]: { [fnSlug]: grid } }
+  const [publicHolidays,  setPublicHolidays]  = useState([]);
+  const [schoolHolidays,  setSchoolHolidays]  = useState([]);
   const [dataReady,  setDataReady]  = useState(false);
   const [isMobile,    setIsMobile]    = useState(() => window.innerWidth < 768);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -107,6 +109,8 @@ function AppShell() {
       setLeaveTypes( Array.isArray(data.leaveTypes) ? data.leaveTypes : []);
       setSettings(   Array.isArray(data.settings)   ? data.settings   : data.settings ?? {});
       setTaskTypes(  Array.isArray(data.taskTypes)  ? data.taskTypes  : []);
+      setPublicHolidays(Array.isArray(data.publicHolidays) ? data.publicHolidays : []);
+      setSchoolHolidays(Array.isArray(data.schoolHolidays) ? data.schoolHolidays : []);
     } catch (e) {
       console.error('[AppShell] Impossible de charger les données bootstrap', e);
     } finally {
@@ -128,6 +132,13 @@ function AppShell() {
   const reloadFunctions    = useCallback(async () => { const r = await api.get('/functions');  setFunctions(Array.isArray(r.data)  ? r.data : []); }, []);
   const reloadLeaves       = useCallback(async () => { const r = await api.get('/leaves');     setLeaves(Array.isArray(r.data)     ? r.data : []); }, []);
   const reloadTaskTypes    = useCallback(async () => { const r = await api.get('/task-types'); setTaskTypes(Array.isArray(r.data)  ? r.data : []); }, []);
+  const reloadPublicHolidays = useCallback(async () => { const r = await api.get('/holidays'); setPublicHolidays(Array.isArray(r.data) ? r.data : []); }, []);
+  const reloadSchoolHolidays = useCallback(async () => {
+    const zoneSetting = Array.isArray(settings) ? settings.find(s => s.key === 'school_holidays_zone') : null;
+    const zone = zoneSetting?.value || 'Zone C';
+    const r = await api.get(`/school-holidays?zone=${encodeURIComponent(zone)}`);
+    setSchoolHolidays(Array.isArray(r.data) ? r.data : []);
+  }, [settings]);
 
   /* Push notifications */
   const pushEnabled = Array.isArray(settings)
@@ -213,10 +224,12 @@ function AppShell() {
   const ctx = {
     /* données */
     staff, teams, functions, taskTypes, leaves, leaveTypes, settings, schedules,
+    publicHolidays, schoolHolidays,
     /* mutateurs */
     setStaff, setTeams, setFunctions, setLeaves, setLeaveTypes, setSettings, setSchedules,
     /* rechargements */
     reloadStaff, reloadTeams, reloadFunctions, reloadTaskTypes, reloadLeaves, loadWeekSchedules,
+    reloadPublicHolidays, reloadSchoolHolidays,
     /* navigation */
     view, setView,
     /* deep-link planning */

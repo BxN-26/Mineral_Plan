@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Btn, Modal, Field, PageHeader, inputSt } from '../components/common';
 import api from '../api/client';
+import { toast } from 'sonner';
 
 /* ─── Onglets disponibles ── */
 const TABS = [
@@ -217,19 +218,55 @@ const CongesConfig = ({ settings, setSettings }) => {
 
       <SectionTitle>Jours fériés</SectionTitle>
       <HolidaysManager />
+
+      <SectionTitle>Vacances scolaires</SectionTitle>
+      <SchoolHolidaysManager />
     </div>
   );
 };
 
 
 /* ─── Gestionnaire de jours fériés ──────────────────────────── */
+const HOLIDAY_ZONES = [
+  { value: 'metropole',              label: 'Métropole' },
+  { value: 'alsace-moselle',         label: 'Alsace-Moselle' },
+  { value: 'guadeloupe',             label: 'Guadeloupe' },
+  { value: 'martinique',             label: 'Martinique' },
+  { value: 'mayotte',                label: 'Mayotte' },
+  { value: 'la-reunion',             label: 'La Réunion' },
+  { value: 'nouvelle-caledonie',     label: 'Nouvelle-Calédonie' },
+  { value: 'polynesie-francaise',    label: 'Polynésie française' },
+  { value: 'saint-barthelemy',       label: 'Saint-Barthélemy' },
+  { value: 'saint-martin',           label: 'Saint-Martin' },
+  { value: 'saint-pierre-et-miquelon', label: 'Saint-Pierre-et-Miquelon' },
+  { value: 'wallis-et-futuna',       label: 'Wallis-et-Futuna' },
+];
+
 const HolidaysManager = () => {
+  const { settings, setSettings, reloadPublicHolidays } = useApp();
   const curYear = new Date().getFullYear();
-  const [year,       setYear]       = useState(curYear);
-  const [holidays,   setHolidays]   = useState([]);
-  const [showAdd,    setShowAdd]    = useState(false);
-  const [addForm,    setAddForm]    = useState({ date: '', label: '', recurring: true });
-  const [addErr,     setAddErr]     = useState('');
+  const [year,          setYear]          = useState(curYear);
+  const [holidays,      setHolidays]      = useState([]);
+  const [showAdd,       setShowAdd]       = useState(false);
+  const [addForm,       setAddForm]       = useState({ date: '', label: '', recurring: true });
+  const [addErr,        setAddErr]        = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [syncLoading,   setSyncLoading]   = useState(false);
+  const [importYear,    setImportYear]    = useState(curYear);
+
+  const zone = Array.isArray(settings)
+    ? (settings.find(s => s.key === 'public_holidays_zone')?.value || 'metropole')
+    : 'metropole';
+
+  const saveZone = async (newZone) => {
+    await api.put('/settings/public_holidays_zone', { value: newZone });
+    setSettings(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      if (arr.some(s => s.key === 'public_holidays_zone'))
+        return arr.map(s => s.key === 'public_holidays_zone' ? { ...s, value: newZone } : s);
+      return [...arr, { key: 'public_holidays_zone', value: newZone, type: 'string', description: '', group_name: 'conges' }];
+    });
+  };
 
   const load = (y) => {
     api.get(`/holidays?year=${y}`).then(r => setHolidays(r.data || [])).catch(() => {});
@@ -244,13 +281,31 @@ const HolidaysManager = () => {
       setAddForm({ date: '', label: '', recurring: true });
       setAddErr('');
       load(year);
+      reloadPublicHolidays();
     } catch (e) { setAddErr(e.response?.data?.error || 'Erreur'); }
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer ce jour férié ?')) return;
-    try { await api.delete(`/holidays/${id}`); load(year); }
-    catch (e) { alert(e.response?.data?.error || 'Erreur'); }
+    try {
+      await api.delete(`/holidays/${id}`);
+      setConfirmDelete(null);
+      load(year);
+      reloadPublicHolidays();
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur lors de la suppression'); }
+  };
+
+  const handleSyncFromApi = async () => {
+    setSyncLoading(true);
+    try {
+      const r = await api.post('/holidays/sync-from-api', { year: importYear });
+      toast.success(`${r.data.imported} jours fériés importés pour ${importYear} (zone ${r.data.zone})`);
+      load(year);
+      reloadPublicHolidays();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erreur lors de l\'import depuis l\'API');
+    } finally {
+      setSyncLoading(false);
+    }
   };
 
   const monthLabel = (dateStr) => {
@@ -264,6 +319,24 @@ const HolidaysManager = () => {
         Les jours fériés sont automatiquement exclus du décompte des congés. Les jours <strong>récurrents</strong> s'appliquent chaque année sur le même jour/mois. Les jours <strong>ponctuels</strong> ne s'appliquent que pour la date exacte saisie (utile pour les fériés mobiles : Pâques, Ascension, etc.).
       </div>
 
+      {/* Zone + import depuis API */}
+      <div style={{ background: '#F9F8F6', borderRadius: 8, padding: '10px 12px', border: '1px solid #ECEAE4', marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 11, color: '#6B6860', fontWeight: 600 }}>Zone :</label>
+        <select value={zone} onChange={e => saveZone(e.target.value)} style={{ ...inputSt, fontSize: 11, width: 'auto' }}>
+          {HOLIDAY_ZONES.map(z => <option key={z.value} value={z.value}>{z.label}</option>)}
+        </select>
+        <div style={{ width: 1, height: 20, background: '#E4E0D8', flexShrink: 0 }} />
+        <label style={{ fontSize: 11, color: '#6B6860', fontWeight: 600 }}>Import API :</label>
+        <select value={importYear} onChange={e => setImportYear(Number(e.target.value))} style={{ ...inputSt, fontSize: 11, width: 'auto' }}>
+          {[curYear - 1, curYear, curYear + 1, curYear + 2].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button onClick={handleSyncFromApi} disabled={syncLoading}
+          style={{ ...btnSm, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', fontWeight: 700 }}>
+          {syncLoading ? '⏳…' : '⬇ Importer'}
+        </button>
+        <span style={{ fontSize: 10, color: '#9B9890' }}>depuis calendrier.api.gouv.fr</span>
+      </div>
+
       {/* Sélecteur d'année + bouton ajouter */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -272,7 +345,7 @@ const HolidaysManager = () => {
           <button onClick={() => setYear(y => y + 1)} style={{ ...btnSm, fontWeight: 800, lineHeight: 1 }}>›</button>
         </div>
         <button onClick={() => { setShowAdd(v => !v); setAddErr(''); }} style={{ ...btnSm, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D' }}>
-          + Ajouter
+          + Ajouter manuellement
         </button>
       </div>
 
@@ -316,7 +389,14 @@ const HolidaysManager = () => {
                 }}>
                   {h.recurring ? 'récurrent' : 'ponctuel'}
                 </span>
-                <button onClick={() => handleDelete(h.id)} title="Supprimer" style={{ ...btnSm, color: '#DC2626', border: '1px solid #FECACA', background: '#FEF2F2', padding: '2px 6px' }}>🗑</button>
+                {confirmDelete === h.id ? (
+                  <>
+                    <button onClick={() => handleDelete(h.id)} style={{ ...btnSm, color: '#DC2626', border: '1px solid #FECACA', background: '#FEF2F2', padding: '2px 8px', fontWeight: 700, fontSize: 10 }}>✓ Confirmer</button>
+                    <button onClick={() => setConfirmDelete(null)} style={{ ...btnSm, padding: '2px 8px', fontSize: 10 }}>✕</button>
+                  </>
+                ) : (
+                  <button onClick={() => setConfirmDelete(h.id)} title="Supprimer" style={{ ...btnSm, color: '#DC2626', border: '1px solid #FECACA', background: '#FEF2F2', padding: '2px 6px' }}>🗑</button>
+                )}
               </div>
             ))}
           </div>
@@ -325,6 +405,216 @@ const HolidaysManager = () => {
     </div>
   );
 };
+
+/* ─── Gestionnaire de vacances scolaires ─────────────────────── */
+const SchoolHolidaysManager = () => {
+  const { settings, setSettings, reloadSchoolHolidays } = useApp();
+
+  const getVal = (key, def = '') =>
+    Array.isArray(settings) ? (settings.find(s => s.key === key)?.value ?? def) : def;
+
+  const saveSetting = async (key, value) => {
+    await api.put(`/settings/${key}`, { value: String(value) });
+    setSettings(prev => {
+      const arr = Array.isArray(prev) ? prev : [];
+      if (arr.some(s => s.key === key))
+        return arr.map(s => s.key === key ? { ...s, value: String(value) } : s);
+      return [...arr, { key, value: String(value), type: 'string', description: '', group_name: 'conges' }];
+    });
+  };
+
+  const zone         = getVal('school_holidays_zone', 'Zone C');
+  const apiUrl       = getVal('school_holidays_api_url', 'https://data.education.gouv.fr/api/explore/v2.0');
+  const lastSync     = getVal('school_holidays_last_sync', '');
+  const checkUpdates = getVal('school_holidays_check_updates', 'true') === 'true';
+
+  const [syncLoading,  setSyncLoading]  = useState(false);
+  const [checkResult,  setCheckResult]  = useState(null);
+  const [checkLoading, setCheckLoading] = useState(false);
+  const [urlUnlocked,  setUrlUnlocked]  = useState(false);
+  const [editUrl,      setEditUrl]      = useState(apiUrl);
+  const [upcoming,     setUpcoming]     = useState([]);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const loadUpcoming = (z) => {
+    api.get(`/school-holidays?zone=${encodeURIComponent(z)}`)
+      .then(r => setUpcoming(Array.isArray(r.data) ? r.data.filter(h => h.end_date > today) : []))
+      .catch(() => {});
+  };
+
+  // Vérification des mises à jour au montage (si activée)
+  useEffect(() => {
+    if (!checkUpdates) return;
+    setCheckLoading(true);
+    api.get('/school-holidays/check-update')
+      .then(r => setCheckResult(r.data))
+      .catch(() => {})
+      .finally(() => setCheckLoading(false));
+  }, []);
+
+  useEffect(() => { loadUpcoming(zone); }, [zone]);
+
+  const handleSync = async () => {
+    setSyncLoading(true);
+    try {
+      const r = await api.post('/school-holidays/sync', { zone });
+      toast.success(`✅ ${r.data.imported} ajoutés, ${r.data.updated ?? 0} mis à jour pour ${zone}`);
+      setCheckResult(prev => prev ? { ...prev, updateAvailable: false, neverSynced: false } : null);
+      loadUpcoming(zone);
+      reloadSchoolHolidays();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erreur lors de la synchronisation');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleCheckNow = () => {
+    setCheckLoading(true);
+    api.get('/school-holidays/check-update')
+      .then(r => setCheckResult(r.data))
+      .catch(() => toast.error('Impossible de vérifier les mises à jour'))
+      .finally(() => setCheckLoading(false));
+  };
+
+  const handleUnlockUrl = () => {
+    toast.warning('⚠️ Modifier cette URL peut casser la synchronisation. Assurez-vous que la nouvelle adresse est correcte.', { duration: 6000 });
+    setUrlUnlocked(true);
+    setEditUrl(apiUrl);
+  };
+
+  const handleSaveUrl = async () => {
+    if (!editUrl.trim().startsWith('https://')) {
+      toast.error('L\'URL doit commencer par https://');
+      return;
+    }
+    await saveSetting('school_holidays_api_url', editUrl.trim());
+    setUrlUnlocked(false);
+    toast.success('URL de l\'API mise à jour');
+  };
+
+  const fmtDate  = (iso) => iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  const fmtShort = (iso) => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '';
+  const SCHOOL_ZONES = [{ value: 'Zone A', label: 'Zone A' }, { value: 'Zone B', label: 'Zone B' }, { value: 'Zone C', label: 'Zone C' }];
+
+  return (
+    <div style={{ fontSize: 13 }}>
+      <div style={{ fontSize: 12, color: '#9B9890', marginBottom: 12 }}>
+        Les vacances scolaires sont affichées en surbrillance discrète sur tous les calendriers. Elles sont synchronisées depuis le calendrier officiel du Ministère de l'Éducation nationale.
+      </div>
+
+      {/* Bannière mise à jour disponible */}
+      {checkResult?.updateAvailable && (
+        <div style={{ background: '#FFF8EC', border: '1px solid #FBBF24', borderRadius: 8, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>📅</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 12, color: '#92400E' }}>Mise à jour disponible</div>
+            <div style={{ fontSize: 11, color: '#92400E', opacity: .85 }}>
+              Le calendrier scolaire officiel a été mis à jour le {fmtDate(checkResult.apiModified)}.
+            </div>
+          </div>
+          <button onClick={handleSync} disabled={syncLoading} style={{ ...btnSm, background: '#FEF3C7', border: '1px solid #FBBF24', color: '#92400E', fontWeight: 700 }}>
+            {syncLoading ? '⏳…' : '⬇ Synchroniser'}
+          </button>
+        </div>
+      )}
+
+      {/* Bannière jamais synchronisé */}
+      {checkResult?.neverSynced && !checkResult?.updateAvailable && (
+        <div style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 8, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 18 }}>ℹ️</span>
+          <div style={{ flex: 1, fontSize: 12, color: '#0C4A6E' }}>
+            Aucune synchronisation effectuée. Cliquez sur "Synchroniser" pour importer le calendrier scolaire.
+          </div>
+        </div>
+      )}
+
+      {/* Zone + sync */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 11, color: '#6B6860', fontWeight: 600 }}>Zone scolaire :</label>
+        <select value={zone} onChange={e => { saveSetting('school_holidays_zone', e.target.value); reloadSchoolHolidays(); }}
+          style={{ ...inputSt, fontSize: 12, width: 'auto' }}>
+          {SCHOOL_ZONES.map(z => <option key={z.value} value={z.value}>{z.label}</option>)}
+        </select>
+        <button onClick={handleSync} disabled={syncLoading}
+          style={{ ...btnSm, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', fontWeight: 700 }}>
+          {syncLoading ? '⏳ Synchronisation…' : '⬇ Synchroniser maintenant'}
+        </button>
+        <button onClick={handleCheckNow} disabled={checkLoading}
+          style={{ ...btnSm, fontSize: 10 }}>
+          {checkLoading ? '…' : '🔄 Vérifier'}
+        </button>
+        {!checkLoading && checkResult && !checkResult.updateAvailable && !checkResult.neverSynced && (
+          <span style={{ fontSize: 11, color: '#15803D' }}>✅ À jour</span>
+        )}
+      </div>
+
+      {/* Info dernière sync */}
+      {lastSync && (
+        <div style={{ fontSize: 11, color: '#9B9890', marginBottom: 10 }}>
+          Dernière synchronisation : {fmtDate(lastSync)}
+          {checkResult?.recordsInDb != null && ` · ${checkResult.recordsInDb} périodes stockées`}
+        </div>
+      )}
+
+      {/* Option vérification auto */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 16, cursor: 'pointer' }}>
+        <input type="checkbox" checked={checkUpdates}
+          onChange={e => saveSetting('school_holidays_check_updates', String(e.target.checked))} />
+        <span>Vérifier automatiquement les mises à jour à l'ouverture de la configuration</span>
+      </label>
+
+      {/* URL API */}
+      <div style={{ background: '#F9F8F6', borderRadius: 8, padding: '10px 12px', border: '1px solid #ECEAE4', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6860', marginBottom: 6 }}>URL de l'API calendrier scolaire</div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {urlUnlocked ? (
+            <>
+              <input value={editUrl} onChange={e => setEditUrl(e.target.value)}
+                style={{ ...inputSt, flex: 1, fontSize: 11 }} />
+              <button onClick={handleSaveUrl} style={{ ...btnSm, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#15803D', fontWeight: 700 }}>💾 Sauvegarder</button>
+              <button onClick={() => { setUrlUnlocked(false); setEditUrl(apiUrl); }} style={btnSm}>✕ Annuler</button>
+            </>
+          ) : (
+            <>
+              <span style={{ flex: 1, fontSize: 11, color: '#9B9890', padding: '5px 8px', background: '#fff', borderRadius: 5, border: '1px solid #E4E0D8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{apiUrl}</span>
+              <button onClick={handleUnlockUrl} style={{ ...btnSm, color: '#C5753A', border: '1px solid #F5E0C8' }} title="Modifier l'URL (avancé)">🔓 Modifier</button>
+            </>
+          )}
+        </div>
+        <div style={{ fontSize: 10, color: '#B0ACA5', marginTop: 4 }}>Ne modifier que si l'adresse officielle de l'API gouvernementale a changé.</div>
+      </div>
+
+      {/* Aperçu vacances à venir */}
+      {upcoming.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#6B6860', marginBottom: 6 }}>
+            Prochaines vacances stockées ({zone})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {upcoming.slice(0, 8).map(h => (
+              <div key={`${h.id}-${h.start_date}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: '#fff', borderRadius: 8, border: '1px solid #ECEAE4' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366F1', flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12 }}>{h.description}</span>
+                <span style={{ fontSize: 11, color: '#9B9890', whiteSpace: 'nowrap' }}>
+                  {fmtShort(h.start_date)} → {fmtShort(h.end_date)}
+                </span>
+                {h.annee_scolaire && (
+                  <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 8, background: '#EEF2FF', color: '#4F46E5', fontWeight: 600 }}>{h.annee_scolaire}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {upcoming.length === 0 && lastSync && (
+        <div style={{ color: '#9B9890', fontSize: 12 }}>Aucune prochaine vacance stockée pour {zone}.</div>
+      )}
+    </div>
+  );
+};
+
 
 const btnSm = {
   padding: '4px 10px', border: '1px solid #E4E0D8', borderRadius: 6,

@@ -75,7 +75,25 @@ router.get('/', requireAuth, (req, res) => {
   // ── task-types ────────────────────────────────────────────────
   const taskTypes = db_.all('SELECT * FROM task_types ORDER BY sort_order, slug', []);
 
-  res.json({ staff, teams, functions, leaveTypes, leaves, settings, taskTypes });
+  // ── jours fériés (pour l'affichage dans les calendriers) ─────
+  // On retourne tous les enregistrements bruts : l'expansion année est faite côté frontend
+  const publicHolidays = db_.all('SELECT * FROM public_holidays ORDER BY date', []);
+
+  // ── vacances scolaires (±2 ans autour d'aujourd'hui, zone configurée) ────
+  const schoolZoneSetting = db_.get("SELECT value FROM settings WHERE key='school_holidays_zone'");
+  const schoolZone        = schoolZoneSetting?.value || 'Zone C';
+  const yearNow           = new Date().getFullYear();
+  const schoolHolidays    = db_.all(
+    `SELECT * FROM school_holidays
+     WHERE zone = ?
+       AND start_date < ?
+       AND end_date   > ?
+     ORDER BY start_date`,
+    [schoolZone, `${yearNow + 2}-01-01`, `${yearNow - 1}-01-01`]
+  );
+
+  res.json({ staff, teams, functions, leaveTypes, leaves, settings, taskTypes,
+             publicHolidays, schoolHolidays });
 });
 
 module.exports = router;

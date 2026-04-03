@@ -1,11 +1,27 @@
 // routes/holidays.js — Gestion des jours fériés configurables
 'use strict';
 const router = require('express').Router();
+const rateLimit = require('express-rate-limit');
 const { db_ }                               = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { fetchJson }                         = require('../utils/http-proxy');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'superadmin')];
+
+const VALID_ZONES = new Set([
+  'metropole', 'alsace-moselle', 'guadeloupe', 'martinique', 'mayotte',
+  'nouvelle-caledonie', 'polynesie-francaise', 'saint-barthelemy',
+  'saint-martin', 'saint-pierre-et-miquelon', 'wallis-et-futuna', 'la-reunion',
+]);
+
+const syncLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 heure
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de synchronisations, réessayez dans une heure' },
+});
 
 // ── GET /api/holidays ─────────────────────────────────────────
 // Retourne tous les jours fériés (+ expansion des récurrents pour une année donnée)
@@ -79,6 +95,54 @@ router.delete('/:id', ...ADMIN, (req, res) => {
   db_.run('DELETE FROM public_holidays WHERE id=?', [h.id]);
   auditLog(req, 'HOLIDAY_DELETE', 'public_holidays', h.id, h, null);
   res.json({ message: 'Jour férié supprimé' });
+});
+
+// ── POST /api/holidays/sync-from-api ─────────────────────────
+// Admin — importe les jours fériés depuis l'API calendrier.api.gouv.fr
+// pour l'année demandée (ponctuel : recurring=0).
+router.post('/sync-from-api', ...ADMIN, syncLimiter, async (req, res) => {
+  const { year } = req.body;
+  const importYear = year ? parseInt(year, 10) : new Date().getFullYear();
+  if (isNaN(importYear) || importYear < 2020 || importYear > 2040)
+    return res.status(400).json({ error: 'Année invalide (2020–2040)' });
+
+  const zoneSetting   = db_.get("SELECT value FROM settings WHERE key='public_holidays_zone'");
+  const apiUrlSetting = db_.get("SELECT value FROM settings WHERE key='public_holidays_api_url'");
+  const zone    = zoneSetting?.value   || 'metropole';
+  const apiBase = apiUrlSetting?.value || 'https://calendrier.api.gouv.fr/jours-feries/';
+
+  if (!VALID_ZONES.has(zone))
+    return res.status(400).json({ error: 'Zone configurée invalide' });
+
+  const url = `${apiBase}${encodeURIComponent(zone)}/${importYear}.json`;
+
+  try {
+    const data = await fetchJson(url);
+    if (typeof data !== 'object' || Array.isArray(data))
+      return res.status(502).json({ error: 'Format de réponse inattendu' });
+
+    const entries = Object.entries(data);
+    if (entries.length === 0)
+      return res.json({ imported: 0, skipped: 0, year: importYear, zone });
+
+    const insert = db_.run.bind(null);
+    let imported = 0, skipped = 0;
+    const stmt = require('../db/database').getDb().prepare(
+      'INSERT OR IGNORE INTO public_holidays (date, label, recurring) VALUES (?, ?, 0)'
+    );
+    require('../db/database').getDb().transaction(() => {
+      for (const [date, label] of entries) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+        const r = stmt.run(date, String(label).slice(0, 100));
+        if (r.changes > 0) imported++; else skipped++;
+      }
+    })();
+
+    auditLog(req, 'HOLIDAYS_SYNC_API', 'public_holidays', null, null, { year: importYear, zone, imported });
+    res.json({ imported, skipped, year: importYear, zone });
+  } catch (e) {
+    res.status(502).json({ error: `Impossible de contacter l'API : ${e.message}` });
+  }
 });
 
 module.exports = router;

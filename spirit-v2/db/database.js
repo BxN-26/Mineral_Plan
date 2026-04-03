@@ -799,6 +799,56 @@ function getDb() {
   // Nettoyage au démarrage : supprimer les tokens expirés depuis plus de 24h
   _db.prepare(`DELETE FROM password_reset_tokens WHERE created_at < datetime('now', '-24 hours')`).run();
 
+  // ── Migration : paramètres zone jours fériés ─────────────────────────────
+  const holidaysZoneDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='holidays_zone_settings'").get();
+  if (!holidaysZoneDone) {
+    const seed = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed.run('public_holidays_zone', 'metropole', 'string',
+      'Zone pour l\'import des jours fériés depuis l\'API gouvernement (metropole, alsace-moselle, guadeloupe, martinique, la-reunion…)', 'conges');
+    seed.run('public_holidays_api_url', 'https://calendrier.api.gouv.fr/jours-feries/', 'string',
+      'URL de base de l\'API jours fériés gouvernement (ne pas modifier sauf si l\'URL change)', 'conges');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('holidays_zone_settings')").run();
+  }
+
+  // ── Migration : table vacances scolaires ─────────────────────────────────
+  const schoolHolDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='school_holidays_table'").get();
+  if (!schoolHolDone) {
+    _db.exec(`
+      CREATE TABLE IF NOT EXISTS school_holidays (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        zone           TEXT NOT NULL,        -- 'Zone A', 'Zone B', 'Zone C'
+        description    TEXT NOT NULL,        -- 'Vacances de la Toussaint'
+        start_date     TEXT NOT NULL,        -- YYYY-MM-DD (heure Paris — premier jour de vacances)
+        end_date       TEXT NOT NULL,        -- YYYY-MM-DD (heure Paris — premier jour de rentrée, exclusif)
+        annee_scolaire TEXT,                 -- '2025-2026'
+        created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_sh_zone_start_desc ON school_holidays(zone, start_date, description);
+      CREATE INDEX IF NOT EXISTS idx_sh_start ON school_holidays(start_date);
+      CREATE INDEX IF NOT EXISTS idx_sh_end   ON school_holidays(end_date);
+    `);
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('school_holidays_table')").run();
+  }
+
+  // ── Migration : paramètres vacances scolaires ─────────────────────────────
+  const schoolHolSettingsDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='school_holidays_settings'").get();
+  if (!schoolHolSettingsDone) {
+    const seed = _db.prepare("INSERT OR IGNORE INTO settings (key, value, type, description, group_name) VALUES (?,?,?,?,?)");
+    seed.run('school_holidays_zone', 'Zone C', 'string',
+      'Zone scolaire pour l\'affichage des vacances dans les calendriers (Zone A, Zone B, Zone C)', 'conges');
+    seed.run('school_holidays_api_url', 'https://data.education.gouv.fr/api/explore/v2.0', 'string',
+      'URL de base de l\'API calendrier scolaire (ne pas modifier sauf si l\'URL change)', 'conges');
+    seed.run('school_holidays_api_dataset', 'fr-en-calendrier-scolaire', 'string',
+      'Identifiant du dataset calendrier scolaire dans l\'API', 'conges');
+    seed.run('school_holidays_api_modified', '', 'string',
+      'Horodatage de la dernière version connue du dataset externe (géré automatiquement)', 'conges');
+    seed.run('school_holidays_last_sync', '', 'string',
+      'Date de la dernière synchronisation réussie des vacances scolaires (géré automatiquement)', 'conges');
+    seed.run('school_holidays_check_updates', 'true', 'boolean',
+      'Vérifier automatiquement les mises à jour du calendrier scolaire à l\'ouverture de la configuration', 'conges');
+    _db.prepare("INSERT OR IGNORE INTO _migrations(name) VALUES('school_holidays_settings')").run();
+  }
+
   return _db;
 }
 

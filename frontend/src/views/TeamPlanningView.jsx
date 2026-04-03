@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import SpanDetailModal from '../components/SpanDetailModal';
 import { weekStart, todayDayIdx } from '../utils/dates';
+import { getDayDecorations } from '../utils/holidayUtils';
 
 const DAYS     = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const DAYS_SH  = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -38,7 +39,7 @@ function computeColumns(items) {
 
 
 /* ─── Grille lecture seule (agenda) ────────────────────────── */
-const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], courseSlotsFns = [], onSpanClick }) => {
+const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], courseSlotsFns = [], onSpanClick, publicHolidays = [], schoolHolidays = [] }) => {
   return (
     <div style={{ display: 'flex', overflowX: 'auto' }}>
       {/* Colonne heures */}
@@ -53,6 +54,8 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
       {/* Colonnes jours */}
       {dates.map((date, d) => {
         const isToday = date.toDateString() === new Date().toDateString();
+        const dateStr = date.toLocaleDateString('en-CA');
+        const decos = getDayDecorations(dateStr, publicHolidays, schoolHolidays);
         const daySpans = spans[d] || [];
         const { result: placedSpans, colCount } = computeColumns(daySpans);
         return (
@@ -61,11 +64,12 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
             <div style={{
               textAlign: 'center', padding: '5px 2px', fontSize: 11, fontWeight: 700,
               color: isToday ? '#C5753A' : '#1E2235',
-              background: isToday ? '#FFF4EC' : '#F5F3EF',
+              background: decos.isHoliday ? 'rgba(239,68,68,0.07)' : decos.isSchoolHoliday ? 'rgba(99,102,241,0.06)' : isToday ? '#FFF4EC' : '#F5F3EF',
               borderBottom: `2px solid ${isToday ? '#C5753A' : '#ECEAE4'}`,
-              whiteSpace: 'nowrap',
             }}>
-              {DAYS[d].slice(0, 3)} {date.getDate()}/{date.getMonth() + 1}
+              <div style={{ whiteSpace: 'nowrap' }}>{DAYS[d].slice(0, 3)} {date.getDate()}/{date.getMonth() + 1}</div>
+              {decos.isHoliday && <div style={{ fontSize: 7, color: '#DC2626', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔴 {decos.holidayLabel}</div>}
+              {decos.isSchoolHoliday && <div style={{ fontSize: 7, color: '#4F46E5', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🏫 {decos.schoolLabel}</div>}
             </div>
             {/* Zone grille */}
             <div style={{
@@ -178,7 +182,7 @@ const ROGrid = ({ spans, staff, functions, dates, ttMap = {}, courseSlots = [], 
 /* ─── Vue principale ─────────────────────────────────────────── */
 const TeamPlanningView = () => {
   const { user }                                             = useAuth();
-  const { staff, teams, functions, taskTypes, schedules, loadWeekSchedules, settings } = useApp();
+  const { staff, teams, functions, taskTypes, schedules, loadWeekSchedules, settings, publicHolidays, schoolHolidays } = useApp();
   const [wk, setWk]                                          = useState(0);
   const [selectedTeamIds, setSelectedTeamIds]                = useState(null); // null = toutes
   const [hiddenStaffIds,  setHiddenStaffIds]                 = useState(new Set());
@@ -525,6 +529,7 @@ const TeamPlanningView = () => {
       {/* Grille */}
       <div style={{ flex: 1, overflow: 'auto', padding: 12 }}>
         <ROGrid spans={displaySpans} staff={filteredTeamStaff} functions={functions} dates={displayDates} ttMap={ttMap} courseSlots={courseSlots} courseSlotsFns={courseSlotsFns}
+          publicHolidays={publicHolidays} schoolHolidays={schoolHolidays}
           onSpanClick={(sp, date) => setSelectedSpan({ sp, date })} />
       </div>
       {selectedSpan && (() => {
