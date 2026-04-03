@@ -1,0 +1,54 @@
+{
+  "name": "mineral-spirit-installer",
+  "version": "1.0.0",
+  "description": "Installateur graphique Minéral Spirit v2 — cross-platform (Linux / Windows)",
+  "main": "main.js",
+  "scripts": {
+    "start":       "electron .",
+    "build:linux": "electron-builder --linux AppImage",
+    "build:win":   "electron-builder --win nsis",
+    "build:all":   "electron-builder -lw"
+  },
+  "build": {
+    "appId":        "fr.mineral-spirit.installer",
+    "productName":  "Mineral Spirit Installer",
+    "copyright":    "Minéral Spirit v2",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "scripts/**/*"
+    ],
+    "extraResources": [
+      {
+        "from":   "../spirit-v2",
+        "to":     "app-source/spirit-v2",
+        "filter": ["**/*", "!node_modules/**", "!db/*.db", "!.env", "!uploads/**"]
+      },
+      {
+        "from":   "../frontend",
+        "to":     "app-source/frontend",
+        "filter": ["**/*", "!node_modules/**", "!dist/**"]
+      }
+    ],
+    "linux": {
+      "target":     [{ "target": "AppImage", "arch": ["x64"] }],
+      "category":   "Utility",
+      "maintainer": "Minéral Spirit"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick":                        false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut":           false,
+      "installerLanguages":              ["fr_FR"],
+      "language":                        "1036"
+    }
+  },
+  "devDependencies": {
+    "electron":         "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

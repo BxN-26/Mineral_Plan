@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Minéral Spirit — Installateur</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ── EN-TÊTE ──────────────────────────────────────────────────────────── -->
+  <header id="app-header">
+    <div class="header-brand">
+      <span class="brand-icon">⛰</span>
+      <span class="brand-name">Minéral Spirit</span>
+      <span class="brand-sep">—</span>
+      <span class="brand-sub">Installateur</span>
+    </div>
+    <!-- Barres de progression étapes 1-6, cachée pendant install/done -->
+    <nav id="step-nav" aria-label="Étapes">
+      <div class="step-dot done-color" data-dot="1"><span>1</span></div>
+      <div class="step-line" data-line="1"></div>
+      <div class="step-dot" data-dot="2"><span>2</span></div>
+      <div class="step-line" data-line="2"></div>
+      <div class="step-dot" data-dot="3"><span>3</span></div>
+      <div class="step-line" data-line="3"></div>
+      <div class="step-dot" data-dot="4"><span>4</span></div>
+      <div class="step-line" data-line="4"></div>
+      <div class="step-dot" data-dot="5"><span>5</span></div>
+      <div class="step-line" data-line="5"></div>
+      <div class="step-dot" data-dot="6"><span>6</span></div>
+    </nav>
+  </header>
+
+  <!-- ── CORPS PRINCIPAL ──────────────────────────────────────────────────── -->
+  <main id="app-main">
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 1 — BIENVENUE
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step active" data-step="1">
+      <div class="step-title-row">
+        <h1 class="step-title">Bienvenue</h1>
+        <p class="step-subtitle">Avant de commencer, préparez les informations suivantes.</p>
+      </div>
+
+      <div class="checklist">
+
+        <div class="checklist-item">
+          <span class="check-icon">🌐</span>
+          <div class="check-body">
+            <strong>Adresse de l'application</strong>
+            <p>Un nom de domaine (<code>planning.monclub.fr</code>) si votre serveur est sur
+               internet, ou l'adresse IP de votre serveur pour un usage en réseau local.</p>
+            <div class="check-alert">
+              ⚠️ Si vous utilisez un nom de domaine, il doit <strong>déjà pointer vers ce
+              serveur en DNS</strong> avant de continuer (vérifiable chez votre hébergeur).
+            </div>
+          </div>
+        </div>
+
+        <div class="checklist-item">
+          <span class="check-icon">👤</span>
+          <div class="check-body">
+            <strong>Compte administrateur</strong>
+            <p>Votre prénom, nom, adresse e-mail et un mot de passe (minimum 8 caractères)
+               pour le premier compte administrateur de l'application.</p>
+          </div>
+        </div>
+
+        <div class="checklist-item">
+          <span class="check-icon">📧</span>
+          <div class="check-body">
+            <strong>Email SMTP <span class="badge-optional">optionnel</span></strong>
+            <p>Les identifiants d'une messagerie professionnelle pour permettre la
+               réinitialisation de mot de passe par email. Vous pourrez configurer cela
+               après l'installation.</p>
+          </div>
+        </div>
+
+        <div class="checklist-item">
+          <span class="check-icon">⏱</span>
+          <div class="check-body">
+            <strong>Durée estimée : 3 à 10 minutes</strong>
+            <p>L'installation télécharge et compile les dépendances via npm. Une connexion
+               internet est requise.</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 2 — TYPE DE DÉPLOIEMENT
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step" data-step="2">
+      <div class="step-title-row">
+        <h1 class="step-title">Type de déploiement</h1>
+        <p class="step-subtitle">Choisissez comment sera accédée votre application.</p>
+      </div>
+
+      <div class="deploy-grid">
+
+        <div class="deploy-card selected" data-deploy="public">
+          <div class="deploy-icon">🌐</div>
+          <div class="deploy-body">
+            <strong>Serveur public (HTTPS)</strong>
+            <p>Votre serveur est accessible depuis internet. Caddy sera configuré pour le
+               HTTPS automatique via Let's Encrypt.</p>
+            <span class="deploy-badge recommend">Recommandé</span>
+          </div>
+        </div>
+
+        <div class="deploy-card" data-deploy="local">
+          <div class="deploy-icon">🏢</div>
+          <div class="deploy-body">
+            <strong>Réseau local / Intranet</strong>
+            <p>L'application sera accessible uniquement depuis votre réseau interne
+               (LAN). Accès par adresse IP ou nom d'hôte local.</p>
+          </div>
+        </div>
+
+        <div class="deploy-card" data-deploy="localhost">
+          <div class="deploy-icon">💻</div>
+          <div class="deploy-body">
+            <strong>Poste local (test)</strong>
+            <p>Installation sur cette machine uniquement. Accessible via
+               <code>localhost</code>. Idéal pour tester ou développer.</p>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 3 — CONFIGURATION RÉSEAU
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step" data-step="3">
+      <div class="step-title-row">
+        <h1 class="step-title">Configuration</h1>
+        <p class="step-subtitle">Répertoire d'installation et adresse réseau.</p>
+      </div>
+
+      <div class="form-grid">
+
+        <!-- Répertoire d'installation -->
+        <div class="field-group full">
+          <label class="field-label" for="input-install-dir">Répertoire d'installation</label>
+          <div class="input-with-btn">
+            <input id="input-install-dir" class="field-input" type="text"
+                   placeholder="/opt/mineral-spirit">
+            <button class="btn btn-sm btn-secondary" id="btn-browse-dir" type="button">
+              Parcourir…
+            </button>
+          </div>
+          <div class="field-hint">L'application sera copiée dans ce répertoire.</div>
+          <div class="field-error" id="err-install-dir"></div>
+        </div>
+
+        <!-- Domaine / IP — label dynamique selon le type de déploiement -->
+        <div class="field-group full" id="field-domain-wrap">
+          <label class="field-label" id="label-domain" for="input-domain">
+            Nom de domaine
+          </label>
+          <input id="input-domain" class="field-input" type="text"
+                 placeholder="planning.monclub.fr">
+          <div class="field-hint" id="hint-domain">
+            Le domaine doit déjà pointer vers ce serveur en DNS.
+          </div>
+          <div class="field-error" id="err-domain"></div>
+        </div>
+
+        <!-- Port backend -->
+        <div class="field-group half">
+          <label class="field-label" for="input-port">Port du serveur backend</label>
+          <input id="input-port" class="field-input" type="number"
+                 min="1024" max="65535" value="3000">
+          <div class="field-hint">Port interne de l'API Node.js (défaut : 3000).</div>
+          <div class="field-error" id="err-port"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 4 — COMPTE ADMINISTRATEUR
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step" data-step="4">
+      <div class="step-title-row">
+        <h1 class="step-title">Compte administrateur</h1>
+        <p class="step-subtitle">Ces informations créeront le premier compte de l'application.</p>
+      </div>
+
+      <div class="form-grid">
+
+        <div class="field-group half">
+          <label class="field-label" for="input-firstname">Prénom *</label>
+          <input id="input-firstname" class="field-input" type="text"
+                 autocomplete="given-name" placeholder="Marie">
+          <div class="field-error" id="err-firstname"></div>
+        </div>
+
+        <div class="field-group half">
+          <label class="field-label" for="input-lastname">Nom *</label>
+          <input id="input-lastname" class="field-input" type="text"
+                 autocomplete="family-name" placeholder="Dupont">
+          <div class="field-error" id="err-lastname"></div>
+        </div>
+
+        <div class="field-group full">
+          <label class="field-label" for="input-email">Adresse email *</label>
+          <input id="input-email" class="field-input" type="email"
+                 autocomplete="email" placeholder="marie.dupont@exemple.fr">
+          <div class="field-error" id="err-email"></div>
+        </div>
+
+        <div class="field-group full">
+          <label class="field-label" for="input-password">Mot de passe *</label>
+          <div class="pwd-wrap">
+            <input id="input-password" class="field-input" type="password"
+                   autocomplete="new-password" placeholder="Minimum 8 caractères">
+            <button class="pwd-toggle" type="button" id="btn-toggle-pwd"
+                    aria-label="Afficher/masquer le mot de passe">👁</button>
+          </div>
+          <!-- Indicateur de force -->
+          <div class="pwd-strength" id="pwd-strength">
+            <div class="pwd-strength-bar" id="pwd-strength-bar"></div>
+          </div>
+          <div class="pwd-strength-label" id="pwd-strength-label"></div>
+          <div class="field-error" id="err-password"></div>
+        </div>
+
+        <div class="field-group full">
+          <label class="field-label" for="input-password-confirm">
+            Confirmer le mot de passe *
+          </label>
+          <div class="pwd-wrap">
+            <input id="input-password-confirm" class="field-input" type="password"
+                   autocomplete="new-password" placeholder="Répétez le mot de passe">
+            <button class="pwd-toggle" type="button" id="btn-toggle-pwd2"
+                    aria-label="Afficher/masquer le mot de passe">👁</button>
+          </div>
+          <div class="field-error" id="err-password-confirm"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 5 — EMAIL SMTP (OPTIONNEL)
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step" data-step="5">
+      <div class="step-title-row">
+        <h1 class="step-title">Email SMTP <span class="badge-optional">optionnel</span></h1>
+        <p class="step-subtitle">
+          Permet l'envoi automatique de notifications et de liens de réinitialisation de
+          mot de passe. Vous pouvez ignorer cette étape et configurer cela plus tard.
+        </p>
+      </div>
+
+      <!-- Toggle activation -->
+      <div class="toggle-row">
+        <label class="toggle-label" for="smtp-enabled">
+          <input type="checkbox" id="smtp-enabled" role="switch">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          Activer l'envoi d'emails
+        </label>
+      </div>
+
+      <!-- Champs SMTP (affichés si toggle activé) -->
+      <div id="smtp-fields" class="smtp-fields hidden">
+        <div class="form-grid">
+
+          <div class="field-group full">
+            <label class="field-label" for="smtp-provider">Fournisseur de messagerie</label>
+            <select id="smtp-provider" class="field-input">
+              <option value="ovh">OVH (ssl0.ovh.net)</option>
+              <option value="gandi">Gandi (mail.gandi.net)</option>
+              <option value="infomaniak">Infomaniak (mail.infomaniak.com)</option>
+              <option value="ionos">IONOS (smtp.ionos.fr)</option>
+              <option value="gmail">Gmail (smtp.gmail.com)</option>
+              <option value="o2switch">o2switch</option>
+              <option value="custom">Autre / personnalisé</option>
+            </select>
+          </div>
+
+          <div class="field-group half">
+            <label class="field-label" for="smtp-host">Serveur SMTP</label>
+            <input id="smtp-host" class="field-input" type="text"
+                   placeholder="smtp.exemple.fr">
+            <div class="field-error" id="err-smtp-host"></div>
+          </div>
+
+          <div class="field-group half">
+            <label class="field-label" for="smtp-port">Port SMTP</label>
+            <input id="smtp-port" class="field-input" type="number"
+                   min="1" max="65535" value="587">
+          </div>
+
+          <div class="field-group full">
+            <label class="field-label" for="smtp-user">Identifiant / Email SMTP</label>
+            <input id="smtp-user" class="field-input" type="email"
+                   autocomplete="email" placeholder="envoi@exemple.fr">
+            <div class="field-error" id="err-smtp-user"></div>
+          </div>
+
+          <div class="field-group full">
+            <label class="field-label" for="smtp-pass">Mot de passe SMTP</label>
+            <input id="smtp-pass" class="field-input" type="password"
+                   autocomplete="current-password">
+            <div class="field-error" id="err-smtp-pass"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <p class="step-note">
+        ℹ️ Cette configuration pourra être modifiée dans <strong>Paramètres → Email</strong>
+        depuis l'interface de l'application.
+      </p>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 6 — RÉCAPITULATIF
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step" data-step="6">
+      <div class="step-title-row">
+        <h1 class="step-title">Récapitulatif</h1>
+        <p class="step-subtitle">Vérifiez les informations avant de lancer l'installation.</p>
+      </div>
+
+      <div id="recap-content">
+        <!-- Rempli dynamiquement par app.js -->
+      </div>
+
+      <div class="confirm-row">
+        <label class="confirm-label" for="confirm-check">
+          <input type="checkbox" id="confirm-check">
+          J'ai vérifié ces informations et je souhaite lancer l'installation.
+        </label>
+        <div class="field-error" id="err-confirm"></div>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 7 — INSTALLATION EN COURS
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step step-install" data-step="7">
+      <div class="install-header">
+        <div class="install-progress-wrap">
+          <div class="install-progress-track">
+            <div class="install-progress-bar" id="install-progress-bar"></div>
+          </div>
+          <span class="install-progress-pct" id="install-progress-pct">0 %</span>
+        </div>
+      </div>
+
+      <div id="task-list" class="task-list">
+        <!-- Rempli dynamiquement -->
+      </div>
+
+      <!-- Zone de logs -->
+      <details class="log-details" id="log-details">
+        <summary>Afficher les logs détaillés</summary>
+        <div class="log-area" id="log-area"></div>
+      </details>
+    </section>
+
+    <!-- ════════════════════════════════════════════════════════════════
+         ÉTAPE 8 — TERMINÉ
+         ════════════════════════════════════════════════════════════════ -->
+    <section class="step step-done" data-step="8">
+      <div class="done-icon">✅</div>
+      <h1 class="done-title">Installation réussie !</h1>
+      <p class="done-sub">Minéral Spirit est installé et démarré.</p>
+
+      <div class="done-url-box" id="done-url-box">
+        <span class="done-url-label">Votre application est disponible à :</span>
+        <a class="done-url-link" id="done-url-link" href="#" tabindex="0"></a>
+      </div>
+
+      <div class="done-creds">
+        <div class="done-creds-title">Identifiants du compte administrateur</div>
+        <div class="done-creds-row">
+          <span class="done-creds-key">Email</span>
+          <span class="done-creds-val" id="done-email"></span>
+        </div>
+        <div class="done-creds-row">
+          <span class="done-creds-key">Mot de passe</span>
+          <span class="done-creds-val done-creds-pwd">
+            <span id="done-password-hidden">••••••••</span>
+            <button class="done-reveal-btn" id="done-reveal-btn" type="button">
+              Afficher
+            </button>
+          </span>
+        </div>
+        <div class="done-creds-note">
+          Conservez ces informations dans un endroit sécurisé.<br>
+          Il vous sera demandé de changer votre mot de passe à la première connexion.
+        </div>
+      </div>
+
+      <div class="done-actions">
+        <button class="btn btn-primary btn-lg" id="btn-open-app" type="button">
+          Ouvrir dans le navigateur
+        </button>
+        <button class="btn btn-secondary" id="btn-close-app" type="button">
+          Fermer l'installateur
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── PIED DE PAGE ──────────────────────────────────────────────────────── -->
+  <footer id="app-footer">
+    <button class="btn btn-secondary" id="btn-back" type="button">← Retour</button>
+    <button class="btn btn-primary"   id="btn-next" type="button">Suivant →</button>
+  </footer>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
