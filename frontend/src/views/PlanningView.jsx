@@ -354,15 +354,18 @@ const DayColumn = memo(({ dayIndex, spans, staff, mode, courseSlots, assignments
 /*  Panneau Modèles (templates)                                    */
 /* ═══════════════════════════════════════════════════════════════ */
 const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
-  const [templates,   setTemplates]   = useState([]);
-  const [loading,     setLoading]     = useState(false);
-  const [showCreate,  setShowCreate]  = useState(false);
-  const [newName,     setNewName]     = useState('');
-  const [saving,      setSaving]      = useState(false);
-  const [applying,    setApplying]    = useState(null); // id template en cours d'application
-  const [applyFrom,   setApplyFrom]   = useState(currentWeek);
-  const [applyTo,     setApplyTo]     = useState(currentWeek);
-  const [applyStatus, setApplyStatus] = useState(null);
+  const [templates,          setTemplates]          = useState([]);
+  const [loading,            setLoading]            = useState(false);
+  const [showCreate,         setShowCreate]         = useState(false);
+  const [newName,            setNewName]            = useState('');
+  const [saving,             setSaving]             = useState(false);
+  const [applying,           setApplying]           = useState(null); // id template en cours d'application
+  const [applyFrom,          setApplyFrom]          = useState(currentWeek);
+  const [applyTo,            setApplyTo]            = useState(currentWeek);
+  const [applyStatus,        setApplyStatus]        = useState(null);
+  const [skipPublicHdays,    setSkipPublicHdays]    = useState(false);
+  const [skipSchoolHdays,    setSkipSchoolHdays]    = useState(false);
+  const [onlySchoolHdays,    setOnlySchoolHdays]    = useState(false);
 
   const load = async () => {
     if (!fn) return;
@@ -404,10 +407,17 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
   const handleApply = async (tplId) => {
     setApplyStatus('loading');
     try {
-      const r = await api.post(`/templates/${tplId}/apply`, { from: applyFrom, to: applyTo });
-      setApplyStatus(`✅ ${r.data.applied} semaine(s) générée(s)`);
+      const r = await api.post(`/templates/${tplId}/apply`, {
+        from: applyFrom,
+        to:   applyTo,
+        skip_public_holidays:  skipPublicHdays,
+        skip_school_holidays:  skipSchoolHdays,
+        only_school_holidays:  onlySchoolHdays,
+      });
+      const skippedMsg = r.data.skipped ? ` · ${r.data.skipped} sautée(s)` : '';
+      setApplyStatus(`✅ ${r.data.applied} semaine(s) générée(s)${skippedMsg}`);
       onApplied?.();
-      setTimeout(() => { setApplying(null); setApplyStatus(null); }, 2500);
+      setTimeout(() => { setApplying(null); setApplyStatus(null); }, 3000);
     } catch (e) { setApplyStatus('❌ ' + (e.response?.data?.error || e.message)); }
   };
 
@@ -467,8 +477,24 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
                   <span style={{ color: '#9B9890', fontSize: 10 }}>→</span>
                   <input type="date" value={applyTo} onChange={e => setApplyTo(e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} />
                 </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 7 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#5B5855', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={skipPublicHdays} onChange={e => setSkipPublicHdays(e.target.checked)} />
+                    Sauter les semaines avec jour(s) férié(s)
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#5B5855', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={skipSchoolHdays} onChange={e => { setSkipSchoolHdays(e.target.checked); if (e.target.checked) setOnlySchoolHdays(false); }} />
+                    Sauter les semaines de vacances scolaires
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#5B5855', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={onlySchoolHdays} onChange={e => { setOnlySchoolHdays(e.target.checked); if (e.target.checked) setSkipSchoolHdays(false); }} />
+                    Uniquement pendant les vacances scolaires
+                  </label>
+                </div>
                 {applyStatus ? (
-                  <div style={{ fontSize: 10, padding: '4px 0', color: applyStatus.startsWith('✅') ? '#15803D' : '#DC2626' }}>{applyStatus}</div>
+                  <div style={{ fontSize: 10, padding: '4px 0', color: applyStatus.startsWith('✅') ? '#15803D' : applyStatus === 'loading' ? '#9B9890' : '#DC2626' }}>
+                    {applyStatus === 'loading' ? '⏳ Génération…' : applyStatus}
+                  </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={() => handleApply(t.id)} style={{ flex: 1, padding: '5px', background: '#1E2235', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontSize: 10, fontWeight: 600, fontFamily: 'inherit' }}>
@@ -900,8 +926,12 @@ const PlanningView = () => {
   const [leaves,           setLeaves]           = useState([]);
   const [declarations,     setDeclarations]     = useState([]);
 
-  const loadCourseSlots = useCallback(async () => {
-    try { const r = await api.get('/course-slots'); setCourseSlots(Array.isArray(r.data) ? r.data : []); }
+  const loadCourseSlots = useCallback(async (week) => {
+    try {
+      const url = week ? `/course-slots?week=${week}` : '/course-slots';
+      const r = await api.get(url);
+      setCourseSlots(Array.isArray(r.data) ? r.data : []);
+    }
     catch (_) {}
   }, []);
 
@@ -918,11 +948,12 @@ const PlanningView = () => {
     } catch (_) {}
   }, []);
 
-  useEffect(() => { loadCourseSlots(); }, []);
-
   useEffect(() => { if (!activeFn && functions.length) setActiveFn(functions[0].slug); }, [functions]);
 
   const currentWeek = useMemo(() => weekStart(wk), [wk]);
+
+  // Recharge les créneaux de cours à chaque changement de semaine (filtrage par saison côté serveur)
+  useEffect(() => { loadCourseSlots(currentWeek); }, [currentWeek]);
 
   useEffect(() => { loadWeekSchedules(currentWeek); }, [currentWeek]);
 
@@ -1609,7 +1640,7 @@ const PlanningView = () => {
         {/* Modal gestion des créneaux de cours */}
         {showCourseModal && fn && (
           <CourseSlotModal fn={fn} courseSlots={courseSlots.filter(cs => cs.fn_slug === fn.slug)}
-            onClose={() => setShowCourseModal(false)} onChanged={loadCourseSlots} />
+            onClose={() => setShowCourseModal(false)} onChanged={() => loadCourseSlots(currentWeek)} />
         )}
         {/* Popup assignation moniteurs (Option C) */}
         {courseGroupModal && (
@@ -1828,7 +1859,7 @@ const PlanningView = () => {
           fn={fn}
           courseSlots={courseSlots.filter(cs => cs.fn_slug === fn.slug)}
           onClose={() => setShowCourseModal(false)}
-          onChanged={loadCourseSlots}
+          onChanged={() => loadCourseSlots(currentWeek)}
         />
       )}
 

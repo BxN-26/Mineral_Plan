@@ -7,6 +7,7 @@ import { SkeletonLeaves } from '../components/Skeleton';
 import AvatarImg from '../components/AvatarImg';
 import api from '../api/client';
 import { isMyApproval } from '../utils/leaveUtils';
+import { calcLeaveDays } from '../utils/holidayUtils';
 
 const STATUS_CONFIG = {
   pending:     { label: 'En attente',              bg: '#FEF9C3', color: '#A16207', icon: '⏳' },
@@ -19,7 +20,7 @@ const STATUS_CONFIG = {
 
 const CongesView = () => {
   const { user }                                                = useAuth();
-  const { staff, leaves, leaveTypes, setLeaves, reloadLeaves } = useApp();
+  const { staff, leaves, leaveTypes, setLeaves, reloadLeaves, publicHolidays, settings } = useApp();
   const [filterStatus, setFilterStatus]                         = useState('all');
   const [filterType,   setFilterType]                           = useState('all');
   const [tab,          setTab]                                  = useState('all'); // 'all' | 'mine'
@@ -373,8 +374,18 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
   const [docFile,      setDocFile]      = useState(null);
   const [balanceInfo,  setBalanceInfo]  = useState(null); // { bal, slug }
   const [loadingBal,   setLoadingBal]   = useState(false);
-  const [holidays,     setHolidays]     = useState([]); // dates YYYY-MM-DD
   const docRef = useRef();
+
+  // Set des indices de jours ouvrés (getDay()) depuis les settings, ex: [1,2,3,4,5,6]
+  const workingDaysSet = useMemo(() => {
+    const wdSetting = settings?.leave_working_days;
+    if (!wdSetting) return null; // null = exclure seulement dimanche
+    try {
+      const arr = typeof wdSetting === 'string' ? JSON.parse(wdSetting) : wdSetting;
+      if (Array.isArray(arr) && arr.length) return new Set(arr.map(Number));
+    } catch { /* ignore */ }
+    return null;
+  }, [settings?.leave_working_days]);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -398,38 +409,17 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
       .finally(() => setLoadingBal(false));
   }, [form.staff_id, form.type_id]);
 
-  // Charger les jours fériés pour l'année sélectionnée (+ suivante si besoin)
-  useEffect(() => {
-    if (!form.start_date) return;
-    const year = new Date(form.start_date + 'T12:00:00').getFullYear();
-    Promise.all([
-      api.get(`/holidays?year=${year}`),
-      api.get(`/holidays?year=${year + 1}`),
-    ]).then(([r1, r2]) => {
-      const dates = new Set([...(r1.data || []), ...(r2.data || [])].map(h => h.date));
-      setHolidays([...dates]);
-    }).catch(() => {});
-  }, [form.start_date]);
-
-  // Calculer nb jours approximatif côté frontend pour l'aperçu (exclut week-end + fériés)
+  // Calculer nb jours approximatif côté frontend pour l'aperçu (exclut jours non ouvrés + fériés)
   const approxDays = useMemo(() => {
     if (!form.start_date || !form.end_date || isHoursType) return null;
-    const s = new Date(form.start_date + 'T12:00:00');
-    const e = new Date(form.end_date + 'T12:00:00');
-    if (e < s) return null;
-    const holidaySet = new Set(holidays);
-    let days = 0;
-    const d = new Date(s);
-    while (d <= e) {
-      const dow = d.getDay();
-      const ds  = d.toISOString().slice(0, 10);
-      if (dow !== 0 && !holidaySet.has(ds)) days++;
-      d.setDate(d.getDate() + 1);
-    }
-    if (form.half_start) days -= 0.5;
-    if (form.half_end)   days -= 0.5;
-    return Math.max(0, days);
-  }, [form.start_date, form.end_date, form.half_start, form.half_end, isHoursType, holidays]);
+    return calcLeaveDays(
+      form.start_date, form.end_date,
+      publicHolidays,
+      workingDaysSet,
+      form.half_start,
+      form.half_end,
+    );
+  }, [form.start_date, form.end_date, form.half_start, form.half_end, isHoursType, publicHolidays, workingDaysSet]);
 
   const isSingleDay  = form.start_date && form.end_date && form.start_date === form.end_date;
   const isMultiDay   = form.start_date && form.end_date && form.start_date < form.end_date;

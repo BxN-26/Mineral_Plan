@@ -2,13 +2,21 @@
 const router = require('express').Router();
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const {
+  filterCourseSlotsByWeek,
+  loadSchoolHolidays,
+  getConfiguredSchoolZone,
+} = require('../utils/holidayHelper');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
 
 // ── GET /api/course-slots ─────────────────────────────────────
+// ?week=YYYY-MM-DD  → filtre par saison + valid_from/until pour cette semaine
+// ?active=1         → seulement les actifs (défaut : 1)
+// ?function_id=N    → filtre par fonction
 router.get('/', AUTH, (req, res) => {
-  const { function_id, active = '1' } = req.query;
+  const { function_id, active = '1', week } = req.query;
   let sql = `SELECT cs.*, f.slug AS fn_slug, f.name AS fn_name, f.icon AS fn_icon
              FROM course_slots cs
              LEFT JOIN functions f ON f.id = cs.function_id
@@ -16,7 +24,17 @@ router.get('/', AUTH, (req, res) => {
   const params = [Number(active)];
   if (function_id) { sql += ' AND cs.function_id = ?'; params.push(Number(function_id)); }
   sql += ' ORDER BY cs.day_of_week, cs.hour_start';
-  res.json(db_.all(sql, params));
+  let slots = db_.all(sql, params);
+
+  // Filtrage par saison si une semaine est précisée
+  if (week && /^\d{4}-\d{2}-\d{2}$/.test(week)) {
+    const zone         = getConfiguredSchoolZone(db_);
+    const year         = new Date(week + 'T12:00:00').getFullYear();
+    const schoolHols   = loadSchoolHolidays(db_, zone, year - 1, year + 1);
+    slots = filterCourseSlotsByWeek(slots, week, schoolHols);
+  }
+
+  res.json(slots);
 });
 
 // ── POST /api/course-slots ────────────────────────────────────
@@ -79,9 +97,30 @@ router.get('/assignments', AUTH, (req, res) => {
 });
 
 // ── POST /api/course-slots/:id/assign ─────────────────────────
+// Vérifie que le cours est actif pour la semaine (saison + valid_from/until)
+// avant de créer l'assignation.
 router.post('/:id/assign', ...ADMIN, (req, res) => {
   const { staff_id, week_start } = req.body;
   if (!staff_id || !week_start) return res.status(400).json({ error: 'staff_id et week_start requis' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(week_start)) return res.status(400).json({ error: 'Format week_start invalide' });
+
+  // Vérifier que le cours existe et est actif
+  const cs = db_.get('SELECT * FROM course_slots WHERE id = ? AND active = 1', [Number(req.params.id)]);
+  if (!cs) return res.status(404).json({ error: 'Créneau de cours introuvable ou inactif' });
+
+  // Vérifier que le cours est pertinent pour cette semaine (saison + dates de validité)
+  const zone       = getConfiguredSchoolZone(db_);
+  const year       = new Date(week_start + 'T12:00:00').getFullYear();
+  const schoolHols = loadSchoolHolidays(db_, zone, year - 1, year + 1);
+  const validSlots = filterCourseSlotsByWeek([cs], week_start, schoolHols);
+  if (!validSlots.length) {
+    return res.status(409).json({
+      error: 'Ce cours n\'est pas actif pour cette semaine (saison ou période de validité)',
+      reason: cs.season === 'hors-vacances' ? 'vacation_week' :
+              cs.season === 'vacances'      ? 'non_vacation_week' : 'date_range',
+    });
+  }
+
   try {
     db_.run(
       `INSERT OR IGNORE INTO course_slot_assignments (course_slot_id, staff_id, week_start)

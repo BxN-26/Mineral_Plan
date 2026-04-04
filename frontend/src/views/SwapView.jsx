@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { PageHeader, Btn, Modal, Field, inputSt, Tag } from '../components/common';
 import AvatarImg from '../components/AvatarImg';
 import { useAuth } from '../context/AuthContext';
@@ -6,6 +6,7 @@ import { useApp }  from '../App';
 import api from '../api/client';
 import { toast } from 'sonner';
 import { toMonday } from '../utils/dates';
+import { getPublicHoliday } from '../utils/holidayUtils';
 
 const DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -41,9 +42,25 @@ function toDayIndex(dateStr) {
 }
 
 /* ── Composant carte échange ─────────────────────────────────── */
-const SwapCard = ({ swap, myStaffId, isManager, allStaff, onRefresh, onInvalidateWeek }) => {
+const SwapCard = ({ swap, myStaffId, isManager, allStaff, publicHolidays, onRefresh, onInvalidateWeek }) => {
   const st = STATUS_CFG[swap.status] || STATUS_CFG.pending;
   const isRequester  = swap.requester_id === myStaffId;
+
+  // Calcule la date réelle du créneau pour détection jour férié
+  const swapDate = useMemo(() => {
+    if (!swap.week_start || swap.day_index == null) return null;
+    const d = new Date(swap.week_start + 'T12:00:00');
+    d.setDate(d.getDate() + swap.day_index);
+    return d.toISOString().slice(0, 10);
+  }, [swap.week_start, swap.day_index]);
+  const swapRetourDate = useMemo(() => {
+    if (!swap.swap_week || swap.swap_day_index == null) return null;
+    const d = new Date(swap.swap_week + 'T12:00:00');
+    d.setDate(d.getDate() + swap.swap_day_index);
+    return d.toISOString().slice(0, 10);
+  }, [swap.swap_week, swap.swap_day_index]);
+  const swapHolidayLabel      = swapDate      ? getPublicHoliday(swapDate, publicHolidays)      : null;
+  const swapRetourHolidayLabel = swapRetourDate ? getPublicHoliday(swapRetourDate, publicHolidays) : null;
   const isTarget     = swap.target_id === myStaffId ||
                        (!swap.target_id && swap.mode === 'open') ||
                        (swap.mode === 'open' && swap.status === 'pending');
@@ -91,10 +108,12 @@ const SwapCard = ({ swap, myStaffId, isManager, allStaff, onRefresh, onInvalidat
           </div>
           <div style={{ fontSize: 11, color: '#6B6860', marginTop: 2 }}>
             {DAYS[swap.day_index]} {fmtH(swap.hour_start)}–{fmtH(swap.hour_end)} — sem. {swap.week_start?.slice(5)} — {swap.fn_slug}
+            {swapHolidayLabel && <span style={{ marginLeft: 6, fontSize: 10, color: '#DC2626', fontWeight: 600 }}>&#128308; {swapHolidayLabel}</span>}
           </div>
           {swap.swap_week && (
             <div style={{ fontSize: 11, color: '#6B6860' }}>
               ↔ Retour: {DAYS[swap.swap_day_index]} {fmtH(swap.swap_hour_start)}–{fmtH(swap.swap_hour_end)} — sem. {swap.swap_week?.slice(5)}
+              {swapRetourHolidayLabel && <span style={{ marginLeft: 6, fontSize: 10, color: '#DC2626', fontWeight: 600 }}>&#128308; {swapRetourHolidayLabel}</span>}
             </div>
           )}
           {swap.note && <div style={{ fontSize: 11, color: '#9B9890', fontStyle: 'italic', marginTop: 2 }}>"{swap.note}"</div>}
@@ -146,7 +165,7 @@ const SwapCard = ({ swap, myStaffId, isManager, allStaff, onRefresh, onInvalidat
 /* ── Vue principale ───────────────────────────────────────────── */
 export default function SwapView() {
   const { user } = useAuth();
-  const { staff: allStaff, functions, schedules, loadWeekSchedules, setSchedules, swapTab, setSwapTab } = useApp();
+  const { staff: allStaff, functions, schedules, loadWeekSchedules, setSchedules, swapTab, setSwapTab, publicHolidays } = useApp();
 
   const isManager    = ['admin','manager','superadmin','rh'].includes(user?.role);
   const myStaff      = allStaff.find(s => s.id === user?.staff_id);
@@ -267,7 +286,7 @@ export default function SwapView() {
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
           {shown.map(s => (
-            <SwapCard key={s.id} swap={s} myStaffId={myStaffId} isManager={isManager} allStaff={allStaff} onRefresh={load}
+            <SwapCard key={s.id} swap={s} myStaffId={myStaffId} isManager={isManager} allStaff={allStaff} publicHolidays={publicHolidays} onRefresh={load}
               onInvalidateWeek={week => {
                 setSchedules(prev => { const n = { ...prev }; delete n[week]; return n; });
                 loadWeekSchedules(week);
@@ -280,6 +299,13 @@ export default function SwapView() {
       {/* Modal création */}
       <Modal open={modal} onClose={() => setModal(false)} title="Nouvelle demande d'échange" width={580}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {(getPublicHoliday(form.date, publicHolidays) || getPublicHoliday(form.swap_date, publicHolidays)) && (
+            <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#DC2626' }}>
+              ⚠️ {getPublicHoliday(form.date, publicHolidays)
+                ? `Le créneau principal tombe un jour férié (${getPublicHoliday(form.date, publicHolidays)}).`
+                : `Le créneau retour tombe un jour férié (${getPublicHoliday(form.swap_date, publicHolidays)}).`}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Jour du créneau *">
               <input type="date" value={form.date}
