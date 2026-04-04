@@ -2,24 +2,19 @@
 const router = require('express').Router();
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const {
+  mondaysBetween,
+  getWeekDates,
+  weekContainsPublicHoliday,
+  isSchoolHoliday,
+  hasSchoolHoliday,
+  loadPublicHolidays,
+  loadSchoolHolidays,
+  getConfiguredSchoolZone,
+} = require('../utils/holidayHelper');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
-
-/* Génère la liste des lundis entre deux dates (incluses) */
-function mondaysBetween(from, to) {
-  const mondays = [];
-  const d   = new Date(from + 'T12:00:00');
-  const end = new Date(to   + 'T12:00:00');
-  // Avancer jusqu'au premier lundi
-  const day = d.getDay();
-  if (day !== 1) d.setDate(d.getDate() + (day === 0 ? 1 : 8 - day));
-  while (d <= end) {
-    mondays.push(d.toISOString().slice(0, 10));
-    d.setDate(d.getDate() + 7);
-  }
-  return mondays;
-}
 
 // ── GET /api/templates ────────────────────────────────────────
 router.get('/', AUTH, (req, res) => {
@@ -114,26 +109,85 @@ router.post('/:id/slots', ...ADMIN, (req, res) => {
 
 // ── POST /api/templates/:id/apply — applique à une plage ─────
 router.post('/:id/apply', ...ADMIN, (req, res) => {
-  const { weeks, from, to } = req.body;
+  const {
+    weeks, from, to,
+    // Options de filtrage calendaire
+    skip_public_holidays  = false,  // sauter les semaines contenant un jour férié
+    skip_school_holidays  = false,  // sauter les semaines (partiellement) en vacances scolaires
+    only_school_holidays  = false,  // appliquer UNIQUEMENT pendant les vacances scolaires
+  } = req.body;
+
   let targetWeeks = [];
   if (Array.isArray(weeks) && weeks.length) {
     targetWeeks = weeks.filter(w => /^\d{4}-\d{2}-\d{2}$/.test(w));
   } else if (from && to) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to))
+      return res.status(400).json({ error: 'Format from/to invalide (YYYY-MM-DD)' });
     targetWeeks = mondaysBetween(from, to);
   }
   if (!targetWeeks.length)
     return res.status(400).json({ error: 'Fournir weeks[] ou from+to' });
 
   const tpl = db_.get('SELECT * FROM schedule_templates WHERE id = ?', [Number(req.params.id)]);
-  if (!tpl)            return res.status(404).json({ error: 'Template introuvable' });
+  if (!tpl)             return res.status(404).json({ error: 'Template introuvable' });
   if (!tpl.function_id) return res.status(400).json({ error: 'Template sans fonction associée' });
 
   const tslots = db_.all('SELECT * FROM template_slots WHERE template_id = ?', [tpl.id]);
+
+  // ── Chargement conditionnel des données calendaires ────────
+  let publicHolidays   = [];
+  let schoolHolidays   = [];
+
+  if (skip_public_holidays) {
+    publicHolidays = loadPublicHolidays(db_);
+  }
+  if (skip_school_holidays || only_school_holidays) {
+    const zone      = getConfiguredSchoolZone(db_);
+    const years     = targetWeeks.map(w => new Date(w + 'T12:00:00').getFullYear());
+    const yearFrom  = Math.min(...years);
+    const yearTo    = Math.max(...years);
+    schoolHolidays  = loadSchoolHolidays(db_, zone, yearFrom, yearTo);
+  }
+
+  // ── Filtrage + application ──────────────────────────────────
+  // Les jours fériés filtrent la semaine entière.
+  // Les vacances scolaires filtrent au niveau du JOUR pour gérer les semaines
+  // à cheval sur le début/fin d'une période (ex : vacances qui débutent mercredi :
+  // lundi et mardi sont quand même copiés depuis le modèle).
+  const skippedWeeks = [];
 
   const applied = [];
   db_.tx(() => {
     for (const week of targetWeeks) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) continue;
+
+      // Sauter toute la semaine si elle contient un jour férié
+      if (skip_public_holidays && weekContainsPublicHoliday(week, publicHolidays)) {
+        skippedWeeks.push({ week, reason: 'public_holiday' });
+        continue;
+      }
+
+      // Filtrage par vacances scolaires au niveau du jour
+      let slotsToApply = tslots;
+      if (skip_school_holidays || only_school_holidays) {
+        const weekDates = getWeekDates(week); // [ lun, mar, mer, jeu, ven, sam, dim ]
+        slotsToApply = tslots.filter(s => {
+          const dateStr    = weekDates[s.day_of_week];
+          const inVacation = isSchoolHoliday(dateStr, schoolHolidays);
+          if (skip_school_holidays && inVacation)  return false;
+          if (only_school_holidays && !inVacation) return false;
+          return true;
+        });
+        // Aucun créneau ne reste après filtrage → sauter cette semaine
+        if (slotsToApply.length === 0) {
+          const anyVacation = weekDates.some(d => isSchoolHoliday(d, schoolHolidays));
+          skippedWeeks.push({
+            week,
+            reason: only_school_holidays && !anyVacation ? 'not_school_holiday' : 'school_holiday',
+          });
+          continue;
+        }
+      }
 
       let sc = db_.get(
         'SELECT id FROM schedules WHERE week_start = ? AND function_id = ?',
@@ -151,7 +205,7 @@ router.post('/:id/apply', ...ADMIN, (req, res) => {
       }
 
       db_.run('DELETE FROM schedule_slots WHERE schedule_id = ?', [sc.id]);
-      for (const s of tslots) {
+      for (const s of slotsToApply) {
         if (!s.staff_id) continue; // créneaux sans salarié = juste structure horaire
         db_.run(
           `INSERT OR IGNORE INTO schedule_slots
@@ -164,7 +218,12 @@ router.post('/:id/apply', ...ADMIN, (req, res) => {
     }
   });
 
-  res.json({ applied: applied.length, weeks: applied });
+  res.json({
+    applied:  applied.length,
+    skipped:  skippedWeeks.length,
+    weeks:    applied,
+    skipped_weeks: skippedWeeks,
+  });
 });
 
 module.exports = router;
