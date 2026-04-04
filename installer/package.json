@@ -37,7 +37,9 @@
       "maintainer": "Minéral Spirit"
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target":            [{ "target": "nsis", "arch": ["x64"] }],
+      "signingHashAlgorithms": null,
+      "sign":              null
     },
     "nsis": {
       "oneClick":                        false,
