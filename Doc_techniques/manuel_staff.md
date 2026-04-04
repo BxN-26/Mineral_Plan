@@ -1,7 +1,7 @@
 # minéral Spirit v2 — Guide du personnel
 
 > Destiné au **personnel du club** (rôle Staff)  
-> Version de référence : **spirit-v2 · v2.0.0** · Mars 2026
+> Version de référence : **spirit-v2 · v2.1.0** · Mise à jour **4 avril 2026**
 
 ---
 
@@ -36,7 +36,18 @@ Ouvrez votre navigateur et rendez-vous sur l'adresse communiquée par votre resp
 2. Saisissez votre **mot de passe**
 3. Cliquez sur **Se connecter**
 
-En cas d'erreur, vérifiez bien l'adresse e-mail et le mot de passe. Contactez votre responsable si vous avez oublié votre mot de passe — il peut vous le réinitialiser.
+En cas d'erreur, vérifiez bien l'adresse e-mail et le mot de passe.
+
+### Mot de passe oublié ?
+
+Si vous avez oublié votre mot de passe, cliquez sur **« Mot de passe oublié ? »** sous le formulaire :
+
+1. Saisissez votre **adresse e-mail**
+2. Cliquez sur **Envoyer le lien**
+3. Consultez votre boîte email : un lien de réinitialisation valable **15 minutes** vous sera envoyé
+4. Cliquez sur le lien et saisissez votre nouveau mot de passe
+
+> Si vous ne recevez pas de mail, vérifiez vos spams. Si le problème persiste, contactez votre responsable ou l'administrateur, qui peut réinitialiser votre mot de passe directement.
 
 ### Premier login — changement obligatoire
 
@@ -86,6 +97,8 @@ Une cloche 🔔 en haut à droite de l'interface affiche le nombre de notificati
 - Un créneau **COURS** (fond pointillé + tampon « COURS ») indique une séance de cours encadrée qui vous est affectée
 - Un créneau grisé hachuré indique une **indisponibilité** saisie
 - Un bloc coloré hachuré avec un libellé correspond à un **congé approuvé** (ex : CP, RTT, Maladie…)
+- Les **jours fériés** sont signalés par un en-tête de colonne **rouge** portant le nom du jour (ex : « 1er mai — Fête du travail »)
+- Les **vacances scolaires** sont signalées par un en-tête **indigo/violet** portant le nom de la période (ex : « Vacances d'été »)
 
 ### Naviguer les semaines
 
@@ -115,6 +128,7 @@ Le mode Jour est utile sur téléphone ou pour consulter un jour chargé.
 - Chaque **ligne** représente un membre de l'équipe
 - Chaque **colonne** est un jour de la semaine
 - Les créneaux, congés, cours et indisponibilités s'affichent avec les mêmes codes couleur que dans Mon Planning
+- Les **jours fériés** sont signalés par un en-tête de colonne **rouge**, les **vacances scolaires** par un en-tête **indigo**
 
 ### Filtrer l'affichage
 
@@ -143,6 +157,7 @@ Même fonctionnement que dans Mon Planning (toggle en haut à gauche).
 - L'axe vertical liste les **membres par fonction**
 - Les congés, cours et indisponibilités s'affichent avec leur hachurage/couleur spécifique
 - Un onglet **Tout** affiche toutes les fonctions ; les autres onglets permettent de filtrer par fonction ou par équipe
+- Les **jours fériés** (en-têtes rouges) et les **vacances scolaires** (en-têtes indigo) sont visibles ici aussi
 
 > Aucune action d'édition n'est possible depuis cette vue.
 
@@ -375,7 +390,7 @@ L'application est une **PWA** (Progressive Web App) : elle peut être installée
 → Vérifiez que le congé est bien au statut **Approuvé** (et non « Approuvé N1 » si un niveau supplémentaire est requis). Si le statut est bien « Approuvé », essayez de **rafraîchir la page**.
 
 **J'ai oublié mon mot de passe.**  
-→ Contactez votre responsable ou l'administrateur. La réinitialisation se fait depuis la Configuration (côté admin uniquement — il n'existe pas de lien « Mot de passe oublié » automatique).
+→ Cliquez sur **« Mot de passe oublié ? »** sur la page de connexion et saisissez votre e-mail. Vous recevrez un lien de réinitialisation valable 15 minutes. Si vous ne recevez rien (vérifiez vos spams), contactez votre responsable ou l'administrateur — il peut réinitialiser votre mot de passe directement.
 
 **Je souhaite annuler un congé déjà approuvé.**  
 → Vous ne pouvez pas l'annuler vous-même une fois approuvé. Contactez votre responsable, qui peut l'annuler depuis son interface.

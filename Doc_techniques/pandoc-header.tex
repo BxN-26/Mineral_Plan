@@ -1,0 +1,86 @@
+% ============================================================
+%  pandoc-header.tex — Mise en page PDF minéral Spirit v2
+%  Couleurs brand : #C5753A (orange) / #1E2235 (texte sombre)
+% ============================================================
+
+% --- Couleurs ---
+\usepackage{xcolor}
+\definecolor{spiritprimary}{HTML}{C5753A}
+\definecolor{spiritsecondary}{HTML}{1E2235}
+\definecolor{spiritlight}{HTML}{F5EDE3}
+\definecolor{spiritmuted}{HTML}{7A6153}
+\definecolor{spiritinfo}{HTML}{2563EB}
+\definecolor{spiritborder}{HTML}{E5D5C5}
+
+% --- Typographie sections ---
+\usepackage{titlesec}
+
+% H1 — texte couleur brand, trait dessous
+\titleformat{\section}
+  {\color{spiritprimary}\Large\bfseries}
+  {\thesection.}
+  {0.5em}
+  {}
+  [\vspace{2pt}{\color{spiritprimary}\hrule height 1.5pt}\vspace{2pt}]
+\titlespacing*{\section}{0pt}{1.5em}{0.8em}
+
+% H2 — texte sombre, trait coloré à gauche via règle + boîte
+\titleformat{\subsection}
+  {\color{spiritsecondary}\large\bfseries}
+  {\thesubsection}
+  {0.5em}
+  {}
+\titlespacing*{\subsection}{0pt}{1.2em}{0.5em}
+
+% H3 — texte brand muted
+\titleformat{\subsubsection}
+  {\color{spiritmuted}\normalsize\bfseries}
+  {}
+  {0pt}
+  {}
+\titlespacing*{\subsubsection}{0pt}{1em}{0.4em}
+
+% --- Tableaux ---
+\usepackage{booktabs}
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{longtable}
+
+\AtBeginEnvironment{longtable}{%
+  \rowcolors{2}{spiritlight!60}{white}%
+}
+
+% --- Boîtes d'information (blockquotes Pandoc) ---
+\usepackage{mdframed}
+
+\renewenvironment{quote}{%
+  \begin{mdframed}[
+    backgroundcolor=spiritlight,
+    linecolor=spiritprimary,
+    linewidth=2pt,
+    leftline=true,
+    topline=false,
+    rightline=false,
+    bottomline=false,
+    innerleftmargin=8pt,
+    innerrightmargin=8pt,
+    innertopmargin=6pt,
+    innerbottommargin=6pt,
+    skipabove=4pt,
+    skipbelow=4pt
+  ]
+  \small\color{spiritsecondary}
+}{%
+  \end{mdframed}
+}
+
+% --- En-tête et pied de page ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+
+\fancyhead[L]{\textcolor{spiritmuted}{\small min\'{e}ral Spirit v2}}
+\fancyhead[R]{\textcolor{spiritmuted}{\small \leftmark}}
+\fancyfoot[C]{\textcolor{spiritmuted}{\small \thepage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{spiritborder}\leaders\hrule height \headrulewidth\hfill}}

@@ -4,7 +4,8 @@
 #  minéral Spirit v2
 #
 #  Prérequis :
-#    sudo apt install pandoc texlive-xetex texlive-lang-french
+#    sudo apt install pandoc texlive-xetex texlive-lang-french \
+#         texlive-latex-extra
 #
 #  Usage :
 #    chmod +x generer_pdf.sh
@@ -19,17 +20,20 @@ mkdir -p "$OUT_DIR"
 
 PANDOC_OPTS=(
   --pdf-engine=xelatex
+  -H "$SCRIPT_DIR/pandoc-header.tex"
   -V lang=fr
-  -V geometry:margin=2.5cm
+  -V geometry:top=2.5cm,bottom=2.5cm,left=2.8cm,right=2.5cm
   -V fontsize=11pt
   -V mainfont="DejaVu Serif"
   -V sansfont="DejaVu Sans"
   -V monofont="DejaVu Sans Mono"
   -V colorlinks=true
-  -V linkcolor=teal
+  -V linkcolor=spiritprimary
+  -V urlcolor=blue
   --toc
-  --toc-depth=2
+  --toc-depth=3
   --highlight-style=tango
+  --number-sections
 )
 
 echo "==> Vérification que pandoc est installé..."

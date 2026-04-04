@@ -1,7 +1,7 @@
 # minéral Spirit v2 — Description Technique Complète
 
-> Document mis à jour le 28 mars 2026  
-> Version de référence : **spirit-v2** (production sur `planning.mineral-spirit.fr`)
+> Document mis à jour le **4 avril 2026** — Version **v2.1.0**  
+> Production sur `planning.mineral-spirit.fr`
 
 ---
 
@@ -25,6 +25,9 @@
 16. [Créneaux de cours](#16-créneaux-de-cours)
 17. [Indisponibilités](#17-indisponibilités)
 18. [Membres multi-équipes](#18-membres-multi-équipes)
+19. [Jours fériés et vacances scolaires](#19-jours-fériés-et-vacances-scolaires)
+20. [Réinitialisation de mot de passe](#20-réinitialisation-de-mot-de-passe)
+21. [Installateur GUI Electron](#21-installateur-gui-electron)
 
 ---
 
@@ -61,6 +64,10 @@ La version 1 (`spirit-staff-v3.html`) était un prototype HTML+JS monofichier sa
 | Profil | Modification du mot de passe, préférences |
 | Configuration | Paramètres globaux, types de congés, organigramme, thème |
 | Notifications | Push web (PWA) pour les événements congés/échanges |
+| **Jours fériés** | Synchronisation automatique via API officielle (12 zones FR + DOM-TOM) |
+| **Vacances scolaires** | Zones A, B, C — synchronisation Education Nationale, affichage visuel planning |
+| **Reset mot de passe** | Lien de réinitialisation par email + réinitialisation directe par admin |
+| **Installateur GUI** | Wizard Electron cross-platform (Linux AppImage + Windows NSIS) |
 
 ---
 
@@ -154,6 +161,17 @@ Le frontend (React/Vite) est **buildé** (`npm run build`) et servi directement 
 │       ├── manuel_utilisateur.pdf
 │       └── description_technique.pdf
 │
+├── installer/                      # Installateur GUI Electron (NEW)
+│   ├── main.js                     # Process principal Electron (IPC, fenêtre 860×660)
+│   ├── preload.js                  # contextBridge → window.api
+│   ├── package.json                # electron + electron-builder
+│   ├── scripts/
+│   │   └── installer-core.js       # Logique d'installation (9 tâches)
+│   └── renderer/
+│       ├── index.html              # Wizard 8 étapes
+│       ├── style.css               # Design professionnel (palette #C5753A)
+│       └── app.js                  # Logique wizard (état, IPC, progression live)
+│
 ├── spirit-v2/                      # Backend Node.js
 │   ├── app.js                      # Point d'entrée Express
 │   ├── package.json
@@ -168,9 +186,12 @@ Le frontend (React/Vite) est **buildé** (`npm run build`) et servi directement 
 │   ├── middleware/
 │   │   └── auth.js                 # JWT cookies, requireAuth, requireRole
 │   │
+│   ├── utils/
+│   │   └── http-proxy.js           # Proxy HTTPS sécurisé (whitelist API gouv) (NEW)
+│   │
 │   └── routes/
-│       ├── auth.js                 # POST /login, POST /logout, GET /me, POST /refresh
-│       ├── staff.js                # CRUD salariés + upload avatar
+│       ├── auth.js                 # Login, logout, refresh, reset-request, reset-confirm
+│       ├── staff.js                # CRUD salariés + avatar + reset-password admin
 │       ├── teams.js                # CRUD équipes + membres
 │       ├── functions.js            # CRUD fonctions + vue par salarié
 │       ├── leaves.js               # Workflow congés (dépôt + approbation)
@@ -180,13 +201,15 @@ Le frontend (React/Vite) est **buildé** (`npm run build`) et servi directement 
 │       ├── swaps.js                # Échanges de créneaux
 │       ├── stats.js                # Statistiques et KPIs
 │       ├── costs.js                # Calcul masse salariale
-│       ├── releves.js              # Relevés d'heures
 │       ├── settings.js             # Paramètres applicatifs
 │       ├── notifications.js        # Notifications in-app
 │       ├── push.js                 # Abonnements Push Web (VAPID)
 │       ├── course-slots.js         # Créneaux de cours + affectations
 │       ├── task-types.js           # Types de tâches planning
-│       └── unavailabilities.js     # Indisponibilités salarié
+│       ├── unavailabilities.js     # Indisponibilités salarié
+│       ├── holidays.js             # Jours fériés FR — sync API officielle (NEW)
+│       ├── school-holidays.js      # Vacances scolaires A/B/C (NEW)
+│       └── bootstrap.js            # GET /api/bootstrap (données init SPA)
 │
 └── frontend/                       # Frontend React + Vite
     ├── index.html
@@ -195,29 +218,36 @@ Le frontend (React/Vite) est **buildé** (`npm run build`) et servi directement 
     ├── dist/                       # Build production (servi par Express)
     │
     └── src/
-        ├── App.jsx                 # Contexte global, routing par view-id
+        ├── App.jsx                 # Contexte global, routing, contexte holidays (NEW)
         ├── api/
         │   └── client.js           # Axios instance + intercepteur token refresh
         ├── context/
-        │   └── AuthContext.jsx     # Contexte utilisateur connecté
+        │   ├── AuthContext.jsx     # Contexte utilisateur connecté
+        │   └── ThemeContext.jsx    # Thème light/dark
         ├── components/
         │   ├── Sidebar.jsx         # Navigation latérale (rôle-aware)
         │   ├── StaffForm.jsx       # Formulaire salarié réutilisable
-        │   └── common/             # Composants partagés (Badge, Modal, etc.)
+        │   ├── NotifBell.jsx       # Cloche de notifications
+        │   ├── AvatarImg.jsx       # Avatar salarié
+        │   ├── ForceChangePassword.jsx  # Écran 1er login
+        │   └── common.jsx          # Badge, Modal, Row, FormGrid, etc.
+        ├── utils/
+        │   ├── fiscal.js           # Calcul exercice comptable
+        │   └── holidayUtils.js     # getDayDecorations() : fériés + scolaires (NEW)
         └── views/
-            ├── LoginView.jsx
-            ├── MonPlanningView.jsx
-            ├── TeamPlanningView.jsx
-            ├── GeneralPlanningView.jsx
-            ├── PlanningView.jsx
-            ├── EquipeView.jsx
+            ├── LoginView.jsx       # Connexion + lien "Mot de passe oublié"
+            ├── MonPlanningView.jsx          # Vue perso (décoration fériés/scolaires)
+            ├── TeamPlanningView.jsx         # Planning équipe (cours + fériés)
+            ├── GeneralPlanningView.jsx      # Vue globale (décoration fériés)
+            ├── PlanningView.jsx             # Éditeur planning (décoration fériés)
+            ├── EquipeView.jsx               # Gestion équipe + reset mdp admin
             ├── CongesView.jsx
             ├── RelevesView.jsx
             ├── StatsView.jsx
             ├── CostsView.jsx
             ├── SwapView.jsx
             ├── MonProfilView.jsx
-            └── ConfigView.jsx
+            └── ConfigView.jsx              # + HolidaysManager + SchoolHolidaysManager
 ```
 
 ---
@@ -252,6 +282,9 @@ Le frontend (React/Vite) est **buildé** (`npm run build`) et servi directement 
 | `shift_swaps` | Échanges de créneaux : mode open/targeted, workflow approbation |
 | `course_slots` | Créneaux de cours permanents (groupe, niveau, capacité, saison) |
 | `course_slot_assignments` | Affectation d'un moniteur à un cours pour une semaine donnée |
+| `holidays_zone_settings` | Zone de référence pour les jours fériés (métropole, DOM-TOM) |
+| `school_holidays` | Vacances scolaires synchronisées (date début/fin, libelé, zone, année) |
+| `school_holidays_settings` | Zone scolaire active (A, B ou C) + URL source + date dernière synchro |
 | `task_types` | Types de tâches du planning (permanence, ouverture blocs, etc.) |
 | `unavailabilities` | Indisponibilités déclarées par les salariés (récurrence possible) |
 | `timesheets` | Relevés d'heures pointées par salarié (calculées ou manuelles) |
@@ -373,7 +406,10 @@ Toutes les routes sont préfixées `/api/`. L'authentification est requise sauf 
 | POST | `/logout` | Auth | Supprime cookies + invalide refresh token |
 | GET | `/me` | Auth | Profil utilisateur courant + `must_change_password` |
 | POST | `/refresh` | Cookie refresh | Renouvelle l'access token |
-| PUT | `/password` | Auth | Changer son mot de passe |
+| POST | `/change-password` | Auth | Changer son propre mot de passe |
+| POST | `/force-change-password` | Auth | Forcer le changement (1er login) |
+| POST | `/reset-request` | Public | Envoyer un lien de réinitialisation par email |
+| POST | `/reset-confirm` | Public (token) | Confirmer la réinitialisation avec le token reçu |
 
 ### Salariés (`/api/staff`)
 
@@ -385,6 +421,8 @@ Toutes les routes sont préfixées `/api/`. L'authentification est requise sauf 
 | PUT | `/:id` | Admin/Self | Modifier (rôle, manager, etc.) |
 | DELETE | `/:id` | Admin | Supprimer un salarié |
 | POST | `/:id/avatar` | Admin/Self | Upload photo |
+| DELETE | `/:id/avatar` | Admin/Self | Supprimer la photo de profil |
+| POST | `/:id/reset-password` | Admin | Réinitialiser le mot de passe d'un salarié (admin) |
 
 ### Équipes (`/api/teams`)
 
@@ -483,6 +521,25 @@ Toutes les routes sont préfixées `/api/`. L'authentification est requise sauf 
 | POST | `/` | Auth | Proposer un échange |
 | PUT | `/:id/status` | Auth | Accepter / refuser un échange |
 
+### Jours fériés (`/api/holidays`)
+
+| Méthode | Route | Accès | Description |
+|---|---|---|---|
+| GET | `/` | Auth | Liste des jours fériés (filtrables par année) |
+| POST | `/` | Admin | Ajouter un jour férié manuellement |
+| PUT | `/:id` | Admin | Modifier un jour férié |
+| DELETE | `/:id` | Admin | Supprimer un jour férié |
+| POST | `/sync-from-api` | Admin | Synchroniser depuis l'API officielle `calendrier.api.gouv.fr` |
+
+### Vacances scolaires (`/api/school-holidays`)
+
+| Méthode | Route | Accès | Description |
+|---|---|---|---|
+| GET | `/` | Auth | Liste des périodes de vacances actives |
+| GET | `/check-update` | Admin | Vérifier si une mise à jour est disponible |
+| POST | `/sync` | Admin | Synchroniser depuis l'API `data.education.gouv.fr` |
+| DELETE | `/` | Admin | Vider toutes les vacances scolaires |
+
 ### Notifications (`/api/notifications`)
 
 | Méthode | Route | Accès | Description |
@@ -542,6 +599,9 @@ function migration_create_leave_types(db) {
 | `schedule_slots_task_type` | Ajout colonnes `task_type` et `course_slot_id` sur `schedule_slots` |
 | `push_subscriptions_table` | Création de `push_subscriptions` + seed paramètre push |
 | `task_types_table` | Création de `task_types` + seed des 4 types par défaut |
+| `holidays_zone_settings` | Création de la table `holidays_zone_settings` (zone fériés) |
+| `school_holidays_table` | Création de la table `school_holidays` |
+| `school_holidays_settings_table` | Création de la table `school_holidays_settings` |
 | `task_types_function_id` | Ajout colonne `function_id` sur `task_types` |
 | `teams_show_course_slots` | Ajout colonne `show_course_slots` sur `teams` |
 | `config_settings_seeds` | Seeds : `leave_*`, `planning_day_start/end`, `rh_*`, `ui_theme` |
@@ -935,3 +995,146 @@ Ce mécanisme évite les doublons visuels pour les salariés partagés entre éq
 ### Migration automatique
 
 Au démarrage du serveur, la migration `staff_teams_seed` copie automatiquement les `staff.team_id` existants dans `staff_teams` (équipe principale). Les installations existantes sont migrées sans perte de données.
+
+---
+
+## 19. Jours fériés et vacances scolaires
+
+### Vue d'ensemble
+
+Deux fonctionnalités complémentaires permettent d'afficher automatiquement les jours fériés français et les vacances scolaires dans **toutes les vues planning** de l'application.
+
+### Tables concernées
+
+| Table | Rôle |
+|---|---|
+| `holidays_zone_settings` | Zone de référence pour les jours fériés (métropole, Alsace-Moselle, Réunion, Martinique…) |
+| `school_holidays` | Périodes de vacances importées : date début/fin, libellé, zone (A/B/C), année scolaire |
+| `school_holidays_settings` | Zone active (A, B ou C), URL de la source, date de dernière synchronisation, message de mise à jour |
+
+### Jours fériés
+
+La synchronisation utilise l'API officielle française **`calendrier.api.gouv.fr`** pour 12 zones :
+
+- **Métropole** (zone `metropole`)
+- **DOM-TOM** : Alsace-Moselle, Guadeloupe, Guyane, La Réunion, Martinique, Mayotte, Nouvelle-Calédonie, Polynésie française, Saint-Barthélemy, Saint-Martin, Wallis-et-Futuna
+
+La route `POST /api/holidays/sync-from-api` accepte un paramètre `{ zone }` et stocke en base les jours fériés pour l'année en cours (et éventuellement les suivantes selon les données de l'API).
+
+Les appels API externes passent par `utils/http-proxy.js` : proxy HTTPS avec whitelist stricte des domaines autorisés (`calendrier.api.gouv.fr`, `data.education.gouv.fr`), en-têtes User-Agent légitimes, timeout 10 s.
+
+### Vacances scolaires
+
+Synchronisation depuis **`data.education.gouv.fr`** (API Education Nationale). La route `POST /api/school-holidays/sync` importe les périodes pour la zone configurée (A, B ou C), avec :
+- Conversion horodatage UTC → `Europe/Paris` (via `Intl.DateTimeFormat`)
+- Déduplication par `(description, start_date, end_date, location)` pour la ré-importation idempotente
+- Vérification des mises à jour disponibles via `GET /api/school-holidays/check-update`
+
+### Affichage dans les vues planning
+
+La fonction utilitaire `frontend/src/utils/holidayUtils.js` expose :
+
+```javascript
+getDayDecorations(dateStr, publicHolidays, schoolHolidays)
+// Retourne : { isHoliday, holidayLabel, isSchoolHoliday, schoolLabel }
+```
+
+La décoration est appliquée dans les en-têtes de colonnes des 4 vues planning :
+- 🔴 **Fond rouge clair** + label du jour férié (ex : « Lundi de Pâques »)
+- 🟣 **Fond indigo clair** + label des vacances scolaires (ex : « Vacances de printemps »)
+- Les deux peuvent se superposer (fond rouge prioritaire + bandeau indigo supplémentaire)
+
+### Paramètres de configuration (ConfigView)
+
+| Section | Fonctionnalité |
+|---|---|
+| **Jours fériés** | Sélecteur de zone français, bouton « Synchroniser depuis l'API », liste avec ajout/suppression manuel |
+| **Vacances scolaires** | Sélecteur de zone A/B/C, URL source verrouillable, bouton de synchronisation, indicateur de mise à jour disponible, bandeaux d'information |
+
+---
+
+## 20. Réinitialisation de mot de passe
+
+### Deux mécanismes disponibles
+
+#### 1. Réinitialisation par email (auto-service)
+
+Le salarié clique sur **« Mot de passe oublié ? »** dans `LoginView.jsx` :
+
+1. `POST /api/auth/reset-request { email }` : génère un token signé (JWT courte durée), envoie un email via SMTP (si configuré) avec le lien de réinitialisation
+2. `POST /api/auth/reset-confirm { token, newPassword }` : vérifie le JWT, hash le nouveau mot de passe avec bcrypt, invalide tous les refresh tokens de l'utilisateur
+
+Configuration SMTP requise dans `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`). Sans SMTP, la route retourne une erreur 503.
+
+#### 2. Réinitialisation directe par un administrateur
+
+Depuis `EquipeView.jsx`, un administrateur peut réinitialiser le mot de passe de n'importe quel compte :
+
+`POST /api/staff/:id/reset-password { newPassword }` — Accessible uniquement aux rôles `admin` et `superadmin`. Définit le `must_change_password = 1` sur le compte ciblé : l'utilisateur sera forcé de changer son mot de passe à sa prochaine connexion.
+
+### Sécurité
+
+- Les tokens de réinitialisation sont des JWT signés avec `JWT_SECRET`, durée de vie courte (15 min)
+- Rate limiting sur `POST /api/auth/reset-request` (5 requêtes / 15 min par IP) pour prévenir l'abus
+- L'email de confirmation ne révèle jamais si l'adresse existe ou non en base (protection contre l'énumération)
+
+---
+
+## 21. Installateur GUI Electron
+
+### Concept
+
+Un installateur graphique cross-platform (Linux `.AppImage` + Windows `.exe`) permet à un administrateur non technique d'installer Minéral Spirit v2 sans utiliser le terminal.
+
+### Architecture
+
+```
+installer/
+├── main.js              # Process principal Electron : IPC, fenêtre 860×660
+├── preload.js           # contextBridge → window.api (5 méthodes exposées)
+├── package.json         # electron v33, electron-builder v25
+├── scripts/
+│   └── installer-core.js  # Logique des 9 tâches d'installation
+└── renderer/
+    ├── index.html       # Wizard 8 écrans (HTML statique)
+    ├── style.css        # Design professionnel (palette brand #C5753A)
+    └── app.js           # État, navigation, IPC, progression live
+```
+
+### Écrans du wizard
+
+| Étape | Contenu |
+|---|---|
+| 1. Bienvenue | Checklist des prérequis (DNS, admin, SMTP, durée estimée) |
+| 2. Type de déploiement | 3 cartes : Public HTTPS, Intranet/LAN, Localhost test |
+| 3. Configuration | Répertoire d'installation (parcourir), domaine/IP, port |
+| 4. Compte admin | Prénom, nom, email, mot de passe (indicateur de force) |
+| 5. Email SMTP | Optionnel, presets OVH/Gandi/Infomaniak/IONOS/Gmail/o2switch |
+| 6. Récapitulatif | Relecture + checkbox de confirmation |
+| 7. Installation | Suivi de tâches en direct + barre de progression + logs |
+| 8. Terminé | URL cliquable + identifiants admin + « Ouvrir dans le navigateur » |
+
+### Tâches d'installation
+
+L'installateur effectue dans l'ordre :
+
+1. Vérification Node.js ≥ 18
+2. Copie des fichiers (`spirit-v2/` + `frontend/`)
+3. `npm install --omit=dev` (backend)
+4. `npm install` (frontend)
+5. `npm run build` — compilation Vite
+6. Génération `.env` (JWT secrets, VAPID, SMTP si activé)
+7. Création du service système (Linux : `systemd` via `pkexec` ; Windows : `schtasks`)
+8. Configuration Caddy HTTPS (si déploiement public)
+9. Démarrage du service
+
+### Build
+
+```bash
+cd installer
+npm run build:linux  # → dist/Mineral Spirit Installer-1.0.0.AppImage
+npm run build:win    # → dist/Mineral Spirit Installer Setup 1.0.0.exe
+npm run build:all    # Les deux simultanément
+```
+
+Les sources de l'application (`spirit-v2/` + `frontend/`) sont embarquées dans le binaire via `extraResources` (electron-builder). L'installateur est donc **autonome** : aucune dépendance réseau pour les sources (seulement pour `npm install` des dépendances Node.js).

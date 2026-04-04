@@ -1,7 +1,8 @@
 # minéral Spirit v2 — Contexte de reprise du développement
 
-> Fichier créé le 28 mars 2026  
-> À lire en priorité avant de reprendre le développement sur un nouvel ordinateur.
+> Fichier créé le 28 mars 2026 — **mis à jour le 4 avril 2026**  
+> À lire en priorité avant de reprendre le développement sur un nouvel ordinateur.  
+> Version courante : **v2.1.0**
 
 ---
 
@@ -21,16 +22,33 @@ Application web de gestion de planning et des ressources humaines pour le club d
 ```
 /home/serveur/Mineral_Plan/
 ├── README.md
-├── Caddyfile                    # Config reverse proxy
+├── Caddyfile                    # Config reverse proxy (production)
+├── Caddyfile.example            # Modèle Caddy
 ├── install.sh
+│
+├── installer/                   # ← Installateur GUI Electron (NEW)
+│   ├── main.js                  # Process principal Electron (IPC, fenêtre)
+│   ├── preload.js               # contextBridge → window.api
+│   ├── package.json             # electron + electron-builder
+│   ├── scripts/
+│   │   └── installer-core.js    # Logique d'installation (9 tâches)
+│   └── renderer/
+│       ├── index.html           # Wizard 8 étapes
+│       ├── style.css            # Design professionnel
+│       └── app.js               # Logique wizard (state, IPC, progression)
+│
 ├── Doc_techniques/
-│   ├── description_technique.md  # Architecture + API (ce qu'il faut lire en 2e)
-│   ├── manuel_utilisateur.md    # Manuel destiné aux utilisateurs
+│   ├── description_technique.md  # Architecture + API (lire en 2e)
+│   ├── manuel_utilisateur.md    # Manuel admin/manager/RH
+│   ├── manuel_staff.md          # Manuel personnel (rôle staff)
 │   ├── contexte_reprise.md      # Ce fichier
+│   ├── pandoc-header.tex        # Entête LaTeX pour PDFs colorés
 │   ├── generer_pdf.sh           # Génère les PDFs (pandoc + xelatex)
 │   └── pdf/                     # PDFs générés, servis sur /docs/
 │       ├── manuel_utilisateur.pdf
+│       ├── manuel_staff.pdf
 │       └── description_technique.pdf
+│
 ├── spirit-v2/                   # Backend Node.js
 │   ├── app.js                   # Point d'entrée Express, montage des routes
 │   ├── .env                     # Secrets (NE PAS VERSIONNER)
@@ -41,21 +59,28 @@ Application web de gestion de planning et des ressources humaines pour le club d
 │   │   └── seed.js              # Données de démonstration (idempotent)
 │   ├── middleware/
 │   │   └── auth.js              # JWT cookies, requireAuth, requireRole
+│   ├── utils/
+│   │   └── http-proxy.js        # Proxy HTTPS sécurisé (whitelist API gouv) (NEW)
 │   └── routes/
-│       ├── auth.js
-│       ├── staff.js, teams.js, functions.js
+│       ├── auth.js              # Login, logout, refresh, reset-password
+│       ├── staff.js             # CRUD salariés + reset-password admin
+│       ├── teams.js, functions.js
 │       ├── leaves.js, leave-types.js
 │       ├── schedules.js, templates.js
 │       ├── swaps.js
 │       ├── course-slots.js      # Créneaux de cours + affectations
 │       ├── task-types.js        # Types de tâches (permanence, ouverture…)
 │       ├── unavailabilities.js  # Indisponibilités salariés
+│       ├── holidays.js          # Jours fériés FR (sync API gouv.fr) (NEW)
+│       ├── school-holidays.js   # Vacances scolaires A/B/C (NEW)
 │       ├── stats.js, costs.js
 │       ├── notifications.js, push.js
-│       └── settings.js
+│       ├── settings.js
+│       └── bootstrap.js         # GET /api/bootstrap (données init)
+│
 └── frontend/
     ├── src/
-    │   ├── App.jsx              # Routing par view-id (pas de react-router)
+    │   ├── App.jsx              # Routing par view-id, contexte holidays (NEW)
     │   ├── api/client.js        # Axios + intercepteur refresh token
     │   ├── context/AuthContext.jsx
     │   ├── context/ThemeContext.jsx
@@ -64,21 +89,23 @@ Application web de gestion de planning et des ressources humaines pour le club d
     │   │   ├── NotifBell.jsx, AvatarImg.jsx
     │   │   └── ForceChangePassword.jsx
     │   ├── hooks/usePushNotifications.js
-    │   ├── utils/fiscal.js      # Calcul exercice comptable
+    │   ├── utils/
+    │   │   ├── fiscal.js        # Calcul exercice comptable
+    │   │   └── holidayUtils.js  # getDayDecorations() : fériés + scolaires (NEW)
     │   └── views/
-    │       ├── LoginView.jsx
-    │       ├── MonPlanningView.jsx      # Vue perso du salarié
-    │       ├── TeamPlanningView.jsx     # Planning équipe (avec cours)
-    │       ├── GeneralPlanningView.jsx  # Vue globale toutes équipes
-    │       ├── PlanningView.jsx         # Edition planning (admin/manager)
-    │       ├── EquipeView.jsx
+    │       ├── LoginView.jsx        # Connexion + lien mot de passe oublié
+    │       ├── MonPlanningView.jsx       # Vue perso (décoration fériés/scolaires)
+    │       ├── TeamPlanningView.jsx      # Planning équipe (cours + fériés)
+    │       ├── GeneralPlanningView.jsx   # Vue globale toutes équipes
+    │       ├── PlanningView.jsx          # Édition planning (admin/manager)
+    │       ├── EquipeView.jsx            # Gestion équipe + reset mdp admin
     │       ├── CongesView.jsx
     │       ├── RelevesView.jsx
     │       ├── StatsView.jsx
     │       ├── CostsView.jsx
     │       ├── SwapView.jsx
     │       ├── MonProfilView.jsx
-    │       └── ConfigView.jsx   # Configuration globale (admin)
+    │       └── ConfigView.jsx   # Config globale + HolidaysManager + SchoolHolidaysManager
     └── dist/                    # Build production (servi par Express statique)
 ```
 
@@ -151,7 +178,7 @@ Application web de gestion de planning et des ressources humaines pour le club d
 | Gestion salariés (CRUD + avatars) | ✅ Production | |
 | Équipes multi-membres (staff_teams) | ✅ Production | Remplace team_id |
 | Fonctions / postes | ✅ Production | |
-| Planning hebdomadaire | ✅ Production | mode quart d'heure (REAL) |
+| Planning hebdomadaire | ✅ Production | Mode quart d'heure (REAL) |
 | Modèles de planning | ✅ Production | |
 | Congés (workflow N1/N2/N3) | ✅ Production | Libération auto créneaux |
 | Types de congés configurables | ✅ Production | |
@@ -168,6 +195,10 @@ Application web de gestion de planning et des ressources humaines pour le club d
 | PDF documentation accessibles | ✅ Production | Via /docs/ |
 | Vue Planning Équipe (cours+filtres) | ✅ Production | fn_slugs par équipe |
 | Vue Planning Général | ✅ Production | Mode jour/semaine |
+| **Jours fériés français** | ✅ Production | Sync API officielle calendrier.api.gouv.fr, 12 zones DOM-TOM |
+| **Vacances scolaires (zones A/B/C)** | ✅ Production | Sync data.education.gouv.fr, bandeau visuel planning |
+| **Réinitialisation mot de passe** | ✅ Production | Lien par email (SMTP) + reset admin depuis EquipeView |
+| **Installateur GUI Electron** | ✅ Disponible | Linux AppImage + Windows NSIS, wizard 8 étapes |
 
 ---
 
@@ -225,6 +256,20 @@ cd /home/serveur/Mineral_Plan/Doc_techniques
 bash generer_pdf.sh
 ```
 
+### Lancer l'installateur GUI (développement)
+```bash
+cd /home/serveur/Mineral_Plan/installer
+npm start    # Electron en mode dev (nécessite session graphique)
+```
+
+### Builder l'installateur en binaire
+```bash
+cd /home/serveur/Mineral_Plan/installer
+npm run build:linux  # → dist/Mineral Spirit Installer-1.0.0.AppImage
+npm run build:win    # → dist/Mineral Spirit Installer Setup 1.0.0.exe
+npm run build:all    # Les deux
+```
+
 ### Inspecter la base
 ```bash
 sqlite3 /home/serveur/Mineral_Plan/spirit-v2/db/spirit.db
@@ -276,3 +321,5 @@ sqlite3 /home/serveur/Mineral_Plan/spirit-v2/db/spirit.db \
 - Module de planning saisonnier (périodes vacances vs hors-vacances)
 - Gestion des certifications salariés (BE, BPJEPS…) avec dates d'expiration
 - API publique lecture seule pour afficher le planning sur le site vitrine
+- Déclarations d'heures autonomes (route `/api/hour-declarations` déjà montée, à implémenter)
+- Notifications email automatiques (SMTP configuré pour reset mdp, extensible aux congés)
