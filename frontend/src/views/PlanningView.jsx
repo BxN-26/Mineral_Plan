@@ -168,31 +168,64 @@ const CourseSlotCompactBlock = ({ courses, assignments, onOpen, col = 0, colCoun
   const totalNeeded   = courses.reduce((s, c) => s + (c.capacity || 2), 0);
   const totalAssigned = courses.reduce((s, c) => s + (assignments[c.id]?.length || 0), 0);
   const ok = totalAssigned >= totalNeeded;
-  const w      = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
-  const left   = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
-  const narrow = colCount > 1;
+  const w    = colCount > 1 ? `calc(${100 / colCount}% - 2px)` : 'calc(100% - 4px)';
+  const left = colCount > 1 ? `calc(${col * 100 / colCount}% + 1px)` : '2px';
+
+  // Niveaux de compacité selon hauteur et nombre de colonnes simultanées
+  const narrow    = colCount >= 3;          // colonne étroite
+  const compact   = h < 42 || colCount >= 2; // peu de hauteur ou ≥2 colonnes
+  const micro     = h < 28 || colCount >= 4; // très petit
+  const badgeFontSize  = micro ? 7 : compact ? 8 : 9;
+  const badgePad       = micro ? '1px 2px' : compact ? '1px 4px' : '2px 5px';
+  const dotSize        = micro ? 4 : compact ? 5 : 6;
+  const maxDots        = narrow ? 1 : 3;
+  // Badge en colonne quand hauteur ok mais largeur faible
+  const badgeVertical  = narrow && h >= 48;
+
+  // Tampon COURS : taille proportionnelle à la hauteur, réduite si colonne étroite
+  const stampSize    = Math.max(9, Math.min(22, (h * 0.28) / Math.max(1, colCount * 0.55)));
+  const stampRotate  = narrow ? '-8deg' : '-18deg';
+  const stampSpacing = narrow ? '0.05em' : '0.15em';
+
   return (
     <div style={{ position: 'absolute', top, left, width: w, height: h, zIndex: 1, pointerEvents: 'none', boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0, background: primaryBg, borderLeft: `4px solid ${primaryColor}`, borderTop: `1px solid ${primaryColor}40`, borderBottom: `1px solid ${primaryColor}40`, opacity: 0.72, boxSizing: 'border-box' }} />
       {/* Fond hachuré en points */}
       <div style={{ position: 'absolute', inset: 0, backgroundImage: `radial-gradient(circle, ${primaryColor}55 1.2px, transparent 1.2px)`, backgroundSize: '7px 7px', opacity: 0.9, boxSizing: 'border-box' }} />
-      {/* Tampon COURS centré */}
+      {/* Tampon COURS — taille et rotation adaptées à l'espace disponible */}
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', overflow: 'hidden' }}>
-        <span style={{ fontSize: Math.max(13, Math.min(22, h * 0.28)), fontWeight: 900, letterSpacing: '0.18em', color: primaryColor, opacity: 0.38, transform: 'rotate(-18deg)', textTransform: 'uppercase', userSelect: 'none', lineHeight: 1, fontFamily: 'Impact, "Arial Black", sans-serif', textShadow: `0 0 0 1px ${primaryColor}40` }}>
+        <span style={{ fontSize: stampSize, fontWeight: 900, letterSpacing: stampSpacing, color: primaryColor, opacity: 0.38, transform: `rotate(${stampRotate})`, textTransform: 'uppercase', userSelect: 'none', lineHeight: 1, fontFamily: 'Impact, "Arial Black", sans-serif', whiteSpace: 'nowrap' }}>
           COURS
         </span>
       </div>
-      {/* Badge cliquable en haut à droite */}
-      <div onClick={onOpen} title={`${courses.length} cours — cliquer pour gérer les moniteurs`} style={{ position: 'absolute', top: 3, right: 3, display: 'flex', flexDirection: narrow ? 'column' : 'row', alignItems: 'center', gap: narrow ? 2 : 3, background: 'rgba(255,255,255,.96)', border: `1.5px solid ${ok ? '#22C55E50' : '#F59E0B80'}`, borderRadius: 5, padding: narrow ? '3px 2px' : '2px 5px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 1px 4px rgba(0,0,0,.14)', zIndex: 4, userSelect: 'none' }}>
-        <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
-          {courses.slice(0, narrow ? 2 : 3).map((c, i) => <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', background: c.color, flexShrink: 0 }} />)}
-          {courses.length > (narrow ? 2 : 3) && <span style={{ fontSize: 8, color: '#9B9890' }}>+{courses.length - (narrow ? 2 : 3)}</span>}
-        </div>
-        <span style={{ fontSize: 9, fontWeight: 700, color: '#1E2235' }}>×{courses.length}</span>
-        <span style={{ fontSize: 9, fontWeight: 800, color: ok ? '#16A34A' : '#D97706' }}>{totalAssigned}/{totalNeeded}👤</span>
+      {/* Badge cliquable — orientation et taille adaptées */}
+      <div
+        onClick={onOpen}
+        title={`${courses.length} cours — cliquer pour gérer les moniteurs`}
+        style={{
+          position: 'absolute', top: 3, right: 3,
+          display: 'flex', flexDirection: badgeVertical ? 'column' : 'row',
+          alignItems: 'center', gap: micro ? 1 : 2,
+          background: 'rgba(255,255,255,.96)',
+          border: `1.5px solid ${ok ? '#22C55E50' : '#F59E0B80'}`,
+          borderRadius: 4, padding: badgePad,
+          cursor: 'pointer', pointerEvents: 'auto',
+          boxShadow: '0 1px 4px rgba(0,0,0,.14)', zIndex: 4, userSelect: 'none',
+          maxWidth: 'calc(100% - 6px)', maxHeight: `${h - 6}px`,
+          overflow: 'hidden', boxSizing: 'border-box',
+        }}
+      >
+        {!micro && courses.slice(0, maxDots).map((c, i) => (
+          <div key={i} style={{ width: dotSize, height: dotSize, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+        ))}
+        {!micro && courses.length > maxDots && (
+          <span style={{ fontSize: badgeFontSize - 1, color: '#9B9890', lineHeight: 1 }}>+{courses.length - maxDots}</span>
+        )}
+        <span style={{ fontSize: badgeFontSize, fontWeight: 700, color: '#1E2235', lineHeight: 1 }}>×{courses.length}</span>
+        <span style={{ fontSize: badgeFontSize, fontWeight: 800, color: ok ? '#16A34A' : '#D97706', lineHeight: 1 }}>{totalAssigned}/{totalNeeded}👤</span>
       </div>
-      {/* Noms des groupes si assez de hauteur */}
-      {h >= 44 && (
+      {/* Noms des groupes si assez de hauteur et pas trop de colonnes */}
+      {h >= 44 && !narrow && (
         <div style={{ position: 'absolute', bottom: 3, left: 7, right: 60, fontSize: 9, color: primaryColor, fontWeight: 600, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
           {courses.map(c => c.group_name).join(' · ')}
         </div>
