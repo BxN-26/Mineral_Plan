@@ -3,7 +3,14 @@
 > Créé le 5 juillet 2026, suite au bug de réinitialisation de mot de passe (colonne `updated_at` inexistante sur `users`, corrigé le 05/07/2026, commit `4a67bdb`).
 > Objectif : identifier avant la phase de test estivale (usage réel intensif — moniteurs, cours d'été, congés, échanges de créneaux) tout ce qui pourrait casser le service ou corrompre des données, en priorité les bugs de la **même famille** que celui déjà rencontré.
 > Méthode : 5 revues de code ciblées (sécurité/auth, intégrité données & migrations, logique métier planning/congés/échanges, frontend React, déploiement/ops), en lecture seule, avec élimination des faux positifs.
-> **Aucun correctif n'a été appliqué** — ce document sert de feuille de route pas-à-pas.
+>
+> **Mise à jour du 5 juillet 2026 (soir)** : Phase 0 et Phase 1 du plan d'action (§7) implémentées sur
+> la branche `fix/audit-pre-ete-2026`, testées (voir `Doc_techniques/tests_manuels_phase0_1.md`).
+> Bug critique supplémentaire trouvé et corrigé en cours de route, absent de l'audit initial :
+> **`POST /api/leaves` était complètement cassé** (`db_.transaction` n'existe pas sur l'objet `db_`,
+> seule `db_.tx` existe — même famille de bug que celui déjà rencontré). Toute création de congé
+> échouait avec une 500, en prod comme partout. Corrigé dans `routes/leaves.js`.
+> Statut détaillé des points §0/§1 : voir les cases à cocher dans chaque section ci-dessous.
 
 ---
 
@@ -11,15 +18,15 @@
 
 Ces 3 points sont soit déjà exploitables/cassés, soit désamorcent silencieusement des protections existantes. À traiter avant toute autre chose, dans cet ordre :
 
-1. **Vérifier la valeur de `NODE_ENV` dans le `.env` de prod** (§1.1) — si ce n'est pas `production`, plusieurs protections de sécurité sont actuellement désactivées sans que rien ne le signale.
-2. **Ajouter `app.set('trust proxy', 1)` dans `app.js`** (§1.2) — sans ça, un seul moniteur qui se trompe de mot de passe peut bloquer la connexion de **toute l'équipe** pendant 15 minutes.
-3. **Mettre en place un backup automatisé de `spirit.db`** (§5.1) — à ce jour, aucune sauvegarde n'existe nulle part. Une corruption ou une fausse manip pendant l'été = perte définitive.
+1. **Vérifier la valeur de `NODE_ENV` dans le `.env` de prod** (§1.1) — si ce n'est pas `production`, plusieurs protections de sécurité sont actuellement désactivées sans que rien ne le signale. **[À FAIRE PAR TOI sur le serveur — pas de code à changer]**
+2. **Ajouter `app.set('trust proxy', 1)` dans `app.js`** (§1.2) — sans ça, un seul moniteur qui se trompe de mot de passe peut bloquer la connexion de **toute l'équipe** pendant 15 minutes. ✅ **CORRIGÉ** (branche `fix/audit-pre-ete-2026`)
+3. **Mettre en place un backup automatisé de `spirit.db`** (§5.1) — à ce jour, aucune sauvegarde n'existe nulle part. Une corruption ou une fausse manip pendant l'été = perte définitive. ✅ **Script prêt** (`spirit-v2/scripts/backup-db.sh`, testé) — **cron à installer par toi sur le serveur**, voir `tests_manuels_phase0_1.md` §1.2
 
 ---
 
 ## 1. Sécurité & authentification
 
-### 1.1 — CRITIQUE — `NODE_ENV` potentiellement pas à `production` sur le serveur réel
+### 1.1 — CRITIQUE — `NODE_ENV` potentiellement pas à `production` sur le serveur réel — ⏳ **[À FAIRE PAR TOI, pas de code]**
 **Fichiers concernés :** `spirit-v2/.env` (valeur réelle constatée en prod), `spirit-v2/app.js:47-49,155-158`, `spirit-v2/middleware/auth.js:19`, `spirit-v2/db/database.js:504-508`
 
 Si `NODE_ENV` n'est pas exactement `production` :
@@ -29,7 +36,7 @@ Si `NODE_ENV` n'est pas exactement `production` :
 
 **À faire :** `ssh` sur le serveur (ou via le terminal déjà ouvert), `grep NODE_ENV /opt/mineral-plan/spirit-v2/.env`. Si absent ou différent de `production`, corriger puis `sudo systemctl restart mineral-spirit`.
 
-### 1.2 — CRITIQUE — Pas de `trust proxy` derrière Caddy → rate limiting mutualisé pour tout le monde
+### 1.2 — CRITIQUE — Pas de `trust proxy` derrière Caddy → rate limiting mutualisé pour tout le monde — ✅ **CORRIGÉ**
 **Fichiers concernés :** `spirit-v2/app.js` (aucune config trust proxy), `spirit-v2/routes/auth.js:12-19` (loginLimiter), `:128-134` (resetLimiter), `Caddyfile.example:22-24`
 
 Express voit l'IP de Caddy (localhost) pour toutes les requêtes tant que `trust proxy` n'est pas configuré. Le rate-limiter (10 tentatives/15min) regroupe alors **tous les utilisateurs derrière une seule clé**. Un moniteur qui se trompe 10 fois de mot de passe bloque la connexion de toute l'équipe. Effet de bord : `req.ip` dans `audit_log` sera identique pour tout le monde (traçabilité faussée).
@@ -40,7 +47,7 @@ app.set('trust proxy', 1);
 ```
 Vérifier ensuite que Caddy transmet bien `X-Forwarded-For` (comportement par défaut de `reverse_proxy`).
 
-### 1.3 — CRITIQUE — Uploads sans `try/catch` → crash total du process Node
+### 1.3 — CRITIQUE — Uploads sans `try/catch` → crash total du process Node — ✅ **CORRIGÉ** (+ filet `unhandledRejection` global, testé : crash reproduit avant, serveur survit après)
 **Fichiers concernés :** `spirit-v2/routes/staff.js:366-409` (upload avatar, `sharp(...).toFile()`), `spirit-v2/routes/leaves.js:619-661` (upload justificatif, `fs.*Sync`)
 
 Ces handlers sont `async` mais Express 4 ne rattrape pas les rejets de promesse non gérés. Sous Node 22, une exception non catchée dans un handler async (fichier corrompu que `sharp` refuse de décoder, disque plein) **termine tout le process** — coupe l'accès à l'application pour tout le monde, pas juste la requête fautive. Avec des uploads répétés de photos/justificatifs cet été, le risque n'est pas négligeable.
@@ -59,14 +66,14 @@ Le code vérifie systématiquement `role === 'staff'` pour restreindre l'accès 
 
 **Question pour toi :** le rôle `viewer` est-il réellement attribué à quelqu'un aujourd'hui, ou est-ce un rôle prévu mais jamais utilisé en pratique ? Ça change l'urgence réelle de ce point.
 
-### 1.5 — MAJEUR — `PUT /api/swaps/:id/respond` : acceptation d'un échange ciblé sans vérifier le destinataire
+### 1.5 — MAJEUR — `PUT /api/swaps/:id/respond` : acceptation d'un échange ciblé sans vérifier le destinataire — ✅ **CORRIGÉ** (testé en conditions réelles : tiers → 403, cible → 200)
 **Fichier :** `routes/swaps.js:218-350`
 
 Le refus vérifie bien que le répondant est `swap.target_id` en mode `targeted` (ligne 244), mais **l'acceptation ne fait pas cette vérification**. N'importe quel salarié authentifié peut accepter un échange destiné à un collègue précis et s'approprier son créneau.
 
 **Correctif :** avant d'accepter, vérifier `swap.mode === 'targeted' ? responderId === swap.target_id : getFunctionColleagues(...).includes(responderId)`.
 
-### 1.6 — MAJEUR — Justificatifs de congés servis publiquement, sans authentification
+### 1.6 — MAJEUR — Justificatifs de congés servis publiquement, sans authentification — ✅ **CORRIGÉ** (testé : ancienne URL → SPA fallback, nouvelle route → 401/403/200 selon les cas)
 **Fichiers :** `app.js:113` (`express.static('/uploads')`), `routes/leaves.js:650-657`
 
 Les certificats médicaux/justificatifs uploadés (`/uploads/documents/leave_{id}_{timestamp}.jpg|pdf`) sont accessibles à quiconque connaît ou devine l'URL, **sans aucune session**. Le nom de fichier est prévisible (id séquentiel + timestamp).
@@ -148,21 +155,21 @@ Colonnes `n1/n2/n3_*`, `half_start/half_end`, `document_url` sur `leaves` · tou
 
 ## 3. Logique métier — planning, congés, échanges (spécial été)
 
-### 3.1 — CRITIQUE — Jours fériés toujours exclus, même pour les congés "calendar_days"
+### 3.1 — CRITIQUE — Jours fériés toujours exclus, même pour les congés "calendar_days" — ✅ **CORRIGÉ** (vérifié : 11j au lieu de 10j sur un cas test avec 1 férié)
 **Fichier :** `routes/leaves.js:90-104` (`calcDays`)
 
 Les types `maladie`, `accident`, `maternite`, `sans_solde` utilisent `count_method='calendar_days'` (censé compter *tous* les jours), mais `getHolidaysSet()` est appliqué sans condition sur la méthode. Un arrêt maladie du 10 au 20 juillet qui passe par le 14 juillet (férié) perd 1 jour dans le décompte. **Impact concret pour l'été : 14 juillet et 15 août tombent tous les deux dans la période de test.**
 
 **Correctif :** dans `calcDays`, n'exclure les jours fériés que si `method !== 'calendar_days'`.
 
-### 3.2 — CRITIQUE — Chevauchement de congés mal détecté pour les demi-journées
+### 3.2 — CRITIQUE — Chevauchement de congés mal détecté pour les demi-journées — ✅ **CORRIGÉ** (4 scénarios vérifiés : AM+PM ok, AM+AM conflit, jour complet+demi conflit, multi-jours conflit)
 **Fichier :** `routes/leaves.js:330-336`
 
 La requête de chevauchement compare uniquement les dates (`NOT (end_date < ? OR start_date > ?)`), sans tenir compte de `half_start`/`half_end`. Une demi-journée AM le 14/07 empêche à tort de poser une demi-journée PM le même jour pour un autre motif — un cas d'usage courant en congés d'été.
 
 **Correctif :** affiner la condition de chevauchement pour permettre AM+PM complémentaires sur une même date.
 
-### 3.3 — CRITIQUE — Double affectation possible sur un créneau lors d'échanges concurrents
+### 3.3 — CRITIQUE — Double affectation possible sur un créneau lors d'échanges concurrents — ⏳ **PAS ENCORE CORRIGÉ** (seul §1.5 — qui peut accepter — a été traité ; ce point-ci touche `approve`/§2.2, reporté à une phase ultérieure)
 **Fichier :** `routes/swaps.js:360-369`
 
 Rien n'empêche deux demandes d'échange `open` d'exister pour le même créneau (pas de contrainte d'unicité requester+week+day+hour). Si un manager approuve les deux (matchées par deux collègues différents), la 1ère approbation supprime le créneau original et ajoute le 1er remplaçant ; la 2e ne trouve plus rien à retirer (échec silencieux, voir §2.2) mais ajoute quand même le 2e remplaçant → **deux personnes sur le même créneau**. Risque réel en période de forte activité de swaps + congés simultanés cet été.
@@ -292,7 +299,7 @@ Aucun secret/URL localhost/token en dur dans le code (identifiants de démo dans
 
 ## 5. Déploiement & exploitation
 
-### 5.1 — CRITIQUE — Aucune sauvegarde automatisée de la base SQLite
+### 5.1 — CRITIQUE — Aucune sauvegarde automatisée de la base SQLite — ✅ **Script prêt et testé** (`spirit-v2/scripts/backup-db.sh`) — ⏳ **cron à installer par toi sur le serveur**
 **Constat :** aucun script, cron ou timer systemd ne sauvegarde `spirit-v2/db/spirit.db` (+ `.db-wal`/`.db-shm`, mode WAL). La seule mention est une commande `cp` manuelle documentée dans `description_technique.md:812-818`, jamais exécutée automatiquement.
 
 **Correctif recommandé :**
@@ -349,17 +356,20 @@ Si la version Node du VPS change (mise à jour système) sans `npm install` derr
 ## 7. Plan d'action recommandé (ordre suggéré)
 
 **Étape 1 — Aujourd'hui, avant tout usage réel intensif (§0) :**
-1. Vérifier/corriger `NODE_ENV` en prod (§1.1)
-2. Ajouter `trust proxy` (§1.2)
-3. Mettre en place un cron de backup `spirit.db` (§5.1)
+1. Vérifier/corriger `NODE_ENV` en prod (§1.1) — ⏳ à faire par toi sur le serveur
+2. Ajouter `trust proxy` (§1.2) — ✅ fait
+3. Mettre en place un cron de backup `spirit.db` (§5.1) — ✅ script prêt, ⏳ cron à installer par toi
 
-**Étape 2 — Cette semaine, robustesse de base :**
-4. `try/catch` sur les uploads (§1.3)
-5. Corriger le calcul des jours fériés pour `calendar_days` (§3.1)
-6. Corriger le chevauchement demi-journées (§3.2)
-7. Sécuriser l'acceptation d'échange ciblé (§1.5 / §3.3)
-8. Protéger `/uploads/documents` par authentification (§1.6)
-9. Ajouter feedback d'erreur + protection double-clic sur PlanningView, StaffForm, SwapView, CongesView (§4.1-4.4, §4.7)
+**Étape 2 — Cette semaine, robustesse de base :** ✅ **toutes faites** sur la branche `fix/audit-pre-ete-2026`
+(+ un bug critique supplémentaire trouvé et corrigé au passage : `POST /api/leaves` était cassé, cf. §0 en tête de document)
+4. `try/catch` sur les uploads (§1.3) — ✅ fait
+5. Corriger le calcul des jours fériés pour `calendar_days` (§3.1) — ✅ fait
+6. Corriger le chevauchement demi-journées (§3.2) — ✅ fait
+7. Sécuriser l'acceptation d'échange ciblé (§1.5) — ✅ fait (§3.3/§2.2 — double affectation via `approve` — reste ouvert, voir étape 3)
+8. Protéger `/uploads/documents` par authentification (§1.6) — ✅ fait
+9. Ajouter feedback d'erreur + protection double-clic sur PlanningView, StaffForm, SwapView, CongesView (§4.1-4.4, §4.7) — ✅ fait
+
+Tests à effectuer avant merge : voir `Doc_techniques/tests_manuels_phase0_1.md`.
 
 **Étape 3 — Avant la rentrée de septembre :**
 10. Propager le filtrage journalier des vacances scolaires à `course-slots.js` (§3.6)
@@ -367,6 +377,7 @@ Si la version Node du VPS change (mise à jour système) sans `npm install` derr
 12. Corriger le type `recup` (§3.4) — selon réponse à la question 2
 13. Restauration des créneaux après annulation congé/indispo (§3.5)
 14. Transactions sur l'approbation de congés (§2.3)
+15. Double affectation possible sur échange concurrent (§3.3/§2.2) — non traité en phase 1, à ne pas oublier
 
 **Étape 4 — Quand il y aura du temps :**
 Le reste des points "moyen"/"faible" listés ci-dessus, en particulier l'harmonisation `alert()`/`toast` (§4.6) et le nettoyage du code mort (`functions.js` §2.1, `trackActivity` §1.8, tables `timesheets`/`availabilities` §2.6).
