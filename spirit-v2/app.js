@@ -44,6 +44,11 @@ initSchema();
 // ── App ───────────────────────────────────────────────────────
 const app = express();
 
+// Derrière Caddy (reverse proxy) : sans ça, Express voit l'IP du proxy
+// pour toutes les requêtes et le rate limiting (login, reset password)
+// mutualise tous les utilisateurs sous une seule clé.
+app.set('trust proxy', 1);
+
 app.use(helmet({
   contentSecurityPolicy: false, // géré par Caddy en prod
 }));
@@ -109,8 +114,12 @@ app.use(express.static(distPath, {
   },
 }));
 
-// Servir les uploads (avatars, documents justificatifs, etc.)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Servir les avatars publiquement (peu sensible, affichés partout dans l'UI)
+app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
+// Les documents justificatifs (certificats médicaux, etc.) NE sont PAS servis
+// statiquement — voir la route authentifiée GET /api/leaves/:id/document
+// (audit_pre_ete_2026.md §1.6 : ils étaient auparavant accessibles sans
+// aucune session à quiconque devinait/connaissait l'URL).
 
 // Servir les PDFs de documentation (accès public, lecture seule)
 const docsPath = path.join(__dirname, '../Doc_techniques/pdf');
@@ -157,6 +166,14 @@ app.use((err, req, res, _next) => {
     ? 'Erreur serveur interne'
     : (err.message || 'Erreur serveur');
   res.status(status).json({ error: message });
+});
+
+// Filet de sécurité : une exception async non catchée dans un handler ne
+// doit jamais tuer tout le process (cf. audit_pre_ete_2026.md §1.3). Les
+// routes elles-mêmes doivent rester la première ligne de défense (try/catch),
+// ceci n'est qu'un filet de dernier recours.
+process.on('unhandledRejection', (err) => {
+  console.error('[unhandledRejection]', err);
 });
 
 const PORT = Number(process.env.PORT) || 3000;

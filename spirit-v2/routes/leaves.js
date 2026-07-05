@@ -91,16 +91,42 @@ function calcDays(start, end, method = 'working_days', halfStart = 0, halfEnd = 
   let days = 0;
   const d = new Date(start + 'T12:00:00');
   const e = new Date(end   + 'T12:00:00');
-  const working  = method === 'working_days' ? getWorkingDaysSet() : null;
-  const holidays = getHolidaysSet(start, end);
+  const working = method === 'working_days' ? getWorkingDaysSet() : null;
+  // Les jours fériés ne sont exclus qu'en mode "jours ouvrés" — un congé en
+  // "jours calendaires" (maladie, accident, maternité, sans solde...) doit
+  // compter TOUS les jours, fériés inclus.
+  const excludeHolidays = method === 'working_days';
+  const holidays = excludeHolidays ? getHolidaysSet(start, end) : null;
   while (d <= e) {
     const dateStr = d.toISOString().slice(0, 10);
-    if ((working ? working.has(d.getDay()) : true) && !holidays.has(dateStr)) days++;
+    if ((working ? working.has(d.getDay()) : true) && (!excludeHolidays || !holidays.has(dateStr))) days++;
     d.setDate(d.getDate() + 1);
   }
   if (halfStart) days -= 0.5;
   if (halfEnd)   days -= 0.5;
   return Math.max(0, days);
+}
+
+/** Portions (matin/après-midi) occupées par un congé sur une date donnée. */
+function dayPortions(leave, dateStr) {
+  let am = true, pm = true;
+  if (dateStr === leave.start_date && leave.half_start) am = false;
+  if (dateStr === leave.end_date   && leave.half_end)   pm = false;
+  return { am, pm };
+}
+
+/**
+ * Vrai conflit entre deux congés (chevauchement de dates déjà confirmé en amont).
+ * Une demi-journée AM et une demi-journée PM sur le même unique jour partagé
+ * ne sont PAS en conflit ; tout chevauchement de plusieurs jours l'est toujours.
+ */
+function leavesConflict(existing, candidate) {
+  const ovStart = existing.start_date > candidate.start_date ? existing.start_date : candidate.start_date;
+  const ovEnd   = existing.end_date   < candidate.end_date   ? existing.end_date   : candidate.end_date;
+  if (ovStart !== ovEnd) return true; // chevauchement de plus d'un jour → conflit réel
+  const a = dayPortions(existing, ovStart);
+  const b = dayPortions(candidate, ovStart);
+  return (a.am && b.am) || (a.pm && b.pm);
 }
 
 /** Résout un approbateur pour un niveau donné. Retourne null si introuvable. */
@@ -327,12 +353,20 @@ router.post('/', AUTH, (req, res) => {
   }
 
   // E3 — chevauchement + insertion atomiques (protection race condition)
-  const txInsert = db_.transaction(() => {
-    const c = db_.get(
-      `SELECT id FROM leaves WHERE staff_id=? AND status NOT IN ('refused','cancelled')
+  // Bug corrigé : db_.transaction n'existe pas sur l'objet db_ (seul db_.tx
+  // existe, cf. db/database.js), ce qui faisait planter TOUTE création de
+  // congé avec une 500 — cf. audit_pre_ete_2026.md.
+  const txInsert = db_.tx(() => {
+    // Candidats en chevauchement de dates ; le filtrage fin (demi-journées
+    // AM/PM complémentaires sur un jour partagé unique) se fait en JS ci-dessous.
+    const candidates = db_.all(
+      `SELECT id, start_date, end_date, half_start, half_end FROM leaves
+       WHERE staff_id=? AND status NOT IN ('refused','cancelled')
        AND NOT (end_date < ? OR start_date > ?)`,
       [staff_id, start_date, end_date]
     );
+    const newLeave = { start_date, end_date, half_start, half_end };
+    const c = candidates.find(existing => leavesConflict(existing, newLeave));
     if (c) return { conflict: c };
     const ins = db_.run(
       `INSERT INTO leaves
@@ -350,7 +384,7 @@ router.post('/', AUTH, (req, res) => {
        n3?.id||null, n3 ? 'pending' : null]
     );
     return { insertId: ins.lastInsertRowid };
-  })();
+  });
 
   if (txInsert.conflict)
     return res.status(409).json({ error: 'Conflit avec un congé existant', conflict_id: txInsert.conflict.id });
@@ -616,48 +650,73 @@ router.delete('/:id', AUTH, (req, res) => {
 
 // ── POST /api/leaves/:id/document ────────────────────────────
 // Upload d'un justificatif pour une demande existante
-router.post('/:id/document', AUTH, docUpload.single('document'), async (req, res) => {
+router.post('/:id/document', AUTH, docUpload.single('document'), async (req, res, next) => {
+  try {
+    const leave = db_.get('SELECT * FROM leaves WHERE id=?', [req.params.id]);
+    if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
+
+    // Vérification droits : salarié concerné ou admin/manager/rh
+    const isPrivileged = ['admin','superadmin','manager','rh'].includes(req.user.role);
+    if (!isPrivileged && req.user.staff_id !== leave.staff_id)
+      return res.status(403).json({ error: 'Non autorisé' });
+
+    if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+
+    // N4 — vérification magic bytes (ne pas se fier au MIME déclaré)
+    const hdrD = req.file.buffer;
+    const isJpegD = hdrD[0]===0xFF && hdrD[1]===0xD8 && hdrD[2]===0xFF;
+    const isPngD  = hdrD[0]===0x89 && hdrD[1]===0x50 && hdrD[2]===0x4E && hdrD[3]===0x47;
+    const isPdfD  = hdrD[0]===0x25 && hdrD[1]===0x50 && hdrD[2]===0x44 && hdrD[3]===0x46; // %PDF
+    const isWebpD = hdrD[0]===0x52 && hdrD[1]===0x49 && hdrD[2]===0x46 && hdrD[3]===0x46
+                 && hdrD[8]===0x57 && hdrD[9]===0x45 && hdrD[10]===0x42 && hdrD[11]===0x50;
+    if (!isJpegD && !isPngD && !isPdfD && !isWebpD)
+      return res.status(400).json({ error: 'Format invalide — JPEG, PNG, WebP ou PDF uniquement' });
+
+    const docsDir = require('path').join(__dirname, '..', 'uploads', 'documents');
+    if (!require('fs').existsSync(docsDir))
+      require('fs').mkdirSync(docsDir, { recursive: true });
+
+    // Supprimer ancien fichier s'il existait
+    if (leave.document_url) {
+      const old = require('path').join(__dirname, '..', leave.document_url.replace(/^\//, ''));
+      if (require('fs').existsSync(old)) { try { require('fs').unlinkSync(old); } catch (_) {} }
+    }
+
+    const ext = req.file.mimetype === 'application/pdf' ? '.pdf' : '.jpg';
+    const filename = `leave_${leave.id}_${Date.now()}${ext}`;
+    const dest = require('path').join(docsDir, filename);
+
+    require('fs').writeFileSync(dest, req.file.buffer);
+
+    const url = `/uploads/documents/${filename}`;
+    db_.run("UPDATE leaves SET document_url=?, updated_at=datetime('now') WHERE id=?", [url, leave.id]);
+
+    auditLog(req, 'LEAVE_DOC_UPLOAD', 'leaves', leave.id);
+    res.json({ document_url: url });
+  } catch (err) {
+    // Écriture disque échouée, etc. — ne doit jamais faire planter le process
+    // (crash total sinon, cf. audit_pre_ete_2026.md §1.3)
+    next(err);
+  }
+});
+
+// ── GET /api/leaves/:id/document — téléchargement authentifié ──
+// Les justificatifs (certificats médicaux, etc.) ne doivent pas être servis
+// par express.static (accès public sans session) — cf. audit_pre_ete_2026.md §1.6.
+router.get('/:id/document', AUTH, (req, res) => {
   const leave = db_.get('SELECT * FROM leaves WHERE id=?', [req.params.id]);
   if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
 
-  // Vérification droits : salarié concerné ou admin/manager/rh
   const isPrivileged = ['admin','superadmin','manager','rh'].includes(req.user.role);
   if (!isPrivileged && req.user.staff_id !== leave.staff_id)
     return res.status(403).json({ error: 'Non autorisé' });
 
-  if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+  if (!leave.document_url) return res.status(404).json({ error: 'Aucun document pour ce congé' });
 
-  // N4 — vérification magic bytes (ne pas se fier au MIME déclaré)
-  const hdrD = req.file.buffer;
-  const isJpegD = hdrD[0]===0xFF && hdrD[1]===0xD8 && hdrD[2]===0xFF;
-  const isPngD  = hdrD[0]===0x89 && hdrD[1]===0x50 && hdrD[2]===0x4E && hdrD[3]===0x47;
-  const isPdfD  = hdrD[0]===0x25 && hdrD[1]===0x50 && hdrD[2]===0x44 && hdrD[3]===0x46; // %PDF
-  const isWebpD = hdrD[0]===0x52 && hdrD[1]===0x49 && hdrD[2]===0x46 && hdrD[3]===0x46
-               && hdrD[8]===0x57 && hdrD[9]===0x45 && hdrD[10]===0x42 && hdrD[11]===0x50;
-  if (!isJpegD && !isPngD && !isPdfD && !isWebpD)
-    return res.status(400).json({ error: 'Format invalide — JPEG, PNG, WebP ou PDF uniquement' });
+  const filePath = path.join(__dirname, '..', leave.document_url.replace(/^\//, ''));
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Fichier introuvable' });
 
-  const docsDir = require('path').join(__dirname, '..', 'uploads', 'documents');
-  if (!require('fs').existsSync(docsDir))
-    require('fs').mkdirSync(docsDir, { recursive: true });
-
-  // Supprimer ancien fichier s'il existait
-  if (leave.document_url) {
-    const old = require('path').join(__dirname, '..', leave.document_url.replace(/^\//, ''));
-    if (require('fs').existsSync(old)) { try { require('fs').unlinkSync(old); } catch (_) {} }
-  }
-
-  const ext = req.file.mimetype === 'application/pdf' ? '.pdf' : '.jpg';
-  const filename = `leave_${leave.id}_${Date.now()}${ext}`;
-  const dest = require('path').join(docsDir, filename);
-
-  require('fs').writeFileSync(dest, req.file.buffer);
-
-  const url = `/uploads/documents/${filename}`;
-  db_.run("UPDATE leaves SET document_url=?, updated_at=datetime('now') WHERE id=?", [url, leave.id]);
-
-  auditLog(req, 'LEAVE_DOC_UPLOAD', 'leaves', leave.id);
-  res.json({ document_url: url });
+  res.sendFile(filePath);
 });
 
 module.exports = router;

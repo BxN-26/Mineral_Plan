@@ -363,49 +363,55 @@ const upload = multer({
   },
 });
 
-router.post('/:id/avatar', AUTH, upload.single('avatar'), async (req, res) => {
-  // Un salarié peut changer sa propre photo ; l'admin peut changer n'importe laquelle
-  const isAdmin = ['admin', 'superadmin', 'manager'].includes(req.user.role);
-  const staffId = Number(req.params.id);
-  if (!isAdmin && req.user.staff_id !== staffId)
-    return res.status(403).json({ error: 'Accès refusé' });
+router.post('/:id/avatar', AUTH, upload.single('avatar'), async (req, res, next) => {
+  try {
+    // Un salarié peut changer sa propre photo ; l'admin peut changer n'importe laquelle
+    const isAdmin = ['admin', 'superadmin', 'manager'].includes(req.user.role);
+    const staffId = Number(req.params.id);
+    if (!isAdmin && req.user.staff_id !== staffId)
+      return res.status(403).json({ error: 'Accès refusé' });
 
-  if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+    if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
 
-  // M3 — vérification magic bytes (ne pas se fier uniquement au MIME déclaré par le client)
-  const hdr = req.file.buffer;
-  const isJpeg = hdr[0] === 0xFF && hdr[1] === 0xD8 && hdr[2] === 0xFF;
-  const isPng  = hdr[0] === 0x89 && hdr[1] === 0x50 && hdr[2] === 0x4E && hdr[3] === 0x47;
-  const isWebp = hdr[0] === 0x52 && hdr[1] === 0x49 && hdr[2] === 0x46 && hdr[3] === 0x46
-              && hdr[8] === 0x57 && hdr[9] === 0x45 && hdr[10] === 0x42 && hdr[11] === 0x50;
-  if (!isJpeg && !isPng && !isWebp)
-    return res.status(400).json({ error: 'Format image invalide — JPEG, PNG ou WebP uniquement' });
+    // M3 — vérification magic bytes (ne pas se fier uniquement au MIME déclaré par le client)
+    const hdr = req.file.buffer;
+    const isJpeg = hdr[0] === 0xFF && hdr[1] === 0xD8 && hdr[2] === 0xFF;
+    const isPng  = hdr[0] === 0x89 && hdr[1] === 0x50 && hdr[2] === 0x4E && hdr[3] === 0x47;
+    const isWebp = hdr[0] === 0x52 && hdr[1] === 0x49 && hdr[2] === 0x46 && hdr[3] === 0x46
+                && hdr[8] === 0x57 && hdr[9] === 0x45 && hdr[10] === 0x42 && hdr[11] === 0x50;
+    if (!isJpeg && !isPng && !isWebp)
+      return res.status(400).json({ error: 'Format image invalide — JPEG, PNG ou WebP uniquement' });
 
-  const s = db_.get('SELECT * FROM staff WHERE id = ?', [staffId]);
-  if (!s) return res.status(404).json({ error: 'Salarié introuvable' });
+    const s = db_.get('SELECT * FROM staff WHERE id = ?', [staffId]);
+    if (!s) return res.status(404).json({ error: 'Salarié introuvable' });
 
-  // Supprimer l'ancienne photo si elle existe
-  if (s.avatar_url) {
-    const old = path.join(__dirname, '..', 'uploads', 'avatars',
-      path.basename(s.avatar_url));
-    if (fs.existsSync(old)) fs.unlinkSync(old);
+    // Supprimer l'ancienne photo si elle existe
+    if (s.avatar_url) {
+      const old = path.join(__dirname, '..', 'uploads', 'avatars',
+        path.basename(s.avatar_url));
+      if (fs.existsSync(old)) fs.unlinkSync(old);
+    }
+
+    // Compresser + retailler en carré 300×300, max ~120 Ko
+    const filename = `${staffId}_${Date.now()}.webp`;
+    const avatarsDir = path.join(__dirname, '..', 'uploads', 'avatars');
+    if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+    const dest     = path.join(avatarsDir, filename);
+    await sharp(req.file.buffer)
+      .resize(300, 300, { fit: 'cover', position: 'center' })
+      .webp({ quality: 80 })
+      .toFile(dest);
+
+    const url = `/uploads/avatars/${filename}`;
+    db_.run("UPDATE staff SET avatar_url = ?, updated_at = datetime('now') WHERE id = ?",
+      [url, staffId]);
+
+    res.json({ avatar_url: url });
+  } catch (err) {
+    // Image illisible par sharp, disque plein, etc. — ne doit jamais faire
+    // planter le process (crash total sinon, cf. audit_pre_ete_2026.md §1.3)
+    next(err);
   }
-
-  // Compresser + retailler en carré 300×300, max ~120 Ko
-  const filename = `${staffId}_${Date.now()}.webp`;
-  const avatarsDir = path.join(__dirname, '..', 'uploads', 'avatars');
-  if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
-  const dest     = path.join(avatarsDir, filename);
-  await sharp(req.file.buffer)
-    .resize(300, 300, { fit: 'cover', position: 'center' })
-    .webp({ quality: 80 })
-    .toFile(dest);
-
-  const url = `/uploads/avatars/${filename}`;
-  db_.run("UPDATE staff SET avatar_url = ?, updated_at = datetime('now') WHERE id = ?",
-    [url, staffId]);
-
-  res.json({ avatar_url: url });
 });
 
 // ── POST /api/staff/:id/reset-password ───────────────────────

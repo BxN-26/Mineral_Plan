@@ -318,6 +318,20 @@ router.put('/:id/respond', AUTH, (req, res) => {
     return res.json({ status: swap.status, refused: true });
   }
 
+  // Acceptation — vérifier que le répondant est bien éligible :
+  // - mode ciblé : uniquement la cible désignée (target_id)
+  // - mode ouvert : uniquement un collègue de la même fonction
+  // Sans ce contrôle, n'importe quel salarié authentifié pouvait s'approprier
+  // un échange destiné à quelqu'un d'autre (cf. audit_pre_ete_2026.md §1.5).
+  if (swap.mode === 'targeted') {
+    if (swap.target_id !== responderId)
+      return res.status(403).json({ error: 'Cet échange est réservé à un autre collègue' });
+  } else {
+    const eligible = getFunctionColleagues(swap.requester_id, swap.fn_slug);
+    if (!eligible.includes(responderId))
+      return res.status(403).json({ error: 'Vous n\'êtes pas éligible pour cet échange' });
+  }
+
   // Acceptation
   db_.run(
     `UPDATE shift_swaps SET status='matched', responder_id=?, responder_at=datetime('now'),
