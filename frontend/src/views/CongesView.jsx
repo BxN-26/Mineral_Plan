@@ -222,7 +222,7 @@ const CongesView = () => {
                         {l.reason && <div style={{ fontSize: 11, color: '#9B9890', marginTop: 2 }}>{l.reason}</div>}
                         {/* Document justificatif */}
                         {l.document_url && (
-                          <a href={l.document_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#5B75DB', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                          <a href={`/api/leaves/${l.id}/document`} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: '#5B75DB', display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
                             📎 Justificatif
                           </a>
                         )}
@@ -374,6 +374,7 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
   const [docFile,      setDocFile]      = useState(null);
   const [balanceInfo,  setBalanceInfo]  = useState(null); // { bal, slug }
   const [loadingBal,   setLoadingBal]   = useState(false);
+  const [submitting,   setSubmitting]   = useState(false);
   const docRef = useRef();
 
   // Set des indices de jours ouvrés (getDay()) depuis les settings, ex: [1,2,3,4,5,6]
@@ -552,15 +553,23 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
           <Btn onClick={onClose}>Annuler</Btn>
-          <Btn variant="primary" onClick={() => onSave({
-            staff_id:   form.staff_id,
-            type_id:    form.type_id,
-            start_date: form.start_date,
-            end_date:   form.end_date,
-            reason:     form.reason,
-            half_start: form.half_start ? 1 : 0,
-            half_end:   form.half_end   ? 1 : 0,
-          }, docFile)}>Envoyer la demande</Btn>
+          <Btn variant="primary" disabled={submitting} onClick={async () => {
+            if (submitting) return;
+            setSubmitting(true);
+            try {
+              await onSave({
+                staff_id:   form.staff_id,
+                type_id:    form.type_id,
+                start_date: form.start_date,
+                end_date:   form.end_date,
+                reason:     form.reason,
+                half_start: form.half_start ? 1 : 0,
+                half_end:   form.half_end   ? 1 : 0,
+              }, docFile);
+            } finally {
+              setSubmitting(false);
+            }
+          }}>{submitting ? 'Envoi…' : 'Envoyer la demande'}</Btn>
         </div>
       </div>
     </Modal>

@@ -88,6 +88,7 @@ const SwapCard = ({ swap, myStaffId, isManager, allStaff, publicHolidays, onRefr
       onRefresh();
     } catch (e) {
       console.error(e);
+      toast.error(e.response?.data?.error || 'Échec de l\'opération sur cet échange');
     } finally {
       setBusy(false);
     }
@@ -175,6 +176,7 @@ export default function SwapView() {
   const [tab,      setTab]     = useState(swapTab || 'mine');   // mine | open | manager
   const [modal,    setModal]   = useState(false);
   const [loading,  setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   // Sync onglet si deep-link depuis une notification
   useEffect(() => {
@@ -206,6 +208,7 @@ export default function SwapView() {
   useEffect(() => { load(); }, [load]);
 
   const createSwap = async () => {
+    if (creating) return;
     const dateObj = new Date(form.date + 'T12:00:00');
     const body = {
       week_start: toMonday(dateObj),
@@ -224,12 +227,16 @@ export default function SwapView() {
       body.swap_hour_start = +form.swap_hour_start;
       body.swap_hour_end   = +form.swap_hour_end;
     }
+    setCreating(true);
     try {
       await api.post('/swaps', body);
       setModal(false);
       load();
     } catch (e) {
       console.error(e);
+      toast.error(e.response?.data?.error || 'Échec de la création de la demande d\'échange');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -393,9 +400,9 @@ export default function SwapView() {
 
           <div style={{ display: 'flex', gap: 10, paddingTop: 8 }}>
             <Btn variant="primary" onClick={createSwap}
-              disabled={!form.date || !form.fn_slug}
+              disabled={!form.date || !form.fn_slug || creating}
               style={{ flex: 1, justifyContent: 'center' }}>
-              ➤ Envoyer la demande
+              ➤ {creating ? 'Envoi…' : 'Envoyer la demande'}
             </Btn>
             <Btn onClick={() => setModal(false)}>Annuler</Btn>
           </div>

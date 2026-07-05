@@ -61,10 +61,17 @@ const StaffForm = ({ initial, teams, functions, staff = [], onSave, onClose, onC
     team_ids: p.team_ids.includes(id) ? p.team_ids.filter(x => x !== id) : [...p.team_ids, id],
   }));
 
-  const save = () => {
-    if (!f.firstname.trim()) return;
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!f.firstname.trim() || saving) return;
     const initials = f.initials || (f.firstname.slice(0, 1) + (f.lastname?.slice(0, 1) || f.firstname.slice(1, 2))).toUpperCase();
-    onSave({ ...f, initials, team_ids: f.team_ids });
+    setSaving(true);
+    try {
+      await onSave({ ...f, initials, team_ids: f.team_ids });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -268,8 +275,8 @@ const StaffForm = ({ initial, teams, functions, staff = [], onSave, onClose, onC
       </div>
 
       <div style={{ display: 'flex', gap: 10, paddingTop: 12, borderTop: '1px solid #F0EDE8' }}>
-        <Btn onClick={save} variant="primary" style={{ flex: 1, justifyContent: 'center' }}>
-          ✓ {initial ? 'Enregistrer les modifications' : 'Créer le membre'}
+        <Btn onClick={save} variant="primary" disabled={saving} style={{ flex: 1, justifyContent: 'center' }}>
+          ✓ {saving ? 'Enregistrement…' : (initial ? 'Enregistrer les modifications' : 'Créer le membre')}
         </Btn>
         <Btn onClick={onClose ?? onCancel}>Annuler</Btn>
       </div>

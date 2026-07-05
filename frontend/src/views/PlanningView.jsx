@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
+import { toast } from 'sonner';
 import { useApp } from '../App';
 import { Btn } from '../components/common';
 import api from '../api/client';
@@ -421,6 +422,8 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
       await api.post(`/templates/${tplId}/slots`, { slots });
       setNewName(''); setShowCreate(false);
       await load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Échec de l\'enregistrement du modèle');
     } finally { setSaving(false); }
   };
 
@@ -456,8 +459,12 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
 
   const handleDelete = async (tplId) => {
     if (!window.confirm('Supprimer ce modèle ?')) return;
-    await api.delete(`/templates/${tplId}`);
-    await load();
+    try {
+      await api.delete(`/templates/${tplId}`);
+      await load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Échec de la suppression du modèle');
+    }
   };
 
   const inp = { fontSize: 11, padding: '4px 7px', border: '1px solid #DDDAFE', borderRadius: 5, fontFamily: 'inherit', outline: 'none', background: '#fff' };
@@ -586,13 +593,19 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
       else         { await api.post('/course-slots', payload); }
       setForm(empty); setEditing(null);
       onChanged();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Échec de l\'enregistrement du cours');
     } finally { setSaving(false); }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Supprimer ce cours ?')) return;
-    await api.delete(`/course-slots/${id}`);
-    onChanged();
+    try {
+      await api.delete(`/course-slots/${id}`);
+      onChanged();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Échec de la suppression du cours');
+    }
   };
 
   return (
@@ -1180,7 +1193,10 @@ const PlanningView = () => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       try { await api.post(`/schedules/week/${currentWeek}/function/${fnSlug}`, { spans: newSpans }); }
-      catch (e) { console.error('[PlanningView] Erreur sauvegarde', e); }
+      catch (e) {
+        console.error('[PlanningView] Erreur sauvegarde', e);
+        toast.error(e.response?.data?.error || 'Échec de la sauvegarde du planning — vos derniers changements n\'ont pas été enregistrés, veuillez réessayer.');
+      }
     }, 600);
   }, [currentWeek]);
 
