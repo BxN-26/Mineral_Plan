@@ -81,6 +81,10 @@ Pour information — pas besoin de refaire, détaillé ici pour transparence :
   non privilégié → 403 ; propriétaire du congé → 200 ; rôle admin/manager → 200 (accès normal).
 - **Création de congé (bug `db_.tx`)** : confirmé cassé avant correctif (500 systématique), fonctionnel
   après (`201`, `days_count` correct).
+- **Rôle `viewer` restreint à ses propres données (§1.4)** : testé en conditions réelles avec un compte
+  `viewer` dédié. Liste des congés → ne voit plus les congés d'un collègue (0 vu au lieu de les voir tous) ;
+  fiche salarié d'un collègue → 403 (sa propre fiche → 200 normal) ; création de congé ou d'indisponibilité
+  au nom d'un autre salarié → 403 ; stats → limitées à ses propres heures.
 
 Ce que je **n'ai pas** pu tester : le rendu visuel réel dans un navigateur (pas d'outil de navigateur
 automatisé disponible dans cette session). Tout ce qui suit à la section 3 nécessite un test humain
@@ -149,6 +153,13 @@ et un second compte staff si possible pour les tests de permissions.
 - [ ] Sur une demande existante, tester accepter/refuser/approuver avec une erreur provoquée si possible
       (ex. tenter d'agir deux fois de suite très vite) → un message d'erreur clair doit apparaître au lieu
       d'un échec silencieux.
+
+### 3.9 — Rôle `viewer` restreint à ses propres données (si tu as/crées un compte viewer)
+- [ ] Se connecter avec un compte `viewer`, aller dans **Congés** → ne doit voir que ses propres demandes.
+- [ ] Essayer de consulter la fiche d'un autre salarié (via l'URL ou l'interface équipe si accessible) →
+      doit être refusé.
+- [ ] Vérifier qu'un compte `viewer` peut toujours consulter sa propre fiche et son propre planning
+      normalement (pas de régression sur son propre usage).
 
 ---
 

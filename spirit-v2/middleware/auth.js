@@ -83,6 +83,15 @@ function requireRole(...roles) {
   };
 }
 
+/**
+ * Rôles à accès restreint à leurs propres données (pas de vue globale sur
+ * les congés/indispos/planning d'autrui). Le rôle 'viewer' avait été omis
+ * de la plupart de ces contrôles (seul 'staff' était vérifié), ce qui lui
+ * donnait de facto un accès aussi large qu'un manager — cf. audit_pre_ete_2026.md §1.4.
+ */
+const SELF_ONLY_ROLES = ['staff', 'viewer'];
+function isSelfOnly(role) { return SELF_ONLY_ROLES.includes(role); }
+
 /** Fonction utilitaire — journalise dans audit_log */
 function auditLog(req, action, entity, entityId, oldData, newData) {
   try {
@@ -104,4 +113,4 @@ function auditLog(req, action, entity, entityId, oldData, newData) {
   } catch (_) { /* ne jamais bloquer la réponse */ }
 }
 
-module.exports = { issueTokens, revokeRefreshToken, requireAuth, requireRole, auditLog };
+module.exports = { issueTokens, revokeRefreshToken, requireAuth, requireRole, auditLog, isSelfOnly, SELF_ONLY_ROLES };

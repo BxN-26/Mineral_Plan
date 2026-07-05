@@ -57,14 +57,16 @@ Ces handlers sont `async` mais Express 4 ne rattrape pas les rejets de promesse 
 process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err));
 ```
 
-### 1.4 — MAJEUR — Rôle `viewer` : contournement systémique des restrictions "self-only"
-**Fichiers concernés :** `routes/leaves.js:183,247,273,593,595`, `routes/bootstrap.js:65`, `routes/staff.js:112,126`, `routes/functions.js:142`, `routes/unavailabilities.js:81,211`, `routes/stats.js:13,275`
+### 1.4 — MAJEUR — Rôle `viewer` : contournement systémique des restrictions "self-only" — ✅ **CORRIGÉ**
+**Fichiers concernés :** `routes/leaves.js`, `routes/bootstrap.js`, `routes/staff.js`, `routes/functions.js`, `routes/unavailabilities.js`, `routes/stats.js`
 
-Le code vérifie systématiquement `role === 'staff'` pour restreindre l'accès aux données personnelles, mais **jamais `role === 'viewer'`**, alors que `PERM_TO_ROLE`/`stripSensitive` traitent bien `viewer` comme un rôle standard non privilégié. Un compte `viewer` peut donc voir les congés de tout le monde, les soldes de tout le monde, le planning complet d'un autre salarié, et même créer/annuler des congés ou indisponibilités au nom d'un autre `staff_id`.
+Le code vérifiait systématiquement `role === 'staff'` pour restreindre l'accès aux données personnelles, mais **jamais `role === 'viewer'`**, alors que `PERM_TO_ROLE`/`stripSensitive` traitent bien `viewer` comme un rôle standard non privilégié. Un compte `viewer` pouvait donc voir les congés de tout le monde, les soldes de tout le monde, le planning complet d'un autre salarié, et même créer/annuler des congés ou indisponibilités au nom d'un autre `staff_id`.
 
-**Correctif :** remplacer chaque test `role === 'staff'` (liste ci-dessus) par un test incluant `viewer`, ex. `['staff','viewer'].includes(req.user.role)` ou une constante `NON_PRIVILEGED_ROLES` partagée.
+**Confirmé par le porteur du projet** : le rôle `viewer` ne doit servir à rien de plus qu'un `staff` (accès à ses seules propres données) — l'accès large constaté était bien un bug, pas un comportement voulu.
 
-**Question pour toi :** le rôle `viewer` est-il réellement attribué à quelqu'un aujourd'hui, ou est-ce un rôle prévu mais jamais utilisé en pratique ? Ça change l'urgence réelle de ce point.
+**Correctif appliqué :** nouvelle fonction partagée `isSelfOnly(role)` dans `middleware/auth.js` (rôles `['staff','viewer']`), utilisée à la place de chaque test `role === 'staff'` dans les 6 fichiers listés ci-dessus.
+
+Testé en conditions réelles (serveur de dev, compte `viewer` dédié) : liste des congés limitée à ses propres données (0 congé vu au lieu de voir ceux d'un collègue), fiche salarié d'autrui → 403 (sa propre fiche → 200), création de congé/indisponibilité au nom d'un autre salarié → 403, stats limitées à ses propres heures.
 
 ### 1.5 — MAJEUR — `PUT /api/swaps/:id/respond` : acceptation d'un échange ciblé sans vérifier le destinataire — ✅ **CORRIGÉ** (testé en conditions réelles : tiers → 403, cible → 200)
 **Fichier :** `routes/swaps.js:218-350`
@@ -344,7 +346,7 @@ Si la version Node du VPS change (mise à jour système) sans `npm install` derr
 
 ## 6. Questions ouvertes pour toi
 
-1. **Le rôle `viewer` est-il utilisé par quelqu'un aujourd'hui ?** (impacte l'urgence de §1.4)
+1. ~~Le rôle `viewer` est-il utilisé par quelqu'un aujourd'hui ?~~ **Répondu** : le rôle ne doit avoir accès qu'à ses propres données, comme `staff` — corrigé en §1.4.
 2. **Le type de congé `recup` (récupération d'heures) est-il utilisé en pratique ?** (impacte l'urgence de §3.4 — actuellement le solde calculé est faux)
 3. **`routes/functions.js` : la route `slots/bulk` est-elle appelée par autre chose que le frontend actuel** (script, ancienne version mobile) ? L'agent n'a rien trouvé côté frontend actuel, mais bon à confirmer avant de la corriger ou supprimer.
 4. **Y a-t-il déjà un cron de backup en place côté OS**, en dehors de ce qui est versionné dans le dépôt ? Si oui, sur quelle fréquence et vers quelle destination ?
@@ -373,7 +375,7 @@ Tests à effectuer avant merge : voir `Doc_techniques/tests_manuels_phase0_1.md`
 
 **Étape 3 — Avant la rentrée de septembre :**
 10. Propager le filtrage journalier des vacances scolaires à `course-slots.js` (§3.6)
-11. Corriger le rôle `viewer` (§1.4) — selon réponse à la question 1
+11. ~~Corriger le rôle `viewer` (§1.4)~~ — ✅ fait (voir §1.4)
 12. Corriger le type `recup` (§3.4) — selon réponse à la question 2
 13. Restauration des créneaux après annulation congé/indispo (§3.5)
 14. Transactions sur l'approbation de congés (§2.3)

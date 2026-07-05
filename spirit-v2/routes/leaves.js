@@ -4,7 +4,7 @@ const fs      = require('fs');
 const router  = require('express').Router();
 const multer  = require('multer');
 const { db_ }                               = require('../db/database');
-const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { requireAuth, requireRole, auditLog, isSelfOnly } = require('../middleware/auth');
 const { notify, notifyStaff }               = require('./notifications');
 const { sendPush }                           = require('./push');
 const { releaseStaffSlots }                  = require('../utils/releaseSlots');
@@ -206,7 +206,7 @@ router.get('/', AUTH, (req, res) => {
   const p = [];
 
   // Un viewer/staff ne voit QUE ses propres congés, quel que soit le query param
-  if (req.user.role === 'staff') {
+  if (isSelfOnly(req.user.role)) {
     sql += ' AND l.staff_id = ?'; p.push(req.user.staff_id);
   } else if (staff_id) {
     // Managers/RH/admin peuvent filtrer par staff_id
@@ -270,7 +270,7 @@ router.get('/pending-count', AUTH, (req, res) => {
 router.get('/balance/:staffId', AUTH, (req, res) => {
   const targetId = Number(req.params.staffId);
   // Un salarié ne peut consulter que son propre solde
-  if (req.user.role === 'staff' && req.user.staff_id !== targetId)
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== targetId)
     return res.status(403).json({ error: 'Accès non autorisé' });
   const year = req.query.year || new Date().getFullYear();
   const used = db_.all(
@@ -296,7 +296,7 @@ router.post('/', AUTH, (req, res) => {
     return res.status(400).json({ error: 'Champs requis manquants' });
 
   // Vérification droits
-  if (req.user.role === 'staff' && req.user.staff_id !== Number(staff_id))
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== Number(staff_id))
     return res.status(403).json({ error: 'Non autorisé' });
 
   const leaveType = db_.get('SELECT * FROM leave_types WHERE id=?', [type_id]);
@@ -624,9 +624,9 @@ router.delete('/:id', AUTH, (req, res) => {
   const leave = db_.get('SELECT * FROM leaves WHERE id=?', [req.params.id]);
   if (!leave) return res.status(404).json({ error: 'Congé introuvable' });
 
-  if (req.user.role === 'staff' && req.user.staff_id !== leave.staff_id)
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== leave.staff_id)
     return res.status(403).json({ error: 'Non autorisé' });
-  if (leave.status === 'approved' && req.user.role === 'staff')
+  if (leave.status === 'approved' && isSelfOnly(req.user.role))
     return res.status(400).json({ error: 'Un congé approuvé ne peut être annulé que par un manager' });
 
   // Restituer le solde si le congé était approuvé et déjà déduit

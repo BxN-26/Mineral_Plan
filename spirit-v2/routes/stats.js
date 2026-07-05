@@ -1,7 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const { db_ } = require('../db/database');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, isSelfOnly } = require('../middleware/auth');
 
 const STAFF_ROLE = [requireAuth]; // staff peut appeler mais filtré par staff_id
 const MGR = [requireAuth, requireRole('admin','manager','superadmin','rh')];
@@ -10,7 +10,7 @@ const MGR = [requireAuth, requireRole('admin','manager','superadmin','rh')];
 //                  ?period=month&month=YYYY-MM
 //                  ?period=year&year=YYYY
 router.get('/', requireAuth, (req, res) => {
-  const isStaff    = req.user.role === 'staff';
+  const isStaff    = isSelfOnly(req.user.role);
   const ownStaffId = req.user.staff_id ?? null;
   // Un staff sans staff_id lié ne peut rien voir
   if (isStaff && !ownStaffId) return res.status(403).json({ error: 'Aucune fiche salarié liée' });
@@ -272,7 +272,7 @@ function fmtWeekShort(w) {
 
 // ── GET /api/stats/balance?start=YYYY-MM-DD&end=YYYY-MM-DD ────
 router.get('/balance', requireAuth, (req, res) => {
-  const isStaff    = req.user.role === 'staff';
+  const isStaff    = isSelfOnly(req.user.role);
   const ownStaffId = req.user.staff_id ?? null;
   if (isStaff && !ownStaffId) return res.status(403).json({ error: 'Aucune fiche salarié liée' });
   // Vérifier droits : staff uniquement ses données, sinon rôle manager+

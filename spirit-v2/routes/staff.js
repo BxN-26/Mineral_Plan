@@ -6,7 +6,7 @@ const bcrypt  = require('bcryptjs');
 const multer  = require('multer');
 const sharp   = require('sharp');
 const { db_ } = require('../db/database');
-const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { requireAuth, requireRole, auditLog, isSelfOnly } = require('../middleware/auth');
 const { notify }                             = require('./notifications');
 
 const AUTH  = requireAuth;
@@ -108,8 +108,8 @@ router.get('/', AUTH, (req, res) => {
 
 // ── GET /api/staff/:id ────────────────────────────────────────
 router.get('/:id', AUTH, (req, res) => {
-  // Un staff ne peut voir que sa propre fiche
-  if (req.user.role === 'staff' && req.user.staff_id !== Number(req.params.id))
+  // Un staff/viewer ne peut voir que sa propre fiche
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== Number(req.params.id))
     return res.status(403).json({ error: 'Accès refusé' });
 
   const s = db_.get(
@@ -121,9 +121,9 @@ router.get('/:id', AUTH, (req, res) => {
     [req.params.id]
   );
   if (!s) return res.status(404).json({ error: 'Salarié introuvable' });
-  // Un staff qui consulte sa PROPRE fiche voit ses soldes CP/RTT mais pas les autres champs financiers équipe
+  // Un staff/viewer qui consulte sa PROPRE fiche voit ses soldes CP/RTT mais pas les autres champs financiers équipe
   const fullRow = withFunctions([s])[0];
-  const result = req.user.role === 'staff' && req.user.staff_id === Number(req.params.id)
+  const result = isSelfOnly(req.user.role) && req.user.staff_id === Number(req.params.id)
     ? fullRow  // sa propre fiche : tout est visible
     : stripSensitive([fullRow], req.user.role)[0];
   res.json(result);

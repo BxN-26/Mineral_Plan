@@ -7,7 +7,7 @@
  */
 const router      = require('express').Router();
 const { db_ }     = require('../db/database');
-const { requireAuth }                       = require('../middleware/auth');
+const { requireAuth, isSelfOnly }            = require('../middleware/auth');
 const { withFunctions, stripSensitive }     = require('./staff');
 
 const ROLE_TO_PERM = { staff: 'standard', viewer: 'standard', manager: 'bureau', rh: 'bureau', admin: 'direction', superadmin: 'direction' };
@@ -62,7 +62,7 @@ router.get('/', requireAuth, (req, res) => {
     LEFT JOIN staff s2  ON s2.id = u2.staff_id
     WHERE 1=1`;
   const leavesParams = [];
-  if (role === 'staff') {
+  if (isSelfOnly(role)) {
     leavesSql += ' AND l.staff_id = ?';
     leavesParams.push(staffId);
   }

@@ -1,7 +1,7 @@
 // routes/functions.js — Gestion des fonctions et plannings multi-fonctions
 const router = require('express').Router();
 const { db_ }                               = require('../db/database');
-const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { requireAuth, requireRole, auditLog, isSelfOnly } = require('../middleware/auth');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin','manager','superadmin')];
@@ -139,7 +139,7 @@ router.get('/schedule/:week', AUTH, (req, res) => {
 // Vue salarié : tous ses plannings de la semaine, toutes fonctions
 router.get('/staff-view/:staffId/:week', AUTH, (req, res) => {
   // Vérification droits
-  if (req.user.role === 'staff' && req.user.staff_id !== Number(req.params.staffId))
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== Number(req.params.staffId))
     return res.status(403).json({ error: 'Non autorisé' });
 
   // Toutes les fonctions du salarié

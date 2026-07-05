@@ -1,7 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const { db_ }  = require('../db/database');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, isSelfOnly } = require('../middleware/auth');
 const { notify } = require('./notifications');
 const { releaseStaffSlots } = require('../utils/releaseSlots');
 
@@ -78,7 +78,7 @@ router.post('/', AUTH, (req, res) => {
     return res.status(400).json({ error: 'staff_id, date_start, date_end requis' });
 
   // Un salarié ne peut déclarer que pour lui-même
-  if (req.user.role === 'staff' && req.user.staff_id !== Number(staff_id))
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== Number(staff_id))
     return res.status(403).json({ error: 'Vous ne pouvez déclarer des indisponibilités que pour vous-même' });
 
   // Délai minimum
@@ -208,7 +208,7 @@ router.delete('/:id', AUTH, (req, res) => {
   const unavail = db_.get('SELECT * FROM unavailabilities WHERE id = ?', [Number(req.params.id)]);
   if (!unavail) return res.status(404).json({ error: 'Introuvable' });
 
-  if (req.user.role === 'staff' && req.user.staff_id !== unavail.staff_id)
+  if (isSelfOnly(req.user.role) && req.user.staff_id !== unavail.staff_id)
     return res.status(403).json({ error: 'Non autorisé' });
 
   db_.run('DELETE FROM unavailabilities WHERE id = ?', [Number(req.params.id)]);
