@@ -423,7 +423,7 @@ router.post('/:id/reset-password', requireAuth, requireRole('admin', 'superadmin
 
   const hash = bcrypt.hashSync(new_password, 12);
   db_.run(
-    "UPDATE users SET password = ?, must_change_password = 1, updated_at = datetime('now') WHERE id = ?",
+    'UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?',
     [hash, user.id]
   );
   // Révoquer toutes les sessions actives
