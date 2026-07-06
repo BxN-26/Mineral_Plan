@@ -364,6 +364,10 @@ const RefuseModal = ({ label, onConfirm, onClose }) => {
 // ── Formulaire de création ───────────────────────────────────
 const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSave, onClose }) => {
   const { user } = useAuth();
+  // Bug préexistant corrigé : `settings` et `publicHolidays` étaient utilisés
+  // plus bas sans jamais être reçus dans ce composant — ReferenceError à
+  // chaque ouverture de "Nouvelle demande" (trouvé lors des tests manuels).
+  const { settings, publicHolidays } = useApp();
 
   const [form, setForm] = useState({
     staff_id:   myStaffId || (staff[0]?.id ?? ''),
