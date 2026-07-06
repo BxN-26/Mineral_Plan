@@ -4,6 +4,7 @@ const api = axios.create({
   baseURL:        '/api',
   withCredentials: true,   // envoie les cookies httpOnly
   headers: { 'Content-Type': 'application/json' },
+  timeout: 15000, // évite un spinner infini si le serveur ne répond jamais (audit §4.5)
 });
 
 // ── Intercepteur de réponse ───────────────────────────────────
@@ -23,6 +24,18 @@ function flushQueue(error) {
 api.interceptors.response.use(
   res => res,
   async err => {
+    // Erreur réseau (hors-ligne, timeout, DNS...) : pas de réponse HTTP du
+    // tout. On synthétise un message clair repris automatiquement par tous
+    // les `e.response?.data?.error || '...'` déjà en place dans les vues,
+    // sans avoir à modifier chacune d'elles — cf. audit_pre_ete_2026.md §4.5.
+    if (!err.response) {
+      const message = err.code === 'ECONNABORTED'
+        ? 'La requête a mis trop de temps à répondre — vérifiez votre connexion et réessayez.'
+        : 'Connexion au serveur impossible — vérifiez votre connexion internet.';
+      err.response = { status: 0, data: { error: message } };
+      return Promise.reject(err);
+    }
+
     const original = err.config;
     const status   = err.response?.status;
     const code     = err.response?.data?.code;
