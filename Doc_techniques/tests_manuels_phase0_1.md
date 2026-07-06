@@ -22,15 +22,7 @@ avec une 500, en prod comme partout. Corrigé dans le même commit que §1.3/§1
 
 ## 1. Vérifications côté serveur (avant ou après déploiement du code)
 
-### 1.1 — NODE_ENV en production
-**[À FAIRE PAR TOI]** — je n'ai pas accès au serveur.
-```bash
-grep NODE_ENV /opt/mineral-plan/spirit-v2/.env
-```
-Doit afficher exactement `NODE_ENV=production`. Si absent ou différent, corriger puis redémarrer :
-```bash
-sudo systemctl restart mineral-spirit
-```
+### 1.1 — NODE_ENV en production — ✅ **Vérifié le 6 juillet 2026 : `NODE_ENV=production`, déjà correct.**
 
 ### 1.2 — Mise en place du backup automatisé
 **[À FAIRE PAR TOI]**
@@ -207,7 +199,7 @@ et un second compte staff si possible pour les tests de permissions.
 
 - [ ] Tous les tests ci-dessus passés (au minimum 3.1, 3.2, 3.3, 3.4, 3.5 qui touchent à des
       corrections de sécurité/logique métier).
-- [ ] `NODE_ENV=production` confirmé sur le serveur prod (§1.1).
+- [x] `NODE_ENV=production` confirmé sur le serveur prod (§1.1) — fait le 6 juillet 2026.
 - [ ] Backup testé et cron installé (§1.2).
 - [ ] `git log` de la branche relu une dernière fois (`git log main..fix/audit-pre-ete-2026`).
 

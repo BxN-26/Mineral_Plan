@@ -18,7 +18,7 @@
 
 Ces 3 points sont soit déjà exploitables/cassés, soit désamorcent silencieusement des protections existantes. À traiter avant toute autre chose, dans cet ordre :
 
-1. **Vérifier la valeur de `NODE_ENV` dans le `.env` de prod** (§1.1) — si ce n'est pas `production`, plusieurs protections de sécurité sont actuellement désactivées sans que rien ne le signale. **[À FAIRE PAR TOI sur le serveur — pas de code à changer]**
+1. **Vérifier la valeur de `NODE_ENV` dans le `.env` de prod** (§1.1) — si ce n'est pas `production`, plusieurs protections de sécurité sont actuellement désactivées sans que rien ne le signale. ✅ **Vérifié sur le serveur le 6 juillet 2026 : `NODE_ENV=production`, déjà correct**
 2. **Ajouter `app.set('trust proxy', 1)` dans `app.js`** (§1.2) — sans ça, un seul moniteur qui se trompe de mot de passe peut bloquer la connexion de **toute l'équipe** pendant 15 minutes. ✅ **CORRIGÉ** (branche `fix/audit-pre-ete-2026`)
 3. **Mettre en place un backup automatisé de `spirit.db`** (§5.1) — à ce jour, aucune sauvegarde n'existe nulle part. Une corruption ou une fausse manip pendant l'été = perte définitive. ✅ **Script prêt** (`spirit-v2/scripts/backup-db.sh`, testé) — **cron à installer par toi sur le serveur**, voir `tests_manuels_phase0_1.md` §1.2
 
@@ -26,7 +26,7 @@ Ces 3 points sont soit déjà exploitables/cassés, soit désamorcent silencieus
 
 ## 1. Sécurité & authentification
 
-### 1.1 — CRITIQUE — `NODE_ENV` potentiellement pas à `production` sur le serveur réel — ⏳ **[À FAIRE PAR TOI, pas de code]**
+### 1.1 — CRITIQUE — `NODE_ENV` potentiellement pas à `production` sur le serveur réel — ✅ **Vérifié le 6 juillet 2026 : déjà correct (`NODE_ENV=production`)**
 **Fichiers concernés :** `spirit-v2/.env` (valeur réelle constatée en prod), `spirit-v2/app.js:47-49,155-158`, `spirit-v2/middleware/auth.js:19`, `spirit-v2/db/database.js:504-508`
 
 Si `NODE_ENV` n'est pas exactement `production` :
@@ -304,7 +304,7 @@ Ce point ne se corrige pas dans le code — c'est une discipline de déploiement
 - [ ] `systemctl is-enabled mineral-spirit` + historique de redémarrages récents.
 - [ ] Logrotate pour les logs Caddy (`/etc/logrotate.d/caddy`).
 - [ ] Contenu réel du `.env` de prod — confirmer qu'aucune variable n'est restée à une valeur par défaut du `.env.example`.
-- [ ] Valeur réelle de `NODE_ENV` (cf. §1.1 — le point le plus urgent de tout ce document).
+- [x] Valeur réelle de `NODE_ENV` — vérifiée le 6 juillet 2026 : `production`, correct.
 
 ---
 
@@ -325,7 +325,7 @@ Ce point ne se corrige pas dans le code — c'est une discipline de déploiement
 
 ### Ce qui reste à faire par toi (aucun ne peut être fait depuis le code)
 
-1. **Vérifier `NODE_ENV=production`** dans le `.env` réel du serveur (§1.1) — le point le plus urgent.
+1. ~~Vérifier `NODE_ENV=production`~~ — ✅ **fait, vérifié le 6 juillet 2026 : déjà correct.**
 2. **Installer le cron de backup** — le script est prêt et testé (`spirit-v2/scripts/backup-db.sh`), reste juste à l'ajouter au crontab du serveur (§5.1).
 3. **Mettre en place un monitoring externe** (UptimeRobot ou équivalent) pour être alerté si le service tombe, puisque l'accès SSH n'est pas toujours pratique (§5.4).
 4. **Retenir la règle** : si `package-lock.json` change dans un `git pull`, refaire `npm install` avant de redémarrer (§5.3, non codifiable).
