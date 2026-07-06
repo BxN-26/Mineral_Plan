@@ -20,7 +20,7 @@ Ces 3 points sont soit déjà exploitables/cassés, soit désamorcent silencieus
 
 1. **Vérifier la valeur de `NODE_ENV` dans le `.env` de prod** (§1.1) — si ce n'est pas `production`, plusieurs protections de sécurité sont actuellement désactivées sans que rien ne le signale. ✅ **Vérifié sur le serveur le 6 juillet 2026 : `NODE_ENV=production`, déjà correct**
 2. **Ajouter `app.set('trust proxy', 1)` dans `app.js`** (§1.2) — sans ça, un seul moniteur qui se trompe de mot de passe peut bloquer la connexion de **toute l'équipe** pendant 15 minutes. ✅ **CORRIGÉ** (branche `fix/audit-pre-ete-2026`)
-3. **Mettre en place un backup automatisé de `spirit.db`** (§5.1) — à ce jour, aucune sauvegarde n'existe nulle part. Une corruption ou une fausse manip pendant l'été = perte définitive. ✅ **Script prêt** (`spirit-v2/scripts/backup-db.sh`, testé) — **cron à installer par toi sur le serveur**, voir `tests_manuels_phase0_1.md` §1.2
+3. **Mettre en place un backup automatisé de `spirit.db`** (§5.1) — à ce jour, aucune sauvegarde n'existe nulle part. Une corruption ou une fausse manip pendant l'été = perte définitive. ✅ **Fait — script installé et cron configuré sur le serveur le 6 juillet 2026** (quotidien à 3h). ⏳ reste la synchronisation vers un stockage distant (voir §5.1 détaillé).
 
 ---
 
@@ -271,15 +271,12 @@ Aucun secret/URL localhost/token en dur dans le code (identifiants de démo dans
 
 ## 5. Déploiement & exploitation
 
-### 5.1 — CRITIQUE — Aucune sauvegarde automatisée de la base SQLite — ✅ **Script prêt et testé** (`spirit-v2/scripts/backup-db.sh`) — ⏳ **cron à installer par toi sur le serveur**
-**Constat :** aucun script, cron ou timer systemd ne sauvegarde `spirit-v2/db/spirit.db` (+ `.db-wal`/`.db-shm`, mode WAL). La seule mention est une commande `cp` manuelle documentée dans `description_technique.md:812-818`, jamais exécutée automatiquement.
+### 5.1 — CRITIQUE — Aucune sauvegarde automatisée de la base SQLite — ✅ **Backup quotidien en place sur le serveur depuis le 6 juillet 2026**
+**Constat initial :** aucun script, cron ou timer systemd ne sauvegardait `spirit-v2/db/spirit.db`.
 
-**Correctif recommandé :**
-```bash
-# Script de backup (safe en mode WAL car utilise l'API .backup de SQLite, pas un cp à chaud)
-sqlite3 /opt/mineral-plan/spirit-v2/db/spirit.db ".backup '/backup/spirit_$(date +\%F).db'"
-```
-À planifier via cron quotidien, avec rotation (garder N derniers jours) et **copie hors du serveur** (rsync/rclone vers un stockage distant) — un backup resté sur le même disque ne protège pas d'une panne du VPS.
+**Fait :** `spirit-v2/scripts/backup-db.sh` récupéré depuis la branche `fix/audit-pre-ete-2026` et installé sur le serveur, cron quotidien à 3h du matin configuré et vérifié (`sudo crontab -l`).
+
+**⏳ Reste à faire — copie hors du serveur :** un backup qui reste sur le même disque que le serveur ne protège pas d'une panne totale du VPS. Il faut synchroniser `/opt/mineral-plan/backups` vers un stockage distant (rsync/rclone vers un autre serveur, un NAS, ou un espace cloud type Backblaze B2). Pas encore mis en place — à décider selon la solution de stockage distant disponible.
 
 ### 5.2 — ÉLEVÉ — Erreurs de migration silencieusement avalées (cf. §2.6) — ✅ **CORRIGÉ**
 Chaque erreur de migration est maintenant journalisée (`console.error`) même si la migration continue — visible dans `journalctl` au prochain déploiement. Testé : démarrage propre, migrations existantes toujours OK.
@@ -313,7 +310,7 @@ Ce point ne se corrige pas dans le code — c'est une discipline de déploiement
 1. ~~Le rôle `viewer` est-il utilisé par quelqu'un aujourd'hui ?~~ **Répondu** : le rôle ne doit avoir accès qu'à ses propres données, comme `staff` — corrigé en §1.4.
 2. **Le type de congé `recup` (récupération d'heures) est-il utilisé en pratique ?** (impacte l'urgence de §3.4 — actuellement le solde calculé est faux)
 3. **`routes/functions.js` : la route `slots/bulk` est-elle appelée par autre chose que le frontend actuel** (script, ancienne version mobile) ? L'agent n'a rien trouvé côté frontend actuel, mais bon à confirmer avant de la corriger ou supprimer.
-4. ~~Y a-t-il déjà un cron de backup en place côté OS ?~~ **À vérifier par toi** — script prêt (§5.1), reste à l'installer.
+4. ~~Y a-t-il déjà un cron de backup en place côté OS ?~~ **Fait le 6 juillet 2026** — script installé, cron quotidien configuré (§5.1). Reste la synchronisation distante.
 5. ~~As-tu un moyen de savoir si le service est down sans SSH ?~~ **Toujours sans réponse** — nécessite un monitoring externe (§5.4), je ne peux pas le mettre en place à ta place.
 6. ~~Combien de temps peux-tu consacrer aux correctifs ?~~ **Sans objet** — tous les points corrigeables en code ont été traités (voir §7).
 
@@ -326,7 +323,7 @@ Ce point ne se corrige pas dans le code — c'est une discipline de déploiement
 ### Ce qui reste à faire par toi (aucun ne peut être fait depuis le code)
 
 1. ~~Vérifier `NODE_ENV=production`~~ — ✅ **fait, vérifié le 6 juillet 2026 : déjà correct.**
-2. **Installer le cron de backup** — le script est prêt et testé (`spirit-v2/scripts/backup-db.sh`), reste juste à l'ajouter au crontab du serveur (§5.1).
+2. ~~Installer le cron de backup~~ — ✅ **fait le 6 juillet 2026** — script installé, cron quotidien 3h configuré et vérifié. ⏳ Reste la synchronisation vers un stockage distant (rsync/rclone) pour vraiment protéger contre une panne de VPS.
 3. **Mettre en place un monitoring externe** (UptimeRobot ou équivalent) pour être alerté si le service tombe, puisque l'accès SSH n'est pas toujours pratique (§5.4).
 4. **Retenir la règle** : si `package-lock.json` change dans un `git pull`, refaire `npm install` avant de redémarrer (§5.3, non codifiable).
 5. **Optionnel** : limiter la taille des logs journald (`SystemMaxUse=`) si tu veux te prémunir d'une saturation disque à long terme (§5.5).

@@ -24,23 +24,14 @@ avec une 500, en prod comme partout. Corrigé dans le même commit que §1.3/§1
 
 ### 1.1 — NODE_ENV en production — ✅ **Vérifié le 6 juillet 2026 : `NODE_ENV=production`, déjà correct.**
 
-### 1.2 — Mise en place du backup automatisé
-**[À FAIRE PAR TOI]**
-```bash
-# Test manuel du script (à faire une fois après le déploiement du code)
-cd /opt/mineral-plan/spirit-v2
-DB_PATH=/opt/mineral-plan/spirit-v2/db/spirit.db BACKUP_DIR=/opt/mineral-plan/backups ./scripts/backup-db.sh
-ls -la /opt/mineral-plan/backups/
-```
-Vérifier qu'un fichier `spirit_YYYY-MM-DD_HH-MM-SS.db.gz` apparaît et fait une taille cohérente
-(pas 0 octet). Puis installer le cron quotidien (voir commentaire en tête du script pour la ligne crontab exacte) :
-```bash
-sudo crontab -e
-# ajouter la ligne (voir spirit-v2/scripts/backup-db.sh pour le détail) :
-0 3 * * * DB_PATH=/opt/mineral-plan/spirit-v2/db/spirit.db BACKUP_DIR=/opt/mineral-plan/backups /opt/mineral-plan/spirit-v2/scripts/backup-db.sh >> /var/log/mineral-spirit-backup.log 2>&1
-```
-Ce que j'ai déjà testé : le script fonctionne et produit un backup restaurable (vérifié en local avec
-une copie de la base de dev — décompression + `sqlite3 .tables` a listé toutes les tables correctement).
+### 1.2 — Mise en place du backup automatisé — ✅ **Fait le 6 juillet 2026**
+Script installé sur le serveur (`/opt/mineral-plan/spirit-v2/scripts/backup-db.sh`, récupéré depuis
+`origin/fix/audit-pre-ete-2026` sans attendre la fusion) et cron quotidien 3h configuré, vérifié
+avec `sudo crontab -l`.
+
+**⏳ Reste à faire [À FAIRE PAR TOI]** — synchroniser `/opt/mineral-plan/backups` vers un stockage
+distant (rsync/rclone). Un backup qui reste sur le même disque que le serveur ne protège pas d'une
+panne totale du VPS.
 
 ### 1.3 — trust proxy / rate limiting
 Difficile à tester manuellement de façon fiable sans un vrai second poste derrière le même reverse proxy.
@@ -200,7 +191,7 @@ et un second compte staff si possible pour les tests de permissions.
 - [ ] Tous les tests ci-dessus passés (au minimum 3.1, 3.2, 3.3, 3.4, 3.5 qui touchent à des
       corrections de sécurité/logique métier).
 - [x] `NODE_ENV=production` confirmé sur le serveur prod (§1.1) — fait le 6 juillet 2026.
-- [ ] Backup testé et cron installé (§1.2).
+- [x] Backup testé et cron installé (§1.2) — fait le 6 juillet 2026.
 - [ ] `git log` de la branche relu une dernière fois (`git log main..fix/audit-pre-ete-2026`).
 
 Une fois validé, me dire et je préparerai la fusion vers `main` (ou une pull request si tu préfères
