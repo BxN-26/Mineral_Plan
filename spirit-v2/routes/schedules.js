@@ -2,6 +2,8 @@
 const router = require('express').Router();
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole, auditLog } = require('../middleware/auth');
+const { checkStaffConflict } = require('../utils/conflictCheck');
+const { getWeekDates } = require('../utils/holidayHelper');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
@@ -123,6 +125,27 @@ router.post('/week/:week/function/:slug', ...ADMIN, (req, res) => {
     }
   }
 
+  // Avertissement (non bloquant) pour les créneaux réellement NOUVEAUX
+  // (déjà existants avant ce save = pas re-signalés à chaque debounce)
+  // si le salarié a un congé/indispo approuvé(e) ce jour-là — §3.7.
+  const existingKeys = new Set(
+    db_.all('SELECT staff_id, day_of_week, hour_start, hour_end FROM schedule_slots WHERE schedule_id=?', [sc.id])
+      .map(s => `${s.staff_id}|${s.day_of_week}|${s.hour_start}|${s.hour_end}`)
+  );
+  const weekDates = getWeekDates(week);
+  const conflictsSeen = new Set();
+  const conflicts = [];
+  for (const s of rows) {
+    const key = `${s.staff_id}|${s.day_of_week}|${s.hour_start}|${s.hour_end}`;
+    if (existingKeys.has(key)) continue; // déjà là avant ce save, pas nouveau
+    const dateStr = weekDates[s.day_of_week];
+    const warning = checkStaffConflict(db_, s.staff_id, dateStr, s.hour_start, s.hour_end);
+    if (warning && !conflictsSeen.has(`${s.staff_id}|${dateStr}`)) {
+      conflictsSeen.add(`${s.staff_id}|${dateStr}`);
+      conflicts.push({ staff_id: s.staff_id, date: dateStr, message: warning });
+    }
+  }
+
   // Remplacement atomique
   db_.tx(() => {
     db_.run('DELETE FROM schedule_slots WHERE schedule_id = ?', [sc.id]);
@@ -139,7 +162,7 @@ router.post('/week/:week/function/:slug', ...ADMIN, (req, res) => {
   });
 
   auditLog(req, 'SCHEDULE_SAVE', 'schedules', sc.id, null, { week, slug, spans: rows.length });
-  res.json({ schedule_id: sc.id, saved: rows.length });
+  res.json({ schedule_id: sc.id, saved: rows.length, conflicts: conflicts.length ? conflicts : undefined });
 });
 
 module.exports = router;

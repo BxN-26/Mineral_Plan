@@ -718,7 +718,8 @@ const CourseGroupModal = ({ courses, week, fnStaff, staff: allStaff, assignments
     if (!staffId) return;
     setBusy(true);
     try {
-      await api.post(`/course-slots/${csId}/assign`, { staff_id: staffId, week_start: week });
+      const r = await api.post(`/course-slots/${csId}/assign`, { staff_id: staffId, week_start: week });
+      if (r.data?.warning) toast.warning(r.data.warning);
       setLocalAssign(prev => ({ ...prev, [csId]: [...(prev[csId] || []), staffId] }));
       onChanged();
     } catch (e) { alert('❌ ' + (e.response?.data?.error || e.message)); }
@@ -1192,7 +1193,10 @@ const PlanningView = () => {
   const debounceSave = useCallback((fnSlug, newSpans) => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      try { await api.post(`/schedules/week/${currentWeek}/function/${fnSlug}`, { spans: newSpans }); }
+      try {
+        const r = await api.post(`/schedules/week/${currentWeek}/function/${fnSlug}`, { spans: newSpans });
+        for (const c of (r.data?.conflicts || [])) toast.warning(c.message);
+      }
       catch (e) {
         console.error('[PlanningView] Erreur sauvegarde', e);
         toast.error(e.response?.data?.error || 'Échec de la sauvegarde du planning — vos derniers changements n\'ont pas été enregistrés, veuillez réessayer.');

@@ -3,6 +3,8 @@ const router = require('express').Router();
 const { db_ }  = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { notifyStaff } = require('./notifications');
+const { checkStaffConflict } = require('../utils/conflictCheck');
+const { getWeekDates } = require('../utils/holidayHelper');
 
 const AUTH = requireAuth;
 const MGR  = [requireAuth, requireRole('admin','manager','superadmin','rh')];
@@ -424,7 +426,15 @@ router.put('/:id/approve', ...MGR, (req, res) => {
     notifyStaff(swap.responder_id, 'approval', '✅ Échange approuvé', 'Le manager a validé l\'échange de créneau.', 'swap', swap.id);
   }
 
-  res.json({ status: 'approved' });
+  // Avertissement (non bloquant) si le nouveau titulaire du créneau a par
+  // ailleurs un congé/indispo approuvé(e) ce jour-là — cf. §3.7.
+  let conflictWarning = null;
+  if (swap.responder_id) {
+    const dateStr = getWeekDates(swap.week_start)[swap.day_index];
+    conflictWarning = checkStaffConflict(db_, swap.responder_id, dateStr, swap.hour_start, swap.hour_end);
+  }
+
+  res.json({ status: 'approved', warning: conflictWarning || undefined });
 });
 
 // ── PUT /api/swaps/:id/assign — référent assigne un remplaçant ─
@@ -468,7 +478,11 @@ router.put('/:id/assign', ...MGR, (req, res) => {
     'swap', swap.id
   );
 
-  res.json({ status: 'approved' });
+  // Avertissement (non bloquant) — §3.7
+  const dateStrAssign = getWeekDates(swap.week_start)[swap.day_index];
+  const conflictWarning = checkStaffConflict(db_, assigneeId, dateStrAssign, swap.hour_start, swap.hour_end);
+
+  res.json({ status: 'approved', warning: conflictWarning || undefined });
 });
 
 // ── PUT /api/swaps/:id/refuse — manager refuse ────────────────

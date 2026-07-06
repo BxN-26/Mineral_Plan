@@ -285,6 +285,42 @@ function filterCourseSlotsByWeek(courseSlots, weekStart, schoolHolidays) {
   return courseSlots.filter(cs => isCourseSlotActiveForWeek(cs, weekStart, vacation));
 }
 
+/**
+ * Variante JOUR de isCourseSlotActiveForWeek : détermine si un cours
+ * (avec son propre day_of_week) est actif pour SA date précise dans la
+ * semaine, plutôt que pour la semaine entière. Nécessaire pour les semaines
+ * à cheval sur le début/fin des vacances scolaires — cf. le même principe
+ * déjà appliqué dans routes/templates.js (fix du pont de l'Ascension /
+ * vacances partielles), propagé ici pour cohérence (audit_pre_ete_2026.md §3.6).
+ *
+ * @param {object}   cs         — row course_slots (a un day_of_week)
+ * @param {string}   dateStr    — YYYY-MM-DD, date réelle de ce cours cette semaine-là
+ * @param {object[]} schoolHolidays
+ * @returns {boolean}
+ */
+function isCourseSlotActiveForDay(cs, dateStr, schoolHolidays) {
+  if (cs.valid_from  && dateStr < cs.valid_from)  return false;
+  if (cs.valid_until && dateStr > cs.valid_until) return false;
+
+  const season = cs.season || 'always';
+  if (season === 'always' || season === 'competition' || season === 'stage') return true;
+  const inVacation = isSchoolHoliday(dateStr, schoolHolidays);
+  if (season === 'hors-vacances') return !inVacation;
+  if (season === 'vacances')      return inVacation;
+  return true;
+}
+
+/**
+ * Filtre un tableau de course slots au niveau du jour (voir
+ * isCourseSlotActiveForDay) — chaque cours est vérifié sur sa propre date
+ * réelle (weekDates[cs.day_of_week]), pas sur l'état "vacances" global de
+ * la semaine.
+ */
+function filterCourseSlotsByDay(courseSlots, weekStart, schoolHolidays) {
+  const weekDates = getWeekDates(weekStart);
+  return courseSlots.filter(cs => isCourseSlotActiveForDay(cs, weekDates[cs.day_of_week], schoolHolidays));
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Exports
 // ──────────────────────────────────────────────────────────────────────────────
@@ -315,4 +351,6 @@ module.exports = {
   // Course slots
   isCourseSlotActiveForWeek,
   filterCourseSlotsByWeek,
+  isCourseSlotActiveForDay,
+  filterCourseSlotsByDay,
 };

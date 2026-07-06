@@ -3,10 +3,12 @@ const router = require('express').Router();
 const { db_ } = require('../db/database');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
-  filterCourseSlotsByWeek,
+  filterCourseSlotsByDay,
   loadSchoolHolidays,
   getConfiguredSchoolZone,
+  getWeekDates,
 } = require('../utils/holidayHelper');
+const { checkStaffConflict } = require('../utils/conflictCheck');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
@@ -26,12 +28,15 @@ router.get('/', AUTH, (req, res) => {
   sql += ' ORDER BY cs.day_of_week, cs.hour_start';
   let slots = db_.all(sql, params);
 
-  // Filtrage par saison si une semaine est précisée
+  // Filtrage par saison si une semaine est précisée — au niveau du JOUR
+  // (chaque cours a son propre day_of_week), pour gérer correctement les
+  // semaines à cheval sur le début/fin des vacances scolaires, cohérent
+  // avec routes/templates.js — cf. audit_pre_ete_2026.md §3.6.
   if (week && /^\d{4}-\d{2}-\d{2}$/.test(week)) {
     const zone         = getConfiguredSchoolZone(db_);
     const year         = new Date(week + 'T12:00:00').getFullYear();
     const schoolHols   = loadSchoolHolidays(db_, zone, year - 1, year + 1);
-    slots = filterCourseSlotsByWeek(slots, week, schoolHols);
+    slots = filterCourseSlotsByDay(slots, week, schoolHols);
   }
 
   res.json(slots);
@@ -112,7 +117,7 @@ router.post('/:id/assign', ...ADMIN, (req, res) => {
   const zone       = getConfiguredSchoolZone(db_);
   const year       = new Date(week_start + 'T12:00:00').getFullYear();
   const schoolHols = loadSchoolHolidays(db_, zone, year - 1, year + 1);
-  const validSlots = filterCourseSlotsByWeek([cs], week_start, schoolHols);
+  const validSlots = filterCourseSlotsByDay([cs], week_start, schoolHols);
   if (!validSlots.length) {
     return res.status(409).json({
       error: 'Ce cours n\'est pas actif pour cette semaine (saison ou période de validité)',
@@ -132,13 +137,20 @@ router.post('/:id/assign', ...ADMIN, (req, res) => {
     }
   }
 
+  // Avertissement (non bloquant) si le salarié a un congé/indispo approuvé(e)
+  // ce jour-là — cf. audit_pre_ete_2026.md §3.7.
+  const weekDates = getWeekDates(week_start);
+  const conflictWarning = checkStaffConflict(
+    db_, Number(staff_id), weekDates[cs.day_of_week], cs.hour_start, cs.hour_end
+  );
+
   try {
     db_.run(
       `INSERT OR IGNORE INTO course_slot_assignments (course_slot_id, staff_id, week_start)
        VALUES (?, ?, ?)`,
       [Number(req.params.id), Number(staff_id), week_start]
     );
-    res.json({ ok: true });
+    res.json({ ok: true, warning: conflictWarning || undefined });
   } catch (e) {
     res.status(400).json({ error: e.message });
   }

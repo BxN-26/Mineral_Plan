@@ -80,10 +80,11 @@ const SwapCard = ({ swap, myStaffId, isManager, allStaff, publicHolidays, onRefr
   const action = async (path, body = {}) => {
     setBusy(true);
     try {
-      await api.put(`/swaps/${swap.id}/${path}`, body);
+      const r = await api.put(`/swaps/${swap.id}/${path}`, body);
       if (path === 'approve' || path === 'assign') {
         onInvalidateWeek(swap.week_start);
         if (swap.swap_week) onInvalidateWeek(swap.swap_week);
+        if (r.data?.warning) toast.warning(r.data.warning);
       }
       onRefresh();
     } catch (e) {
