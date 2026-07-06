@@ -116,10 +116,12 @@ const CongesView = () => {
   const handleDelete = async (id) => {
     setLoading(id, 'delete');
     try {
-      await api.delete(`/leaves/${id}`);
+      const res = await api.delete(`/leaves/${id}`);
       // Optimistic : retirer immédiatement de la liste locale
       setLeaves(prev => prev.filter(l => l.id !== id));
-      toast.success('Demande annulée');
+      toast.success(res.data?.slots_restored
+        ? `Demande annulée — ${res.data.slots_restored} créneau(x) restauré(s) dans le planning`
+        : 'Demande annulée');
       setConfirmDelete(null);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Erreur lors de la suppression');
@@ -371,6 +373,7 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
     reason:     '',
     half_start: false,
     half_end:   false,
+    hours:      '',
   });
   const [docFile,      setDocFile]      = useState(null);
   const [balanceInfo,  setBalanceInfo]  = useState(null); // { bal, slug }
@@ -493,6 +496,14 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
           </Field>
         </div>
 
+        {/* Nombre d'heures (type "récupération") */}
+        {isHoursType && (
+          <Field label="Nombre d'heures">
+            <input type="number" min="0.5" step="0.5" value={form.hours}
+              onChange={e => set('hours', e.target.value)} style={inputSt} placeholder="ex. 3.5" />
+          </Field>
+        )}
+
         {/* Options demi-journée */}
         {(isSingleDay || isMultiDay) && !isHoursType && (
           <div style={{ background: '#F9F8F6', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid #ECEAE4' }}>
@@ -556,6 +567,10 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
           <Btn onClick={onClose}>Annuler</Btn>
           <Btn variant="primary" disabled={submitting} onClick={async () => {
             if (submitting) return;
+            if (isHoursType && !(Number(form.hours) > 0)) {
+              setErr('Merci de saisir un nombre d\'heures valide');
+              return;
+            }
             setSubmitting(true);
             try {
               await onSave({
@@ -566,6 +581,7 @@ const NewLeaveModal = ({ staff, leaveTypes, myStaffId, isMgr, err, setErr, onSav
                 reason:     form.reason,
                 half_start: form.half_start ? 1 : 0,
                 half_end:   form.half_end   ? 1 : 0,
+                ...(isHoursType ? { hours: Number(form.hours) } : {}),
               }, docFile);
             } finally {
               setSubmitting(false);

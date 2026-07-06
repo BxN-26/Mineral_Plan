@@ -3,7 +3,7 @@ const router = require('express').Router();
 const { db_ }  = require('../db/database');
 const { requireAuth, requireRole, isSelfOnly } = require('../middleware/auth');
 const { notify } = require('./notifications');
-const { releaseStaffSlots } = require('../utils/releaseSlots');
+const { releaseStaffSlots, restoreReleasedSlots } = require('../utils/releaseSlots');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'manager', 'superadmin')];
@@ -135,23 +135,28 @@ router.post('/', AUTH, (req, res) => {
         `UPDATE unavailabilities SET status='approved', review_note='Auto-approuvée (aucun référent assigné)' WHERE id=?`,
         [r.lastInsertRowid]
       );
-      // Libérer les créneaux planifiés sur la période
-      releaseStaffSlots(db_, notify, {
+      // Libérer les créneaux planifiés sur la période (snapshot conservé
+      // pour restauration si annulée plus tard — cf. audit_pre_ete_2026.md §3.5)
+      const snapshotAuto = releaseStaffSlots(db_, notify, {
         staffId: Number(staff_id), dateStart: date_start, dateEnd: date_end,
         allDay: !!all_day, hourStart: all_day ? null : Number(hour_start),
         hourEnd: all_day ? null : Number(hour_end),
         label: 'Indisponibilité (auto-approuvée)',
       });
+      if (snapshotAuto.length)
+        db_.run('UPDATE unavailabilities SET released_slots=? WHERE id=?', [JSON.stringify(snapshotAuto), r.lastInsertRowid]);
       return res.json({ id: r.lastInsertRowid, status: 'approved' });
     }
   } else if (status === 'approved') {
     // Approbation directe (délai respecté) — libérer les créneaux
-    releaseStaffSlots(db_, notify, {
+    const snapshotDirect = releaseStaffSlots(db_, notify, {
       staffId: Number(staff_id), dateStart: date_start, dateEnd: date_end,
       allDay: !!all_day, hourStart: all_day ? null : Number(hour_start),
       hourEnd: all_day ? null : Number(hour_end),
       label: 'Indisponibilité',
     });
+    if (snapshotDirect.length)
+      db_.run('UPDATE unavailabilities SET released_slots=? WHERE id=?', [JSON.stringify(snapshotDirect), r.lastInsertRowid]);
   }
 
   res.json({ id: r.lastInsertRowid, status });
@@ -189,7 +194,7 @@ router.put('/:id/review', ...ADMIN, (req, res) => {
 
   // Si approuvée — libérer les créneaux planifiés sur la période
   if (status === 'approved') {
-    releaseStaffSlots(db_, notify, {
+    const snapshotReview = releaseStaffSlots(db_, notify, {
       staffId: unavail.staff_id,
       dateStart: unavail.date_start,
       dateEnd:   unavail.date_end,
@@ -198,6 +203,8 @@ router.put('/:id/review', ...ADMIN, (req, res) => {
       hourEnd:   unavail.all_day ? null : unavail.hour_end,
       label: 'Indisponibilité approuvée',
     });
+    if (snapshotReview.length)
+      db_.run('UPDATE unavailabilities SET released_slots=? WHERE id=?', [JSON.stringify(snapshotReview), unavail.id]);
   }
 
   res.json({ ok: true });
@@ -211,8 +218,19 @@ router.delete('/:id', AUTH, (req, res) => {
   if (isSelfOnly(req.user.role) && req.user.staff_id !== unavail.staff_id)
     return res.status(403).json({ error: 'Non autorisé' });
 
+  // Si l'indispo était approuvée et avait libéré des créneaux, les recréer
+  // avant suppression — cf. audit_pre_ete_2026.md §3.5.
+  let slotsRestoredCount = 0;
+  if (unavail.status === 'approved' && unavail.released_slots) {
+    try {
+      slotsRestoredCount = restoreReleasedSlots(db_, JSON.parse(unavail.released_slots));
+    } catch (err) {
+      console.error('[unavailabilities/delete] restoreReleasedSlots a échoué:', err);
+    }
+  }
+
   db_.run('DELETE FROM unavailabilities WHERE id = ?', [Number(req.params.id)]);
-  res.json({ ok: true });
+  res.json({ ok: true, slots_restored: slotsRestoredCount || undefined });
 });
 
 module.exports = router;

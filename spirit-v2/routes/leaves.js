@@ -7,7 +7,7 @@ const { db_ }                               = require('../db/database');
 const { requireAuth, requireRole, auditLog, isSelfOnly } = require('../middleware/auth');
 const { notify, notifyStaff }               = require('./notifications');
 const { sendPush }                           = require('./push');
-const { releaseStaffSlots }                  = require('../utils/releaseSlots');
+const { releaseStaffSlots, restoreReleasedSlots } = require('../utils/releaseSlots');
 
 const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin','superadmin')];
@@ -339,7 +339,17 @@ router.post('/', AUTH, (req, res) => {
   try { levels = JSON.parse(leaveType.approval_levels || '["manager"]'); }
   catch (_) { levels = ['manager']; }
 
-  const days   = calcDays(start_date, end_date, leaveType.count_method, half_start, half_end);
+  // Type "récup" (count_method='hours') : décompte en heures saisies par
+  // l'utilisateur, pas en jours calendaires/ouvrés — cf. audit_pre_ete_2026.md
+  // §3.4 (hours_count n'était jamais renseigné auparavant, resté à 0 partout).
+  const isHoursType = leaveType.count_method === 'hours';
+  let hours = 0;
+  if (isHoursType) {
+    hours = Number(req.body.hours);
+    if (!Number.isFinite(hours) || hours <= 0)
+      return res.status(400).json({ error: 'Nombre d\'heures requis pour ce type de congé' });
+  }
+  const days = isHoursType ? 0 : calcDays(start_date, end_date, leaveType.count_method, half_start, half_end);
 
   // Résolution & compaction des approbateurs (niveaux null sautés, doublons dédupliqués)
   const { n1, n2, n3 } = resolveApprovers(Number(staff_id), levels);
@@ -370,14 +380,14 @@ router.post('/', AUTH, (req, res) => {
     if (c) return { conflict: c };
     const ins = db_.run(
       `INSERT INTO leaves
-         (staff_id, type_id, start_date, end_date, days_count, reason,
+         (staff_id, type_id, start_date, end_date, days_count, hours_count, reason,
           status, approval_step, submitted_at,
           half_start, half_end,
           n1_approver_id, n1_status,
           n2_approver_id, n2_status,
           n3_approver_id, n3_status)
-       VALUES (?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
-      [staff_id, type_id, start_date, end_date, days, reason||null,
+       VALUES (?,?,?,?,?,?,?, 'pending',1,datetime('now'), ?,?, ?,?, ?,?, ?,?)`,
+      [staff_id, type_id, start_date, end_date, days, hours, reason||null,
        half_start, half_end,
        n1?.id||null, n1 ? 'pending' : null,
        n2?.id||null, n2 ? 'pending' : null,
@@ -577,7 +587,9 @@ router.put('/:id/approve', AUTH, (req, res) => {
     // trompeuse au manager : le congé EST approuvé, juste à vérifier manuellement.
     // cf. audit_pre_ete_2026.md §2.4.
     try {
-      releaseStaffSlots(db_, notify, {
+      // Snapshot conservé (released_slots) pour pouvoir recréer les créneaux
+      // si ce congé est annulé après coup — cf. audit_pre_ete_2026.md §3.5.
+      const snapshot = releaseStaffSlots(db_, notify, {
         staffId:   leave.staff_id,
         dateStart: leave.start_date,
         dateEnd:   leave.end_date,
@@ -586,6 +598,9 @@ router.put('/:id/approve', AUTH, (req, res) => {
         hourEnd:   null,
         label: `Congé approuvé${lt?.label ? ' (' + lt.label + ')' : ''}`,
       });
+      if (snapshot.length) {
+        db_.run('UPDATE leaves SET released_slots=? WHERE id=?', [JSON.stringify(snapshot), leave.id]);
+      }
     } catch (err) {
       console.error('[leaves/approve] releaseStaffSlots a échoué:', err);
       slotsReleaseWarning = 'Le congé est approuvé, mais la libération automatique des créneaux planning a échoué — à vérifier manuellement.';
@@ -653,9 +668,22 @@ router.delete('/:id', AUTH, (req, res) => {
     return res.status(400).json({ error: 'Un congé approuvé ne peut être annulé que par un manager' });
 
   // Restituer le solde si le congé était approuvé et déjà déduit
-  if (leave.status === 'approved') restoreBalance(leave);
+  let slotsRestoredCount = 0;
+  if (leave.status === 'approved') {
+    restoreBalance(leave);
+    // Recréer les créneaux planning libérés lors de l'approbation, s'il y en
+    // avait — cf. audit_pre_ete_2026.md §3.5.
+    if (leave.released_slots) {
+      try {
+        const snapshot = JSON.parse(leave.released_slots);
+        slotsRestoredCount = restoreReleasedSlots(db_, snapshot);
+      } catch (err) {
+        console.error('[leaves/cancel] restoreReleasedSlots a échoué:', err);
+      }
+    }
+  }
 
-  db_.run(`UPDATE leaves SET status='cancelled', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+  db_.run(`UPDATE leaves SET status='cancelled', released_slots=NULL, updated_at=datetime('now') WHERE id=?`, [leave.id]);
 
   // Notifier le salarié si annulation par un tiers
   if (req.user.staff_id !== leave.staff_id) {
@@ -668,7 +696,10 @@ router.delete('/:id', AUTH, (req, res) => {
   }
 
   auditLog(req, 'LEAVE_CANCEL', 'leaves', leave.id);
-  res.json({ message: 'Congé annulé' });
+  res.json({
+    message: 'Congé annulé',
+    slots_restored: slotsRestoredCount || undefined,
+  });
 });
 
 // ── POST /api/leaves/:id/document ────────────────────────────

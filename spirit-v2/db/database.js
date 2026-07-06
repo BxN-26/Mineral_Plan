@@ -55,6 +55,8 @@ function getDb() {
       ["teams_show_course_slots",    "ALTER TABLE teams ADD COLUMN show_course_slots INTEGER NOT NULL DEFAULT 0"],
       ["leaves_half_start",          "ALTER TABLE leaves ADD COLUMN half_start INTEGER NOT NULL DEFAULT 0"],
       ["leaves_half_end",            "ALTER TABLE leaves ADD COLUMN half_end   INTEGER NOT NULL DEFAULT 0"],
+      ["leaves_released_slots",          "ALTER TABLE leaves ADD COLUMN released_slots TEXT"],
+      ["unavailabilities_released_slots", "ALTER TABLE unavailabilities ADD COLUMN released_slots TEXT"],
     ];
     // ── Migration : suppression table orpheline leave_notifications ──
     const dropLnDone = _db.prepare("SELECT 1 FROM _migrations WHERE name='drop_leave_notifications'").get();

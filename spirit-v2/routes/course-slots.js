@@ -121,6 +121,17 @@ router.post('/:id/assign', ...ADMIN, (req, res) => {
     });
   }
 
+  // Capacité du cours — jamais vérifiée auparavant (audit_pre_ete_2026.md §2.5)
+  if (cs.capacity != null) {
+    const already = db_.get(
+      'SELECT COUNT(*) AS c FROM course_slot_assignments WHERE course_slot_id=? AND week_start=? AND staff_id != ?',
+      [Number(req.params.id), week_start, Number(staff_id)]
+    ).c;
+    if (already >= cs.capacity) {
+      return res.status(409).json({ error: `Capacité atteinte pour ce cours (${cs.capacity} maximum sur cette semaine)` });
+    }
+  }
+
   try {
     db_.run(
       `INSERT OR IGNORE INTO course_slot_assignments (course_slot_id, staff_id, week_start)

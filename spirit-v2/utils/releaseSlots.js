@@ -13,7 +13,9 @@
  *   hourStart {number|null} — heure début (si !allDay)
  *   hourEnd   {number|null} — heure fin   (si !allDay)
  *   label     {string}  — libellé pour le message (ex: "Congé", "Indisponibilité")
- * @returns {Array} liste des créneaux supprimés
+ * @returns {Array} snapshot des créneaux supprimés, réutilisable tel quel
+ *   avec restoreReleasedSlots() pour les recréer si le congé/indispo est
+ *   annulé — cf. audit_pre_ete_2026.md §3.5.
  */
 function releaseStaffSlots(db, notify, { staffId, dateStart, dateEnd, allDay, hourStart, hourEnd, label }) {
   // 1. Calculer tous les jours inclus dans la période
@@ -34,7 +36,8 @@ function releaseStaffSlots(db, notify, { staffId, dateStart, dateEnd, allDay, ho
   }
 
   // 2. Supprimer les schedule_slots concernés
-  const removed = []; // [{ weekStr, dayOfWeek, dateStr, fnName, count }]
+  const removed  = []; // résumé par (semaine, fonction) — pour le message de notification
+  const snapshot = []; // détail complet par créneau — pour une restauration ultérieure
 
   for (const { weekStr, dayOfWeek, dateStr } of dayMap) {
     // Tous les schedules de cette semaine (toutes fonctions)
@@ -55,20 +58,30 @@ function releaseStaffSlots(db, notify, { staffId, dateStart, dateEnd, allDay, ho
         params.push(Number(hourEnd), Number(hourStart));
       }
       const slots = db.all(
-        `SELECT id FROM schedule_slots
+        `SELECT * FROM schedule_slots
          WHERE schedule_id = ? AND staff_id = ? AND day_of_week = ?${whereExtra}`,
         params
       );
       if (!slots.length) continue;
 
       for (const slot of slots) {
+        snapshot.push({
+          week_start:     weekStr,
+          fn_slug:        sc.fn_slug,
+          staff_id:       staffId,
+          day_of_week:    dayOfWeek,
+          hour_start:     slot.hour_start,
+          hour_end:       slot.hour_end,
+          task_type:      slot.task_type || null,
+          course_slot_id: slot.course_slot_id || null,
+        });
         db.run('DELETE FROM schedule_slots WHERE id = ?', [slot.id]);
       }
       removed.push({ weekStr, dayOfWeek, dateStr, fnName: sc.fn_name, count: slots.length });
     }
   }
 
-  if (!removed.length) return removed;
+  if (!removed.length) return snapshot;
 
   // 3. Identifier le manager à notifier
   const staffRow = db.get('SELECT firstname, lastname, manager_id FROM staff WHERE id = ?', [staffId]);
@@ -110,7 +123,47 @@ function releaseStaffSlots(db, notify, { staffId, dateStart, dateEnd, allDay, ho
     });
   }
 
-  return removed;
+  return snapshot;
 }
 
-module.exports = { releaseStaffSlots };
+/**
+ * restoreReleasedSlots — Recrée les créneaux précédemment libérés par
+ * releaseStaffSlots (ex: annulation d'un congé/indispo déjà approuvé).
+ * Recrée le schedule (semaine+fonction) au besoin, comme addSlot() dans
+ * routes/swaps.js. Silencieux sur les conflits (INSERT OR IGNORE) — si le
+ * créneau a été réoccupé entre-temps par autre chose, on ne l'écrase pas.
+ *
+ * @param {object} db instance better-sqlite3 wrappée (db_)
+ * @param {Array}  snapshot — tel que retourné par releaseStaffSlots()
+ * @returns {number} nombre de créneaux effectivement restaurés
+ */
+function restoreReleasedSlots(db, snapshot) {
+  if (!Array.isArray(snapshot) || !snapshot.length) return 0;
+  let restored = 0;
+  for (const s of snapshot) {
+    const fn = db.get('SELECT id FROM functions WHERE slug=?', [s.fn_slug]);
+    if (!fn) continue;
+
+    let sch = db.get(
+      'SELECT id FROM schedules WHERE week_start=? AND function_id=?',
+      [s.week_start, fn.id]
+    );
+    if (!sch) {
+      const ins = db.run(
+        `INSERT INTO schedules (week_start, function_id, note) VALUES (?,?,'')`,
+        [s.week_start, fn.id]
+      );
+      sch = { id: ins.lastInsertRowid };
+    }
+    const r = db.run(
+      `INSERT OR IGNORE INTO schedule_slots
+         (schedule_id, staff_id, day_of_week, hour_start, hour_end, task_type, course_slot_id)
+       VALUES (?,?,?,?,?,?,?)`,
+      [sch.id, s.staff_id, s.day_of_week, s.hour_start, s.hour_end, s.task_type, s.course_slot_id]
+    );
+    if (r.changes > 0) restored++;
+  }
+  return restored;
+}
+
+module.exports = { releaseStaffSlots, restoreReleasedSlots };

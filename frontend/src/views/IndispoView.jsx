@@ -281,7 +281,8 @@ export default function IndispoView() {
   const handleDelete = async (id) => {
     if (!window.confirm('Supprimer cette indisponibilité ?')) return;
     try {
-      await api.delete(`/unavailabilities/${id}`);
+      const res = await api.delete(`/unavailabilities/${id}`);
+      if (res.data?.slots_restored) toast.success(`${res.data.slots_restored} créneau(x) restauré(s) dans le planning`);
       await loadMyList();
     } catch (e) { toast.error(e.response?.data?.error || 'Erreur'); }
   };
