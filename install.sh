@@ -112,10 +112,9 @@ if [ -z "$SKIP_ENV" ]; then
   read -r -p "  Chemin du fichier SQLite [./db/spirit.db] : " DB_PATH
   DB_PATH="${DB_PATH:-./db/spirit.db}"
 
-  # JWT secrets (auto-générés)
+  # JWT secret (auto-généré)
   JWT_SECRET=$(gen_secret)
-  JWT_REFRESH_SECRET=$(gen_secret)
-  info "Secrets JWT générés automatiquement (64 octets hex)."
+  info "Secret JWT généré automatiquement (64 octets hex)."
 
   echo ""
   info "── Compte superadmin (technique — ne pas communiquer au client) ──────"
@@ -173,9 +172,8 @@ if [ -z "$SKIP_ENV" ]; then
     echo "CLIENT_URL=$CLIENT_URL"
     echo "DB_PATH=$DB_PATH"
     echo ""
-    echo "# ── JWT secrets ──────────────────────────────────────────────────"
+    echo "# ── JWT secret ───────────────────────────────────────────────────"
     echo "JWT_SECRET=$JWT_SECRET"
-    echo "JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET"
     echo ""
     echo "# ── Comptes créés au premier démarrage ───────────────────────────"
     echo "SUPERADMIN_EMAIL=$SA_EMAIL"
@@ -189,7 +187,9 @@ if [ -z "$SKIP_ENV" ]; then
       echo "# ── Web Push (VAPID) ─────────────────────────────────────────────"
       echo "VAPID_PUBLIC_KEY=$VAPID_PUBLIC"
       echo "VAPID_PRIVATE_KEY=$VAPID_PRIVATE"
-      echo "VAPID_EMAIL=mailto:${VAPID_EMAIL}"
+      # La variable lue par le code est VAPID_SUBJECT, pas VAPID_EMAIL — cette
+      # dernière était écrite mais jamais lue par spirit-v2/routes/push.js.
+      echo "VAPID_SUBJECT=mailto:${VAPID_EMAIL}"
     fi
   } > "$ENV_FILE"
 

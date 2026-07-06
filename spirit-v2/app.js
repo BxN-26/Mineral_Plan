@@ -85,7 +85,8 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json());
+// Limite explicite (au lieu du défaut implicite d'Express) — cf. audit_pre_ete_2026.md §5.5
+app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 // Service des fichiers statiques du build Vite (production)

@@ -47,6 +47,7 @@ const state = {
   progressPercent: 0,
   installUrl:      '',
   adminPasswordFinal: '',
+  saPasswordFinal: '',
 };
 
 // ─── Éléments DOM fréquemment utilisés ───────────────────────────────────────
@@ -465,6 +466,7 @@ function handleProgress(data) {
   if (data.type === 'done') {
     state.installUrl = data.url;
     state.adminPasswordFinal = state.adminPassword;
+    state.saPasswordFinal = data.saPassword || '';
     updateProgress();
     // Court délai pour que l'animation de progression se termine
     setTimeout(() => showDoneScreen(data), 800);
@@ -541,6 +543,24 @@ function showDoneScreen(data) {
     hiddenEl.textContent = revealed ? state.adminPasswordFinal : '••••••••';
     revealBtn.textContent = revealed ? 'Masquer' : 'Afficher';
   });
+
+  // Compte superadmin technique — mot de passe généré aléatoirement, jamais
+  // affiché nulle part ailleurs (cf. audit_pre_ete_2026.md §5.5).
+  const saBox = $('done-sa-creds-box');
+  if (data.saPassword) {
+    $('done-sa-email').textContent = data.saEmail || '';
+    let saRevealed = false;
+    const saHiddenEl = $('done-sa-password-hidden');
+    const saRevealBtn = $('done-sa-reveal-btn');
+    saHiddenEl.textContent = '••••••••';
+    saRevealBtn.addEventListener('click', () => {
+      saRevealed = !saRevealed;
+      saHiddenEl.textContent = saRevealed ? state.saPasswordFinal : '••••••••';
+      saRevealBtn.textContent = saRevealed ? 'Masquer' : 'Afficher';
+    });
+  } else if (saBox) {
+    saBox.style.display = 'none';
+  }
 
   // Ouvrir l'app
   $('btn-open-app').onclick = () => window.api.openUrl(data.url);

@@ -67,7 +67,14 @@ function getDb() {
     for (const [name, sql] of migrations) {
       const done = _db.prepare('SELECT 1 FROM _migrations WHERE name=?').get(name);
       if (!done) {
-        try { _db.exec(sql); } catch (_) {}
+        // Erreur volontairement avalée (ex: colonne déjà existante sur une
+        // install partiellement migrée), MAIS journalisée — avant, une vraie
+        // erreur (syntaxe, verrou...) passait totalement inaperçue et la
+        // migration était quand même marquée "faite", laissant par exemple
+        // une colonne manquante en place indéfiniment (cf. audit_pre_ete_2026.md
+        // §5.2 — c'est exactement ce qui a causé le bug updated_at et le bug
+        // sub_role/note déjà rencontrés).
+        try { _db.exec(sql); } catch (err) { console.error(`[migration:${name}] échec ignoré —`, err.message); }
         _db.prepare('INSERT OR IGNORE INTO _migrations(name) VALUES(?)').run(name);
       }
     }

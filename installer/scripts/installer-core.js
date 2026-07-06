@@ -88,6 +88,12 @@ async function runInstall(config, sendProgress) {
   const spiritDir  = path.join(installDir, 'spirit-v2');
   const frontendDir = path.join(installDir, 'frontend');
 
+  // Renseignés à l'étape 5 (génération du .env), affichés à l'utilisateur sur
+  // l'écran final (sendProgress 'done') — sans ça le mot de passe superadmin
+  // généré aléatoirement n'était jamais montré nulle part (audit_pre_ete_2026.md §5.5).
+  let saEmail = 'superadmin@spirit.internal';
+  let saPassword = null;
+
   // Envoyer la liste des tâches applicables
   const tasks = ALL_TASKS.filter(t => t.id !== 'caddy' || deployType === 'public');
   sendProgress({ type: 'tasks', tasks });
@@ -167,9 +173,8 @@ async function runInstall(config, sendProgress) {
         ? `http://${domain}:${port}`
         : `https://${domain}`;
 
-    const jwtSecret        = genSecret();
-    const jwtRefreshSecret = genSecret();
-    const saPassword       = genSecret().slice(0, 24);
+    const jwtSecret = genSecret();
+    saPassword      = genSecret().slice(0, 24);
 
     const lines = [
       `PORT=${port}`,
@@ -177,12 +182,11 @@ async function runInstall(config, sendProgress) {
       `CLIENT_URL=${clientUrl}`,
       `DB_PATH=./db/spirit.db`,
       '',
-      '# JWT secrets (générés automatiquement — ne pas modifier)',
+      '# JWT secret (généré automatiquement — ne pas modifier)',
       `JWT_SECRET=${jwtSecret}`,
-      `JWT_REFRESH_SECRET=${jwtRefreshSecret}`,
       '',
       '# Compte superadmin technique (accès développeur)',
-      `SUPERADMIN_EMAIL=superadmin@spirit.internal`,
+      `SUPERADMIN_EMAIL=${saEmail}`,
       `SUPERADMIN_PASSWORD=${saPassword}`,
       '',
       '# Compte administrateur opérateur',
@@ -198,7 +202,10 @@ async function runInstall(config, sendProgress) {
       lines.push('', '# Web Push (VAPID)');
       lines.push(`VAPID_PUBLIC_KEY=${vapid.publicKey}`);
       lines.push(`VAPID_PRIVATE_KEY=${vapid.privateKey}`);
-      lines.push(`VAPID_EMAIL=mailto:${adminEmail}`);
+      // La variable lue par le code est VAPID_SUBJECT, pas VAPID_EMAIL — cette
+      // dernière était écrite mais jamais lue, la config VAPID retombait
+      // toujours sur le mailto par défaut (audit_pre_ete_2026.md §5.5).
+      lines.push(`VAPID_SUBJECT=mailto:${adminEmail}`);
       log('Clés VAPID générées ✓');
     } else {
       log('⚠️ Clés VAPID non générées — les notifications push seront désactivées.');
@@ -273,7 +280,7 @@ async function runInstall(config, sendProgress) {
       ? `http://${domain}`
       : `https://${domain}`;
 
-  sendProgress({ type: 'done', url: appUrl, email: adminEmail });
+  sendProgress({ type: 'done', url: appUrl, email: adminEmail, saEmail, saPassword });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
