@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { Btn, Modal, Field, PageHeader, inputSt } from '../components/common';
+import { Btn, Modal, Field, PageHeader, inputSt, ConfirmModal } from '../components/common';
 import api from '../api/client';
 import { toast } from 'sonner';
 
@@ -999,7 +999,7 @@ const SystemeConfig = ({ settings, setSettings }) => {
             await api.put('/settings/push_notifications_enabled', { value: String(v) });
             setSettings(prev => (Array.isArray(prev) ? prev : []).map(s =>
               s.key === 'push_notifications_enabled' ? { ...s, value: String(v) } : s));
-          } catch (e) { window.alert(e.response?.data?.error || 'Erreur'); }
+          } catch (e) { toast.error(e.response?.data?.error || 'Erreur'); }
         }}
           style={TOGGLE_STYLE(pushEnabled)} aria-label="Toggle push notifications">
           <div style={KNOB_STYLE(pushEnabled)} />
@@ -1048,6 +1048,7 @@ const TeamsConfig = ({ teams, functions = [], reload }) => {
   const [edit,    setEdit]    = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [err,     setErr]     = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const handleSave = async (data) => {
     try {
@@ -1062,12 +1063,12 @@ const TeamsConfig = ({ teams, functions = [], reload }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer cette équipe ?')) return;
     try {
       await api.delete(`/teams/${id}`);
       await reload();
+      toast.success('Équipe supprimée');
     } catch (e) {
-      window.alert(e.response?.data?.error || 'Erreur de suppression');
+      toast.error(e.response?.data?.error || 'Erreur de suppression');
     }
   };
 
@@ -1076,7 +1077,7 @@ const TeamsConfig = ({ teams, functions = [], reload }) => {
       await api.put(`/teams/${t.id}`, { show_course_slots: t.show_course_slots ? 0 : 1 });
       await reload();
     } catch (e) {
-      window.alert(e.response?.data?.error || 'Erreur');
+      toast.error(e.response?.data?.error || 'Erreur');
     }
   };
 
@@ -1112,7 +1113,7 @@ const TeamsConfig = ({ teams, functions = [], reload }) => {
             </label>
             <button onClick={() => { setEdit(t); setShowForm(true); setErr(''); }}
               style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-            <button onClick={() => handleDelete(t.id)}
+            <button onClick={() => setConfirmDeleteId(t.id)}
               style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 5, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626' }}>🗑</button>
           </div>
         ))}
@@ -1122,6 +1123,15 @@ const TeamsConfig = ({ teams, functions = [], reload }) => {
         <Modal onClose={() => setShowForm(false)} title={edit ? 'Modifier l\'équipe' : 'Nouvelle équipe'}>
           <TeamForm initial={edit} functions={functions} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
         </Modal>
+      )}
+
+      {confirmDeleteId != null && (
+        <ConfirmModal
+          message="Supprimer cette équipe ?"
+          confirmLabel="Supprimer"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
       )}
     </div>
   );
@@ -1164,6 +1174,7 @@ const FunctionsConfig = ({ functions, reload }) => {
   const [edit,     setEdit]     = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [err,      setErr]      = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const handleSave = async (data) => {
     try {
@@ -1178,12 +1189,12 @@ const FunctionsConfig = ({ functions, reload }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer cette fonction ?')) return;
     try {
       await api.delete(`/functions/${id}`);
       await reload();
+      toast.success('Fonction supprimée');
     } catch (e) {
-      window.alert(e.response?.data?.error || 'Erreur de suppression');
+      toast.error(e.response?.data?.error || 'Erreur de suppression');
     }
   };
 
@@ -1203,7 +1214,7 @@ const FunctionsConfig = ({ functions, reload }) => {
             </div>
             <button onClick={() => { setEdit(f); setShowForm(true); setErr(''); }}
               style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-            <button onClick={() => handleDelete(f.id)}
+            <button onClick={() => setConfirmDeleteId(f.id)}
               style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 5, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626' }}>🗑</button>
           </div>
         ))}
@@ -1213,6 +1224,15 @@ const FunctionsConfig = ({ functions, reload }) => {
         <Modal onClose={() => setShowForm(false)} title={edit ? 'Modifier la fonction' : 'Nouvelle fonction'}>
           <FunctionForm initial={edit} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
         </Modal>
+      )}
+
+      {confirmDeleteId != null && (
+        <ConfirmModal
+          message="Supprimer cette fonction ?"
+          confirmLabel="Supprimer"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
       )}
     </div>
   );
@@ -1328,6 +1348,7 @@ const TaskTypesConfig = ({ taskTypes, functions, reload }) => {
   const [edit,     setEdit]     = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [err,      setErr]      = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const handleSave = async (data) => {
     try {
@@ -1342,12 +1363,12 @@ const TaskTypesConfig = ({ taskTypes, functions, reload }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer ce type de tâche ?')) return;
     try {
       await api.delete(`/task-types/${id}`);
       await reload();
+      toast.success('Type de tâche supprimé');
     } catch (e) {
-      window.alert(e.response?.data?.error || 'Erreur de suppression');
+      toast.error(e.response?.data?.error || 'Erreur de suppression');
     }
   };
 
@@ -1393,7 +1414,7 @@ const TaskTypesConfig = ({ taskTypes, functions, reload }) => {
                 </div>
                 <button onClick={() => { setEdit(t); setShowForm(true); setErr(''); }}
                   style={{ padding: '4px 8px', border: '1px solid #E4E0D8', borderRadius: 5, background: '#fff', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-                <button onClick={() => handleDelete(t.id)}
+                <button onClick={() => setConfirmDeleteId(t.id)}
                   style={{ padding: '4px 8px', border: '1px solid #FECACA', borderRadius: 5, background: '#FEF2F2', cursor: 'pointer', fontSize: 11, color: '#DC2626' }}>🗑</button>
               </div>
             ))}
@@ -1405,6 +1426,15 @@ const TaskTypesConfig = ({ taskTypes, functions, reload }) => {
         <Modal onClose={() => setShowForm(false)} title={edit ? 'Modifier le type de tâche' : 'Nouveau type de tâche'}>
           <TaskTypeForm initial={edit} functions={functions} err={err} onSave={handleSave} onCancel={() => setShowForm(false)} />
         </Modal>
+      )}
+
+      {confirmDeleteId != null && (
+        <ConfirmModal
+          message="Supprimer ce type de tâche ?"
+          confirmLabel="Supprimer"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
       )}
     </div>
   );

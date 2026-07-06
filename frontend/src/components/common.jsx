@@ -159,6 +159,7 @@ if (typeof document !== 'undefined' && !document.getElementById('spirit-spin-sty
  */
 export const ConfirmModal = ({ message, confirmLabel = 'Confirmer', onConfirm, onClose, variant = 'danger' }) => {
   const btnRef = useRef(null);
+  const [busy, setBusy] = useState(false);
   // Focus trap : focus sur le bouton de confirmation à l'ouverture
   useEffect(() => { btnRef.current?.focus(); }, []);
   // Fermeture sur Escape
@@ -167,6 +168,20 @@ export const ConfirmModal = ({ message, confirmLabel = 'Confirmer', onConfirm, o
     document.addEventListener('keydown', h);
     return () => document.removeEventListener('keydown', h);
   }, [onClose]);
+
+  // Attend la résolution de onConfirm (peut être async) avant de fermer —
+  // avant, la modale se fermait dans le même cycle que le déclenchement de
+  // l'action, masquant un éventuel échec silencieux — cf. audit §4.10.
+  const handleConfirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onConfirm();
+    } finally {
+      setBusy(false);
+      onClose();
+    }
+  };
 
   return (
     <div
@@ -186,9 +201,9 @@ export const ConfirmModal = ({ message, confirmLabel = 'Confirmer', onConfirm, o
         </div>
         <p style={{ fontSize: 13, color: '#4B4840', marginBottom: 20, lineHeight: 1.5 }}>{message}</p>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Btn onClick={onClose}>Annuler</Btn>
-          <Btn ref={btnRef} variant={variant} onClick={() => { onConfirm(); onClose(); }}>
-            {confirmLabel}
+          <Btn onClick={onClose} disabled={busy}>Annuler</Btn>
+          <Btn ref={btnRef} variant={variant} onClick={handleConfirm} disabled={busy}>
+            {busy ? 'Patientez…' : confirmLabel}
           </Btn>
         </div>
       </div>

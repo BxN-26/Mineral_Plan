@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../App';
-import { Btn, Modal, Field, inputSt, PageHeader, Tag } from '../components/common';
+import { Btn, Modal, Field, inputSt, PageHeader, Tag, ConfirmModal } from '../components/common';
 import api from '../api/client';
 import { toast } from 'sonner';
 
@@ -256,6 +256,7 @@ export default function IndispoView() {
   const [pendingList, setPendingList] = useState([]);
   const [reviewItem, setReviewItem]   = useState(null);
   const [loading, setLoading]         = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const loadMyList = useCallback(async () => {
     if (!myStaffId) return;
@@ -279,10 +280,10 @@ export default function IndispoView() {
   }, [loadMyList, loadPending]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer cette indisponibilité ?')) return;
     try {
       const res = await api.delete(`/unavailabilities/${id}`);
       if (res.data?.slots_restored) toast.success(`${res.data.slots_restored} créneau(x) restauré(s) dans le planning`);
+      else toast.success('Indisponibilité supprimée');
       await loadMyList();
     } catch (e) { toast.error(e.response?.data?.error || 'Erreur'); }
   };
@@ -342,7 +343,7 @@ export default function IndispoView() {
         {tab === 'mine' && !loading && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
             {myList.map(item => (
-              <IndispoCard key={item.id} item={item} canDelete={true} onDelete={handleDelete} />
+              <IndispoCard key={item.id} item={item} canDelete={true} onDelete={setConfirmDeleteId} />
             ))}
           </div>
         )}
@@ -395,6 +396,15 @@ export default function IndispoView() {
           item={reviewItem}
           onClose={() => setReviewItem(null)}
           onDone={handleReviewDone} />
+      )}
+
+      {confirmDeleteId != null && (
+        <ConfirmModal
+          message="Supprimer cette indisponibilité ?"
+          confirmLabel="Supprimer"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
       )}
     </div>
   );

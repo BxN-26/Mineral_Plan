@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../App';
-import { Btn, Modal, Field, inputSt, PageHeader, Tag } from '../components/common';
+import { Btn, Modal, Field, inputSt, PageHeader, Tag, ConfirmModal } from '../components/common';
 import api from '../api/client';
 
 const STATUS_CFG = {
@@ -123,7 +124,7 @@ function ReviewModal({ item, onClose, onDone }) {
       await api.put(`/hour-declarations/${item.id}/review`, { status, review_note: reviewNote });
       onDone();
     } catch (e) {
-      alert(e.response?.data?.error || 'Erreur');
+      toast.error(e.response?.data?.error || 'Erreur');
     } finally { setSaving(false); }
   };
 
@@ -220,6 +221,7 @@ export default function HourDeclarationView() {
   const [pendingList, setPendingList] = useState([]);
   const [reviewItem, setReviewItem]   = useState(null);
   const [loading, setLoading]         = useState(false);
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
 
   const loadMyList = useCallback(async () => {
     try {
@@ -242,11 +244,11 @@ export default function HourDeclarationView() {
   }, [loadMyList, loadPending]);
 
   const handleCancel = async (id) => {
-    if (!window.confirm('Annuler cette déclaration ?')) return;
     try {
       await api.delete(`/hour-declarations/${id}`);
       await loadMyList();
-    } catch (e) { alert(e.response?.data?.error || 'Erreur'); }
+      toast.success('Déclaration annulée');
+    } catch (e) { toast.error(e.response?.data?.error || 'Erreur'); }
   };
 
   const handleSaved = async () => {
@@ -302,7 +304,7 @@ export default function HourDeclarationView() {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 720 }}>
               {myList.map(item => (
-                <DeclCard key={item.id} item={item} canCancel={true} onCancel={handleCancel} />
+                <DeclCard key={item.id} item={item} canCancel={true} onCancel={setConfirmCancelId} />
               ))}
             </div>
           </>
@@ -363,6 +365,15 @@ export default function HourDeclarationView() {
           item={reviewItem}
           onClose={() => setReviewItem(null)}
           onDone={handleReviewDone} />
+      )}
+
+      {confirmCancelId != null && (
+        <ConfirmModal
+          message="Annuler cette déclaration ?"
+          confirmLabel="Annuler la déclaration"
+          onConfirm={() => handleCancel(confirmCancelId)}
+          onClose={() => setConfirmCancelId(null)}
+        />
       )}
     </div>
   );

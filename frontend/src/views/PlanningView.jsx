@@ -400,6 +400,7 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
   const [skipPublicHdays,    setSkipPublicHdays]    = useState(false);
   const [skipSchoolHdays,    setSkipSchoolHdays]    = useState(false);
   const [onlySchoolHdays,    setOnlySchoolHdays]    = useState(false);
+  const [confirmDeleteId,    setConfirmDeleteId]    = useState(null);
 
   const load = async () => {
     if (!fn) return;
@@ -434,9 +435,9 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
         slots.push({ staff_id: sp.staffId, day_of_week: d, hour_start: sp.start, hour_end: sp.end, task_type: sp.taskType || null });
     try {
       await api.post(`/templates/${tplId}/slots`, { slots });
-      alert('Modèle mis à jour !');
+      toast.success('Modèle mis à jour !');
     } catch (e) {
-      alert('❌ ' + (e.response?.data?.error || e.message));
+      toast.error(e.response?.data?.error || e.message);
     }
   };
 
@@ -458,10 +459,10 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
   };
 
   const handleDelete = async (tplId) => {
-    if (!window.confirm('Supprimer ce modèle ?')) return;
     try {
       await api.delete(`/templates/${tplId}`);
       await load();
+      toast.success('Modèle supprimé');
     } catch (e) {
       toast.error(e.response?.data?.error || 'Échec de la suppression du modèle');
     }
@@ -507,7 +508,7 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
             <div style={{ padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 6, background: '#FAFAF8' }}>
               <span style={{ flex: 1, fontWeight: 600, color: '#1E2235', fontSize: 11 }}>{t.name}</span>
               {t.is_default === 1 && <span style={{ fontSize: 9, background: '#EBF0FE', color: '#5B75DB', borderRadius: 8, padding: '2px 6px' }}>Défaut</span>}
-              <button onClick={() => handleDelete(t.id)} title="Supprimer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C0BCB5', fontSize: 12, padding: 0, lineHeight: 1 }}>🗑</button>
+              <button onClick={() => setConfirmDeleteId(t.id)} title="Supprimer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C0BCB5', fontSize: 12, padding: 0, lineHeight: 1 }}>🗑</button>
             </div>
             {applying === t.id ? (
               <div style={{ padding: '8px 10px', background: '#F9F9FF', borderTop: '1px solid #E8E5F5' }}>
@@ -561,6 +562,15 @@ const TemplatePanel = ({ fn, currentWeek, spans, onClose, onApplied }) => {
           </div>
         ))}
       </div>
+
+      {confirmDeleteId != null && (
+        <ConfirmModal
+          message="Supprimer ce modèle ?"
+          confirmLabel="Supprimer"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
+      )}
     </div>
   );
 };
@@ -576,6 +586,7 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
   const [form, setForm]     = useState(empty);
   const [editing, setEditing] = useState(null); // id du cours édité
   const [saving, setSaving]   = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const fnCourses = courseSlots.filter(cs => cs.function_id === fn?.id);
 
   const inp = { fontSize: 11, padding: '4px 7px', border: '1px solid #E4E0D8', borderRadius: 5, fontFamily: 'inherit', outline: 'none', background: '#fff' };
@@ -599,10 +610,10 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Supprimer ce cours ?')) return;
     try {
       await api.delete(`/course-slots/${id}`);
       onChanged();
+      toast.success('Cours supprimé');
     } catch (e) {
       toast.error(e.response?.data?.error || 'Échec de la suppression du cours');
     }
@@ -691,11 +702,20 @@ const CourseSlotModal = ({ fn, courseSlots, onClose, onChanged }) => {
               </div>
               <span style={{ fontSize: 9, background: '#F0EDE8', color: '#6B6860', borderRadius: 5, padding: '2px 6px' }}>{SEASONS[cs.season] || cs.season}</span>
               <button onClick={() => startEdit(cs)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9B9890', fontSize: 13 }}>✏️</button>
-              <button onClick={() => handleDelete(cs.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C0BCB5', fontSize: 13 }}>🗑</button>
+              <button onClick={() => setConfirmDeleteId(cs.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#C0BCB5', fontSize: 13 }}>🗑</button>
             </div>
           ))}
         </div>
       </div>
+
+      {confirmDeleteId != null && (
+        <ConfirmModal
+          message="Supprimer ce cours ?"
+          confirmLabel="Supprimer"
+          onConfirm={() => handleDelete(confirmDeleteId)}
+          onClose={() => setConfirmDeleteId(null)}
+        />
+      )}
     </div>
   );
 };
@@ -722,7 +742,7 @@ const CourseGroupModal = ({ courses, week, fnStaff, staff: allStaff, assignments
       if (r.data?.warning) toast.warning(r.data.warning);
       setLocalAssign(prev => ({ ...prev, [csId]: [...(prev[csId] || []), staffId] }));
       onChanged();
-    } catch (e) { alert('❌ ' + (e.response?.data?.error || e.message)); }
+    } catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
 
@@ -732,7 +752,7 @@ const CourseGroupModal = ({ courses, week, fnStaff, staff: allStaff, assignments
       await api.delete(`/course-slots/${csId}/assign`, { params: { staff_id: staffId, week } });
       setLocalAssign(prev => ({ ...prev, [csId]: (prev[csId] || []).filter(id => id !== staffId) }));
       onChanged();
-    } catch (e) { alert('❌ ' + (e.response?.data?.error || e.message)); }
+    } catch (e) { toast.error(e.response?.data?.error || e.message); }
     finally { setBusy(false); }
   };
 
