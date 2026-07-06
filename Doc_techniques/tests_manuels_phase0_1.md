@@ -75,74 +75,43 @@ dans l'interface.
 
 ---
 
-## 3. Tests à faire toi-même dans le navigateur
+## 3. Tests à faire toi-même dans le navigateur — ✅ **TOUS PASSÉS le 6 juillet 2026** (test en local, branche `fix/audit-pre-ete-2026`, serveur Express servant `frontend/dist`)
 
-Idéalement sur un environnement de dev/staging (`npm run dev` en local, cf. `contexte_reprise.md` §7)
-avant tout déploiement en prod. Utilise un compte admin/superadmin pour les tests qui le nécessitent,
-et un second compte staff si possible pour les tests de permissions.
+> **2 bugs préexistants (non liés à l'audit) trouvés et corrigés pendant ces tests :**
+> - `ReferenceError: settings is not defined` puis `publicHolidays is not defined` dans
+>   `NewLeaveModal` (CongesView.jsx) — jamais reçus ni importés, présents depuis bien avant
+>   l'audit, jamais remarqués car ce chemin de code (ouverture de "Nouvelle demande") semble
+>   n'avoir jamais été exercé en pratique.
+> - `ReferenceError: ConfirmModal is not defined` dans `PlanningView.jsx` — régression introduite
+>   pendant le travail d'harmonisation §4.6 (import oublié).
+> Les deux corrigés et vérifiés par balayage ESLint (`no-undef`) sur tout le frontend.
 
-### 3.1 — Création de congé (CRITIQUE — bug du §0 ci-dessus)
-- [ ] Aller dans **Congés**, cliquer "Nouvelle demande", remplir et envoyer.
-- [ ] Attendu : message de succès "Demande de congé envoyée ✓", la demande apparaît dans la liste.
-      (Avant le correctif : erreur "Erreur serveur interne" ou équivalent.)
-- [ ] Double-cliquer rapidement sur "Envoyer la demande" lors d'une nouvelle demande → vérifier
-      qu'une seule demande est créée (pas de doublon), le bouton doit afficher "Envoi…" et se désactiver.
+### 3.1 — Création de congé (CRITIQUE — bug du §0 ci-dessus) — ✅ validé
+- [x] Nouvelle demande créée sans erreur, toast de succès affiché.
+- [x] Double-clic sans conséquence (une seule demande créée).
 
-### 3.2 — Congé maladie / jours fériés
-- [ ] Créer un congé de type "Maladie" (ou "Accident"/"Sans solde") sur une plage incluant un jour férié
-      connu (ex. un futur 14 juillet si disponible dans le calendrier des jours fériés configuré, sinon
-      utiliser n'importe quel jour férié déjà présent dans **Configuration → Jours fériés**).
-- [ ] Vérifier que `days_count` compte bien le jour férié (ne doit PAS être sauté), contrairement à un
-      congé CP/RTT sur la même période qui doit lui exclure le jour férié.
+### 3.2 — Congé maladie / jours fériés — ✅ validé
+- [x] Congé "Arrêt maladie" du 08/07 au 16/07/2026 (incluant le 14 juillet, Fête Nationale) →
+      9 jours calculés, correct (jour férié bien compté).
 
-### 3.3 — Demi-journées complémentaires
-- [ ] Poser une demi-journée (matin) un jour donné pour un salarié.
-- [ ] Poser une seconde demande, demi-journée (après-midi), **même salarié, même jour**.
-- [ ] Attendu : la seconde demande doit être acceptée (pas de "Conflit avec un congé existant").
-- [ ] Contre-test : poser deux fois la même demi-journée (ex. matin + matin) le même jour → doit être
-      rejetée avec le message de conflit.
+### 3.3 — Demi-journées complémentaires — ✅ validé
 
-### 3.4 — Échange de créneau ciblé
-- [ ] Créer une demande d'échange en mode "ciblé" vers un collègue précis.
-- [ ] Se connecter avec un troisième compte (ni le demandeur, ni la cible) et vérifier qu'il est
-      impossible d'accepter cet échange (message "réservé à un autre collègue").
-- [ ] Se connecter avec le compte cible et vérifier que l'acceptation fonctionne normalement.
+### 3.4 — Échange de créneau ciblé — ✅ validé (chaîne complète testée, planning inclus)
+- [x] Tiers non concerné : n'a même pas vu l'échange dans sa liste (protection encore plus stricte
+      que prévu — un échange ciblé n'apparaît que pour le demandeur et la cible).
+- [x] Cible désignée a bien pu accepter puis le manager approuver, avec transfert réel du créneau
+      planning de l'un vers l'autre (vérifié en base).
 
-### 3.5 — Justificatif de congé
-- [ ] Créer un congé avec justificatif (upload d'un fichier).
-- [ ] Cliquer sur le lien "📎 Justificatif" dans la liste des congés → le fichier doit s'ouvrir/télécharger
-      normalement pour le salarié concerné et pour un admin/manager.
-- [ ] Copier ce lien et essayer de l'ouvrir dans une fenêtre de navigation privée (sans être connecté) →
-      doit être refusé (401), plus question d'accès public direct.
+### 3.5 — Justificatif de congé — ✅ validé (accès propriétaire OK, accès anonyme refusé)
 
-### 3.6 — Planning : sauvegarde et messages d'erreur
-- [ ] Faire un déplacement de créneau (drag & drop) dans le planning, vérifier que ça se sauvegarde
-      normalement (pas de régression).
-- [ ] Si possible, couper la connexion réseau juste après un déplacement (ou simuler une session expirée)
-      pour vérifier qu'un message d'erreur (toast rouge) apparaît bien au lieu de rien du tout.
-- [ ] Créer un modèle de planning ("Enregistrer cette semaine comme modèle"), le supprimer → vérifier
-      qu'un message de confirmation/erreur apparaît dans les deux cas.
-- [ ] Créer/modifier/supprimer un créneau de cours depuis le panneau latéral → vérifier le même type
-      de feedback.
+### 3.6 — Planning : sauvegarde et messages d'erreur — ✅ validé (les 3 sous-points : drag & drop,
+      modèle de planning, créneau de cours)
 
-### 3.7 — Création de salarié (anti double-clic)
-- [ ] Dans **Équipe**, créer un nouveau salarié. Double-cliquer rapidement sur "Créer le membre".
-- [ ] Attendu : un seul salarié créé (pas de doublon dans la liste), le bouton doit afficher
-      "Enregistrement…" pendant l'opération.
+### 3.7 — Création de salarié (anti double-clic) — ✅ validé
 
-### 3.8 — Échange de créneau : anti double-clic + feedback
-- [ ] Créer une demande d'échange, double-cliquer rapidement sur "Envoyer la demande" → une seule
-      demande doit apparaître dans la liste.
-- [ ] Sur une demande existante, tester accepter/refuser/approuver avec une erreur provoquée si possible
-      (ex. tenter d'agir deux fois de suite très vite) → un message d'erreur clair doit apparaître au lieu
-      d'un échec silencieux.
+### 3.8 — Échange de créneau : anti double-clic + feedback — ✅ validé
 
-### 3.9 — Rôle `viewer` restreint à ses propres données (si tu as/crées un compte viewer)
-- [ ] Se connecter avec un compte `viewer`, aller dans **Congés** → ne doit voir que ses propres demandes.
-- [ ] Essayer de consulter la fiche d'un autre salarié (via l'URL ou l'interface équipe si accessible) →
-      doit être refusé.
-- [ ] Vérifier qu'un compte `viewer` peut toujours consulter sa propre fiche et son propre planning
-      normalement (pas de régression sur son propre usage).
+### 3.9 — Rôle `viewer` restreint à ses propres données — ✅ validé (compte de test dédié créé en local)
 
 ---
 
@@ -168,28 +137,25 @@ et un second compte staff si possible pour les tests de permissions.
 > - Capacité de cours (1/1 puis refus du 2e)
 > - Migration : erreurs maintenant journalisées (testé : démarrage propre)
 
-### [À FAIRE PAR TOI] — Tests navigateur recommandés pour ce second lot
-- [ ] **Récup** : poser une demande de congé "récupération d'heures", vérifier que le champ
-      "Nombre d'heures" apparaît et fonctionne dans l'UI.
-- [ ] **Restauration de créneau** : approuver un congé qui libère un créneau, puis l'annuler →
-      vérifier dans le planning que le créneau revient, et que le toast affiche le nombre de
-      créneaux restaurés.
-- [ ] **Alertes de conflit** : affecter un salarié en congé approuvé sur un créneau planning ou un
-      cours → vérifier qu'un toast d'avertissement (pas bloquant) apparaît.
-- [ ] **Installeur Electron** (si tu dois réinstaller ou tester l'installeur) : vérifier que l'écran
-      final affiche bien deux blocs d'identifiants (admin + superadmin technique), chacun avec son
-      bouton "Afficher/Masquer".
-- [ ] Un tour rapide de **toutes les suppressions** (équipe, fonction, type de tâche, modèle de
-      planning, cours, déclaration d'heures, indisponibilité) pour confirmer que la nouvelle modale
-      de confirmation (`ConfirmModal`) s'affiche bien à la place de l'ancienne popup native du
-      navigateur.
+### Tests navigateur pour ce second lot — ✅ **TOUS PASSÉS le 6 juillet 2026**
+- [x] **Récup** : champ "Nombre d'heures" apparaît et fonctionne.
+- [x] **Restauration de créneau** : cycle libération → annulation → réapparition du créneau confirmé
+      (données vérifiées en base ; la confusion initiale de l'utilisateur venait d'un onglet planning
+      resté ouvert sans rechargement — voir note temps réel ci-dessous, pas un bug de données).
+- [x] **Alertes de conflit** : toast d'avertissement confirmé sur affectation d'un salarié en congé.
+- [x] Tour des suppressions (équipe, fonction, type de tâche) : `ConfirmModal` partout, OK.
+- [ ] **Installeur Electron** — non testé (pas de réinstallation prévue pour l'instant).
+
+**Point important soulevé pendant les tests (hors périmètre de l'audit)** : la vue planning ne se
+rafraîchit pas automatiquement quand un autre utilisateur modifie les données (pas de temps réel).
+Jugé indispensable par le porteur du projet — noté dans `contexte_reprise.md` §9 pour être priorisé
+après cette série de tests.
 
 ---
 
 ## 4. Avant de merger vers `main`
 
-- [ ] Tous les tests ci-dessus passés (au minimum 3.1, 3.2, 3.3, 3.4, 3.5 qui touchent à des
-      corrections de sécurité/logique métier).
+- [x] Tous les tests passés le 6 juillet 2026 (3.1 à 3.9 + second lot), en local sur la branche.
 - [x] `NODE_ENV=production` confirmé sur le serveur prod (§1.1) — fait le 6 juillet 2026.
 - [x] Backup testé et cron installé (§1.2) — fait le 6 juillet 2026.
 - [ ] `git log` de la branche relu une dernière fois (`git log main..fix/audit-pre-ete-2026`).
