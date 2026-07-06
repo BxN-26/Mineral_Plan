@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { toast } from 'sonner';
 import { useApp } from '../App';
-import { Btn } from '../components/common';
+import { Btn, ConfirmModal } from '../components/common';
 import api from '../api/client';
 import SpanDetailModal from '../components/SpanDetailModal';
 import { useIsMobile, useIsTouch } from '../hooks/useDimensions';
