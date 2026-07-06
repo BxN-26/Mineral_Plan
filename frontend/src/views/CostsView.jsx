@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
+import { toast } from 'sonner';
 import { PageHeader, Btn } from '../components/common';
 import AvatarImg from '../components/AvatarImg';
 import { useApp } from '../App';
@@ -89,6 +90,7 @@ export default function CostsView() {
       load(week, period);
     } catch (e) {
       console.error(e);
+      toast.error(e.response?.data?.error || 'Échec de la mise à jour du taux de charges');
     }
   };
 

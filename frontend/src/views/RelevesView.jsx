@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useApp } from '../App';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader, Btn } from '../components/common';
@@ -80,7 +81,7 @@ const RelevesView = () => {
     setAggLoading(true);
     api.get(`/stats?${q}`)
       .then(r => setAggData(r.data))
-      .catch(console.error)
+      .catch(e => { console.error(e); toast.error(e.response?.data?.error || 'Échec du chargement des statistiques'); })
       .finally(() => setAggLoading(false));
   }, [period, viewMonth, viewYear, fiscalYear, mode]);
 
@@ -90,7 +91,7 @@ const RelevesView = () => {
     setBalanceLoading(true);
     api.get(`/stats/balance?start=${balFiscalYear.start}&end=${balFiscalYear.end}`)
       .then(r => setBalanceData(r.data))
-      .catch(console.error)
+      .catch(e => { console.error(e); toast.error(e.response?.data?.error || 'Échec du chargement des soldes'); })
       .finally(() => setBalanceLoading(false));
   }, [mode, balFiscalYear]);
 

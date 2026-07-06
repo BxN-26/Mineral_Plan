@@ -15,13 +15,14 @@ const ResetPasswordView = ({ token, onDone }) => {
   const [err,      setErr]      = useState('');
   const [showPass, setShowPass] = useState(false);
 
-  // Validation locale avant envoi
+  // Validation locale avant envoi — alignée sur la règle réellement
+  // appliquée côté serveur (8 caractères minimum) et sur les deux autres
+  // écrans de changement de mot de passe (ForceChangePassword,
+  // MonProfilView), qui n'exigeaient pas majuscule+chiffre — cf.
+  // audit_pre_ete_2026.md §4.8 (incohérence entre écrans).
   const validate = () => {
     if (pass.length < 8)       return 'Le mot de passe doit contenir au moins 8 caractères.';
     if (pass !== passConf)     return 'Les deux mots de passe ne correspondent pas.';
-    // Exigences minimales de complexité
-    if (!/[A-Z]/.test(pass))   return 'Le mot de passe doit contenir au moins une majuscule.';
-    if (!/[0-9]/.test(pass))   return 'Le mot de passe doit contenir au moins un chiffre.';
     return null;
   };
 
@@ -94,7 +95,7 @@ const ResetPasswordView = ({ token, onDone }) => {
           /* ── Formulaire ─────────────────────────────────────── */
           <>
             <p style={{ fontSize: 13, color: '#5B5855', marginBottom: 20, lineHeight: 1.5 }}>
-              Choisissez un nouveau mot de passe sécurisé. Il doit contenir au moins 8 caractères, une majuscule et un chiffre.
+              Choisissez un nouveau mot de passe sécurisé d'au moins 8 caractères.
             </p>
 
             <form onSubmit={handle}>

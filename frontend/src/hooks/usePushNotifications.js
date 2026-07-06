@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { toast } from 'sonner';
 import api from '../api/client';
 
 function urlBase64ToUint8Array(base64String) {
@@ -60,6 +61,9 @@ export function usePushNotifications(featureEnabled) {
       setPushStatus('subscribed');
     } catch (err) {
       console.warn('[Push] Impossible de s\'abonner :', err);
+      // Déclenché sur un geste utilisateur explicite (clic "Activer") — un
+      // échec silencieux laisserait croire que rien ne s'est passé. §4.10.
+      toast.error('Impossible d\'activer les notifications push sur cet appareil.');
     }
   }, [featureEnabled]);
 
