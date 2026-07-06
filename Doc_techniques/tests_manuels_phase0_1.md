@@ -163,6 +163,46 @@ et un second compte staff si possible pour les tests de permissions.
 
 ---
 
+## 3bis. Second lot de correctifs (autopilot — tout le reste de l'audit)
+
+> Tous les points restants de `audit_pre_ete_2026.md` (§1.7-1.8, §2.1-2.6, §3.3-3.9, §4.5-4.10,
+> §5.2/5.5) ont été traités. Chaque correctif a été testé par mes soins en conditions réelles
+> (serveur de dev + comptes multiples via curl/sqlite3), détaillé dans les messages de commit.
+> Résumé de ce qui a été vérifié automatiquement :
+> - CSP appliquée sans erreur au démarrage
+> - Timing constant sur login (email inconnu vs mauvais mot de passe)
+> - Rejeu de refresh token → révocation en cascade de toutes les sessions
+> - `functions.js` bulk endpoint : 200 au lieu de 500
+> - Swap : transaction sur approve (409 si créneau introuvable, succès si présent), doublon de
+>   demande sur le même créneau refusé (409), verrou optimiste sur respond
+> - Congé récup : rejet sans heures (400), `hours_count` bien stocké
+> - Cycle complet libération → annulation → restauration d'un créneau planning
+> - Filtrage vacances scolaires jour par jour (cours actif un jour, inactif un autre jour de la
+>   même semaine selon le calendrier)
+> - Alerte de conflit (planning/cours/swap) quand le salarié a un congé approuvé ce jour-là
+> - Alerte urgente de swap rattrapée pour une échéance déjà passée
+> - Garde-fou demi-journée double sur un seul jour (400)
+> - Capacité de cours (1/1 puis refus du 2e)
+> - Migration : erreurs maintenant journalisées (testé : démarrage propre)
+
+### [À FAIRE PAR TOI] — Tests navigateur recommandés pour ce second lot
+- [ ] **Récup** : poser une demande de congé "récupération d'heures", vérifier que le champ
+      "Nombre d'heures" apparaît et fonctionne dans l'UI.
+- [ ] **Restauration de créneau** : approuver un congé qui libère un créneau, puis l'annuler →
+      vérifier dans le planning que le créneau revient, et que le toast affiche le nombre de
+      créneaux restaurés.
+- [ ] **Alertes de conflit** : affecter un salarié en congé approuvé sur un créneau planning ou un
+      cours → vérifier qu'un toast d'avertissement (pas bloquant) apparaît.
+- [ ] **Installeur Electron** (si tu dois réinstaller ou tester l'installeur) : vérifier que l'écran
+      final affiche bien deux blocs d'identifiants (admin + superadmin technique), chacun avec son
+      bouton "Afficher/Masquer".
+- [ ] Un tour rapide de **toutes les suppressions** (équipe, fonction, type de tâche, modèle de
+      planning, cours, déclaration d'heures, indisponibilité) pour confirmer que la nouvelle modale
+      de confirmation (`ConfirmModal`) s'affiche bien à la place de l'ancienne popup native du
+      navigateur.
+
+---
+
 ## 4. Avant de merger vers `main`
 
 - [ ] Tous les tests ci-dessus passés (au minimum 3.1, 3.2, 3.3, 3.4, 3.5 qui touchent à des
