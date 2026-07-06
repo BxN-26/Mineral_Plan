@@ -49,8 +49,26 @@ const app = express();
 // mutualise tous les utilisateurs sous une seule clé.
 app.set('trust proxy', 1);
 
+// CSP définie ici (et non "déléguée à Caddy") : le Caddyfile réel de prod
+// peut diverger de Caddyfile.example, alors que ce middleware s'applique
+// systématiquement quel que soit le reverse proxy — cf. audit_pre_ete_2026.md §1.7.
+// L'app est stylée en style inline React (pas de librairie UI, cf. contexte_reprise.md)
+// d'où le style-src 'unsafe-inline' nécessaire ; script-src reste strict (bundle Vite only).
 app.use(helmet({
-  contentSecurityPolicy: false, // géré par Caddy en prod
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:  ["'self'"],
+      scriptSrc:   ["'self'"],
+      styleSrc:    ["'self'", "'unsafe-inline'"],
+      imgSrc:      ["'self'", 'data:', 'blob:'],
+      fontSrc:     ["'self'", 'data:'],
+      connectSrc:  ["'self'"],
+      workerSrc:   ["'self'"],
+      objectSrc:   ["'none'"],
+      baseUri:     ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
 }));
 
 // ── Compression gzip/brotli ────────────────────────────────────
@@ -69,33 +87,6 @@ app.use(cors({
 
 app.use(express.json());
 app.use(cookieParser());
-
-
-// ── Tracking activité temps réel ─────────────────────────────
-const activeSessions = new Map(); // token -> {user, last_seen}
-let connectionsToday = { date: '', count: 0 };
-
-function trackActivity(req, res, next) {
-  const auth = req.headers.authorization || req.cookies?.token;
-  if (auth) {
-    const key   = auth.slice(-16);
-    const today = new Date().toISOString().slice(0, 10);
-    if (!activeSessions.has(key) || activeSessions.get(key).date !== today) {
-      if (connectionsToday.date !== today) { connectionsToday = { date: today, count: 0 }; }
-      connectionsToday.count++;
-    }
-    activeSessions.set(key, { last_seen: Date.now(), date: today });
-  }
-  next();
-}
-// Nettoyage des sessions inactives (>15 min) toutes les 5 minutes via setInterval
-setInterval(() => {
-  const limit = Date.now() - 15 * 60 * 1000;
-  for (const [k, v] of activeSessions) { if (v.last_seen < limit) activeSessions.delete(k); }
-}, 5 * 60 * 1000);
-
-app.use(trackActivity);
-global._hubStats = { activeSessions, connectionsToday };
 
 // Service des fichiers statiques du build Vite (production)
 const distPath = path.join(__dirname, '../frontend/dist');

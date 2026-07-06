@@ -10,6 +10,9 @@ planning.example.com {
     }
 
     # En-têtes de sécurité
+    # Note : la Content-Security-Policy est définie côté application (Helmet
+    # dans spirit-v2/app.js), pas ici — ne pas en ajouter une autre ici au
+    # risque d'un conflit d'en-têtes.
     header {
         Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"

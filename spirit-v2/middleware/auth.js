@@ -39,9 +39,11 @@ function issueTokens(user, res) {
   const refreshHash = hashToken(refreshRaw);
   const expiresAt   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Révoquer les anciens tokens du même user
+  // Nettoyage : uniquement les tokens expirés. Les tokens révoqués sont
+  // volontairement conservés jusqu'à leur expiration naturelle — ils servent
+  // à détecter un rejeu (vol potentiel) dans /api/auth/refresh, cf. §1.8.
   db_.run(
-    `DELETE FROM refresh_tokens WHERE user_id = ? AND (revoked = 1 OR expires_at < datetime('now'))`,
+    `DELETE FROM refresh_tokens WHERE user_id = ? AND expires_at < datetime('now')`,
     [user.id]
   );
 

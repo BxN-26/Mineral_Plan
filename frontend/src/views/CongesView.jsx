@@ -87,8 +87,9 @@ const CongesView = () => {
       : l
     ));
     try {
-      await api.put(`/leaves/${id}/approve`);
-      toast.success('Congé approuvé ✓');
+      const res = await api.put(`/leaves/${id}/approve`);
+      if (res.data?.slots_release_warning) toast.warning(res.data.slots_release_warning);
+      else toast.success('Congé approuvé ✓');
       reloadLeaves();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Erreur lors de l\'approbation');

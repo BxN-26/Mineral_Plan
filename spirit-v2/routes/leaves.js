@@ -420,126 +420,140 @@ router.put('/:id/approve', AUTH, (req, res) => {
   catch (_) { levels = ['manager']; }
   let nextStatus = leave.status;
 
-  // Déterminer quel niveau approuve
-  if (leave.n1_approver_id === userId && leave.n1_status === 'pending') {
-    // E2 — verrou optimiste : protection race condition
-    const chk1 = db_.run(`UPDATE leaves SET n1_status='approved', n1_comment=?, n1_reviewed_at=datetime('now'),
-             approval_step=2, updated_at=datetime('now') WHERE id=? AND n1_status='pending'`, [comment||null, leave.id]);
-    if (chk1.changes === 0) return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
+  // Chaque branche fait un verrou optimiste puis une 2e mise à jour de statut
+  // (+ parfois une notification) : les deux sont désormais dans une même
+  // transaction pour qu'un crash entre les deux ne laisse jamais le congé
+  // dans un état incohérent (ex. n1_status='approved' mais status toujours
+  // 'pending') — cf. audit_pre_ete_2026.md §2.3.
+  try {
+    db_.tx(() => {
+      // Déterminer quel niveau approuve
+      if (leave.n1_approver_id === userId && leave.n1_status === 'pending') {
+        // E2 — verrou optimiste : protection race condition
+        const chk1 = db_.run(`UPDATE leaves SET n1_status='approved', n1_comment=?, n1_reviewed_at=datetime('now'),
+                 approval_step=2, updated_at=datetime('now') WHERE id=? AND n1_status='pending'`, [comment||null, leave.id]);
+        if (chk1.changes === 0) throw { code: 'CONFLICT' };
 
-    if (levels.length < 2 || !leave.n2_approver_id) {
-      // Approbation finale
-      db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      nextStatus = 'approved';
-    } else {
-      db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      // Notifier N2 via notifications unifiées
-      const lt2 = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
-      const sf2 = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
-      notify(leave.n2_approver_id, 'approval',
-        'Demande de congé à valider',
-        `${sf2 ? sf2.firstname + ' ' + sf2.lastname : 'Un salarié'} — ${lt2?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1 validé, en attente de votre approbation).`,
-        'leave', leave.id, { action: 'approve' }
-      );
-      nextStatus = 'approved_n1';
-    }
-
-  } else if (leave.n2_approver_id === userId && leave.n2_status === 'pending' && leave.n1_status === 'approved') {
-    // E1+E2 — N1 doit être approuvé + verrou optimiste
-    const chk2 = db_.run(`UPDATE leaves SET n2_status='approved', n2_comment=?, n2_reviewed_at=datetime('now'),
-             approval_step=3, updated_at=datetime('now') WHERE id=? AND n2_status='pending'`, [comment||null, leave.id]);
-    if (chk2.changes === 0) return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
-
-    if (levels.length < 3 || !leave.n3_approver_id) {
-      db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      nextStatus = 'approved';
-    } else {
-      db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      const lt3 = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
-      const sf3 = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
-      notify(leave.n3_approver_id, 'approval',
-        'Demande de congé à valider',
-        `${sf3 ? sf3.firstname + ' ' + sf3.lastname : 'Un salarié'} — ${lt3?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1+N2 validés, en attente de votre approbation).`,
-        'leave', leave.id, { action: 'approve' }
-      );
-      nextStatus = 'approved_n2';
-    }
-
-  } else if (leave.n3_approver_id === userId && leave.n3_status === 'pending' && leave.n2_status === 'approved') {
-    // E1+E2 — N2 doit être approuvé + verrou optimiste
-    const chk3 = db_.run(`UPDATE leaves SET n3_status='approved', n3_comment=?, n3_reviewed_at=datetime('now'),
-             status='approved', approval_step=99, updated_at=datetime('now') WHERE id=? AND n3_status='pending'`,
-      [comment||null, leave.id]);
-    if (chk3.changes === 0) return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
-    nextStatus = 'approved';
-
-  } else if (['admin','superadmin'].includes(req.user.role) &&
-             ['approved_n1','approved_n2'].includes(leave.status) &&
-             !leave.n2_approver_id && !leave.n3_approver_id) {
-    // Cas de finalisation : N1 approuvé, mais pas de N2 assigné (dédup ou configuration)
-    db_.run(`UPDATE leaves SET status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
-      [leave.id]);
-    nextStatus = 'approved';
-
-  } else if (['admin','superadmin'].includes(req.user.role) &&
-             ['pending','approved_n1','approved_n2'].includes(leave.status)) {
-    // Override admin/superadmin : peut approuver à l'étape courante même s'il n'est pas le valideur désigné
-    if (leave.n1_status === 'pending') {
-      // Approuver en tant que N1
-      db_.run(`UPDATE leaves SET n1_status='approved', n1_approver_id=?, n1_comment=?, n1_reviewed_at=datetime('now'),
-               approval_step=2, updated_at=datetime('now') WHERE id=?`, [userId, comment||null, leave.id]);
-      if (levels.length < 2 || !leave.n2_approver_id) {
-        db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-        nextStatus = 'approved';
-      } else {
-        db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-        if (leave.n2_approver_id !== userId) {
-          const lt2r = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
-          const sf2r = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+        if (levels.length < 2 || !leave.n2_approver_id) {
+          // Approbation finale
+          db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+          nextStatus = 'approved';
+        } else {
+          db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+          // Notifier N2 via notifications unifiées
+          const lt2 = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+          const sf2 = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
           notify(leave.n2_approver_id, 'approval',
             'Demande de congé à valider',
-            `${sf2r ? sf2r.firstname + ' ' + sf2r.lastname : 'Un salarié'} — ${lt2r?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1 validé, en attente de votre approbation).`,
+            `${sf2 ? sf2.firstname + ' ' + sf2.lastname : 'Un salarié'} — ${lt2?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1 validé, en attente de votre approbation).`,
             'leave', leave.id, { action: 'approve' }
           );
+          nextStatus = 'approved_n1';
         }
-        nextStatus = 'approved_n1';
-      }
-    } else if (leave.n2_status === 'pending') {
-      // Approuver en tant que N2
-      db_.run(`UPDATE leaves SET n2_status='approved', n2_approver_id=?, n2_comment=?, n2_reviewed_at=datetime('now'),
-               approval_step=3, updated_at=datetime('now') WHERE id=?`, [userId, comment||null, leave.id]);
-      if (levels.length < 3 || !leave.n3_approver_id) {
-        db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-        nextStatus = 'approved';
-      } else {
-        db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
-        if (leave.n3_approver_id && leave.n3_approver_id !== userId) {
-          const ltA = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
-          const sfA = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+
+      } else if (leave.n2_approver_id === userId && leave.n2_status === 'pending' && leave.n1_status === 'approved') {
+        // E1+E2 — N1 doit être approuvé + verrou optimiste
+        const chk2 = db_.run(`UPDATE leaves SET n2_status='approved', n2_comment=?, n2_reviewed_at=datetime('now'),
+                 approval_step=3, updated_at=datetime('now') WHERE id=? AND n2_status='pending'`, [comment||null, leave.id]);
+        if (chk2.changes === 0) throw { code: 'CONFLICT' };
+
+        if (levels.length < 3 || !leave.n3_approver_id) {
+          db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+          nextStatus = 'approved';
+        } else {
+          db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+          const lt3 = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+          const sf3 = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
           notify(leave.n3_approver_id, 'approval',
             'Demande de congé à valider',
-            `${sfA ? sfA.firstname + ' ' + sfA.lastname : 'Un salarié'} — ${ltA?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (en attente de votre approbation finale).`,
+            `${sf3 ? sf3.firstname + ' ' + sf3.lastname : 'Un salarié'} — ${lt3?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1+N2 validés, en attente de votre approbation).`,
             'leave', leave.id, { action: 'approve' }
           );
+          nextStatus = 'approved_n2';
         }
-        nextStatus = 'approved_n2';
-      }
-    } else if (leave.n3_status === 'pending') {
-      db_.run(`UPDATE leaves SET n3_status='approved', n3_approver_id=?, n3_comment=?, n3_reviewed_at=datetime('now'),
-               status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
-        [userId, comment||null, leave.id]);
-      nextStatus = 'approved';
-    } else {
-      // Aucune étape N* en attente — approuver directement (ex: congé sans approbateurs assignés)
-      db_.run(`UPDATE leaves SET status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`, [leave.id]);
-      nextStatus = 'approved';
-    }
 
-  } else {
-    return res.status(403).json({ error: 'Vous n\'êtes pas le valideur de ce congé à cette étape' });
+      } else if (leave.n3_approver_id === userId && leave.n3_status === 'pending' && leave.n2_status === 'approved') {
+        // E1+E2 — N2 doit être approuvé + verrou optimiste
+        const chk3 = db_.run(`UPDATE leaves SET n3_status='approved', n3_comment=?, n3_reviewed_at=datetime('now'),
+                 status='approved', approval_step=99, updated_at=datetime('now') WHERE id=? AND n3_status='pending'`,
+          [comment||null, leave.id]);
+        if (chk3.changes === 0) throw { code: 'CONFLICT' };
+        nextStatus = 'approved';
+
+      } else if (['admin','superadmin'].includes(req.user.role) &&
+                 ['approved_n1','approved_n2'].includes(leave.status) &&
+                 !leave.n2_approver_id && !leave.n3_approver_id) {
+        // Cas de finalisation : N1 approuvé, mais pas de N2 assigné (dédup ou configuration)
+        db_.run(`UPDATE leaves SET status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
+          [leave.id]);
+        nextStatus = 'approved';
+
+      } else if (['admin','superadmin'].includes(req.user.role) &&
+                 ['pending','approved_n1','approved_n2'].includes(leave.status)) {
+        // Override admin/superadmin : peut approuver à l'étape courante même s'il n'est pas le valideur désigné
+        if (leave.n1_status === 'pending') {
+          // Approuver en tant que N1
+          db_.run(`UPDATE leaves SET n1_status='approved', n1_approver_id=?, n1_comment=?, n1_reviewed_at=datetime('now'),
+                   approval_step=2, updated_at=datetime('now') WHERE id=?`, [userId, comment||null, leave.id]);
+          if (levels.length < 2 || !leave.n2_approver_id) {
+            db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+            nextStatus = 'approved';
+          } else {
+            db_.run(`UPDATE leaves SET status='approved_n1', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+            if (leave.n2_approver_id !== userId) {
+              const lt2r = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+              const sf2r = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+              notify(leave.n2_approver_id, 'approval',
+                'Demande de congé à valider',
+                `${sf2r ? sf2r.firstname + ' ' + sf2r.lastname : 'Un salarié'} — ${lt2r?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (N1 validé, en attente de votre approbation).`,
+                'leave', leave.id, { action: 'approve' }
+              );
+            }
+            nextStatus = 'approved_n1';
+          }
+        } else if (leave.n2_status === 'pending') {
+          // Approuver en tant que N2
+          db_.run(`UPDATE leaves SET n2_status='approved', n2_approver_id=?, n2_comment=?, n2_reviewed_at=datetime('now'),
+                   approval_step=3, updated_at=datetime('now') WHERE id=?`, [userId, comment||null, leave.id]);
+          if (levels.length < 3 || !leave.n3_approver_id) {
+            db_.run(`UPDATE leaves SET status='approved', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+            nextStatus = 'approved';
+          } else {
+            db_.run(`UPDATE leaves SET status='approved_n2', updated_at=datetime('now') WHERE id=?`, [leave.id]);
+            if (leave.n3_approver_id && leave.n3_approver_id !== userId) {
+              const ltA = db_.get('SELECT label FROM leave_types WHERE id=?', [leave.type_id]);
+              const sfA = db_.get('SELECT firstname, lastname FROM staff WHERE id=?', [leave.staff_id]);
+              notify(leave.n3_approver_id, 'approval',
+                'Demande de congé à valider',
+                `${sfA ? sfA.firstname + ' ' + sfA.lastname : 'Un salarié'} — ${ltA?.label || 'congé'} du ${leave.start_date} au ${leave.end_date} (en attente de votre approbation finale).`,
+                'leave', leave.id, { action: 'approve' }
+              );
+            }
+            nextStatus = 'approved_n2';
+          }
+        } else if (leave.n3_status === 'pending') {
+          db_.run(`UPDATE leaves SET n3_status='approved', n3_approver_id=?, n3_comment=?, n3_reviewed_at=datetime('now'),
+                   status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`,
+            [userId, comment||null, leave.id]);
+          nextStatus = 'approved';
+        } else {
+          // Aucune étape N* en attente — approuver directement (ex: congé sans approbateurs assignés)
+          db_.run(`UPDATE leaves SET status='approved', approval_step=99, updated_at=datetime('now') WHERE id=?`, [leave.id]);
+          nextStatus = 'approved';
+        }
+
+      } else {
+        throw { code: 'FORBIDDEN' };
+      }
+    });
+  } catch (err) {
+    if (err?.code === 'CONFLICT') return res.status(409).json({ error: 'Ce congé vient d\'être traité simultanément' });
+    if (err?.code === 'FORBIDDEN') return res.status(403).json({ error: 'Vous n\'êtes pas le valideur de ce congé à cette étape' });
+    throw err;
   }
 
   // Si approuvé définitivement → déduire solde + push salarié + libérer créneaux
+  let slotsReleaseWarning = null;
   if (nextStatus === 'approved') {
     const lt = db_.get('SELECT slug, label FROM leave_types WHERE id=?', [leave.type_id]);
     deductBalance({ ...leave, days_count: leave.days_count, type_id: leave.type_id, staff_id: leave.staff_id });
@@ -558,19 +572,28 @@ router.put('/:id/approve', AUTH, (req, res) => {
       );
     }
 
-    releaseStaffSlots(db_, notify, {
-      staffId:   leave.staff_id,
-      dateStart: leave.start_date,
-      dateEnd:   leave.end_date,
-      allDay:    true,
-      hourStart: null,
-      hourEnd:   null,
-      label: `Congé approuvé${lt?.label ? ' (' + lt.label + ')' : ''}`,
-    });
+    // L'approbation elle-même est déjà actée (transaction ci-dessus committée) —
+    // si seule la libération auto des créneaux échoue, ne pas renvoyer une 500
+    // trompeuse au manager : le congé EST approuvé, juste à vérifier manuellement.
+    // cf. audit_pre_ete_2026.md §2.4.
+    try {
+      releaseStaffSlots(db_, notify, {
+        staffId:   leave.staff_id,
+        dateStart: leave.start_date,
+        dateEnd:   leave.end_date,
+        allDay:    true,
+        hourStart: null,
+        hourEnd:   null,
+        label: `Congé approuvé${lt?.label ? ' (' + lt.label + ')' : ''}`,
+      });
+    } catch (err) {
+      console.error('[leaves/approve] releaseStaffSlots a échoué:', err);
+      slotsReleaseWarning = 'Le congé est approuvé, mais la libération automatique des créneaux planning a échoué — à vérifier manuellement.';
+    }
   }
 
   auditLog(req, 'LEAVE_APPROVE', 'leaves', leave.id, null, { step: leave.approval_step });
-  res.json({ message: 'Approbation enregistrée', new_status: nextStatus });
+  res.json({ message: 'Approbation enregistrée', new_status: nextStatus, slots_release_warning: slotsReleaseWarning });
 });
 
 // ── PUT /api/leaves/:id/refuse ───────────────────────────────

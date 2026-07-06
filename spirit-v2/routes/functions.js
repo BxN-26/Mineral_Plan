@@ -213,9 +213,10 @@ router.post('/schedule/:week/:functionId/slots/bulk', ...ADMIN, (req, res) => {
     for (const s of (slots||[])) {
       db_.run(
         `INSERT OR IGNORE INTO schedule_slots
-         (schedule_id,staff_id,day_of_week,hour_start,hour_end,sub_role,note)
+         (schedule_id,staff_id,day_of_week,hour_start,hour_end,task_type,course_slot_id)
          VALUES (?,?,?,?,?,?,?)`,
-        [sc.id, s.staff_id, s.day_of_week, s.hour_start, s.hour_end||s.hour_start+1, s.sub_role||null, s.note||null]
+        [sc.id, s.staff_id, s.day_of_week, s.hour_start, s.hour_end||s.hour_start+1,
+         s.task_type || s.sub_role || null, s.course_slot_id || null]
       );
     }
     db_.run("UPDATE schedules SET updated_at=datetime('now') WHERE id=?", [sc.id]);

@@ -125,6 +125,17 @@ router.post('/', AUTH, (req, res) => {
     return res.status(400).json({ error: 'hour_end doit être après hour_start' });
   }
 
+  // Empêche deux demandes actives sur le même créneau source (deux collègues
+  // pourraient sinon être affectés au même créneau si les deux étaient
+  // approuvées séparément) — cf. audit_pre_ete_2026.md §3.3.
+  const dup = db_.get(
+    `SELECT id FROM shift_swaps
+     WHERE requester_id=? AND week_start=? AND fn_slug=? AND day_index=?
+       AND hour_start=? AND hour_end=? AND status IN ('pending','matched')`,
+    [staffUser.staff_id, weekStartNorm, fn_slug, day_index, Number(hour_start), Number(hour_end)]
+  );
+  if (dup) return res.status(409).json({ error: 'Une demande d\'échange est déjà en cours pour ce créneau.' });
+
   const ins = db_.run(
     `INSERT INTO shift_swaps
        (requester_id, week_start, fn_slug, day_index, hour, hour_start, hour_end, mode, target_id,
@@ -332,20 +343,25 @@ router.put('/:id/respond', AUTH, (req, res) => {
       return res.status(403).json({ error: 'Vous n\'êtes pas éligible pour cet échange' });
   }
 
-  // Acceptation
-  db_.run(
+  // Acceptation — verrou optimiste (AND status='pending') en défense en
+  // profondeur : le contrôle en haut de route reste la protection normale,
+  // ceci évite un double-match si jamais deux requêtes s'entrelaçaient
+  // (ex. futur passage en cluster/pm2) — cf. audit_pre_ete_2026.md §2.6.
+  const upd = db_.run(
     `UPDATE shift_swaps SET status='matched', responder_id=?, responder_at=datetime('now'),
        swap_week=COALESCE(?,swap_week), swap_fn_slug=COALESCE(?,swap_fn_slug),
        swap_day_index=COALESCE(?,swap_day_index),
        swap_hour_start=COALESCE(?,swap_hour_start),
        swap_hour_end=COALESCE(?,swap_hour_end)
-     WHERE id=?`,
+     WHERE id=? AND status='pending'`,
     [
       responderId, swap_week || null, swap_fn_slug || null,
       swap_day_index ?? null, swap_hour_start ?? null, swap_hour_end ?? null,
       swap.id,
     ]
   );
+  if (upd.changes === 0)
+    return res.status(409).json({ error: 'Cet échange vient d\'être traité par quelqu\'un d\'autre.' });
 
   if (managerSid) {
     notifyStaff(managerSid, 'swap',
@@ -371,24 +387,37 @@ router.put('/:id/approve', ...MGR, (req, res) => {
 
   const { note } = req.body;
 
+  // Toute la séquence (retrait/ajout de créneaux + passage à 'approved') est
+  // atomique : si le créneau source n'existe plus (déjà modifié par un autre
+  // échange, un congé approuvé entre-temps, etc.), on annule tout plutôt que
+  // d'approuver un échange qui laisserait le planning incohérent (double
+  // affectation) — cf. audit_pre_ete_2026.md §2.2/§3.3.
   try {
-    removeSlot(swap.requester_id, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
-    if (swap.responder_id) {
-      addSlot(swap.responder_id, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
-    }
-    if (swap.swap_week && swap.swap_fn_slug && swap.swap_day_index != null
-        && swap.swap_hour_start != null && swap.swap_hour_end != null) {
-      removeSlot(swap.responder_id, swap.swap_week, swap.swap_fn_slug, swap.swap_day_index, swap.swap_hour_start, swap.swap_hour_end);
-      addSlot(swap.requester_id,   swap.swap_week, swap.swap_fn_slug, swap.swap_day_index, swap.swap_hour_start, swap.swap_hour_end);
-    }
+    db_.tx(() => {
+      const removed = removeSlot(swap.requester_id, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
+      if (!removed) {
+        throw new Error('Le créneau d\'origine est introuvable dans le planning (déjà modifié entre-temps) — échange non approuvé, vérifiez le planning.');
+      }
+      if (swap.responder_id) {
+        addSlot(swap.responder_id, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
+      }
+      if (swap.swap_week && swap.swap_fn_slug && swap.swap_day_index != null
+          && swap.swap_hour_start != null && swap.swap_hour_end != null) {
+        const removedBack = removeSlot(swap.responder_id, swap.swap_week, swap.swap_fn_slug, swap.swap_day_index, swap.swap_hour_start, swap.swap_hour_end);
+        if (!removedBack) {
+          throw new Error('Le créneau retour est introuvable dans le planning (déjà modifié entre-temps) — échange non approuvé, vérifiez le planning.');
+        }
+        addSlot(swap.requester_id, swap.swap_week, swap.swap_fn_slug, swap.swap_day_index, swap.swap_hour_start, swap.swap_hour_end);
+      }
+      db_.run(
+        `UPDATE shift_swaps SET status='approved', manager_id=?, manager_at=datetime('now'), manager_note=? WHERE id=?`,
+        [req.user.id, note || '', swap.id]
+      );
+    });
   } catch (err) {
-    console.error('[swaps/approve] Erreur planning:', err);
+    console.error('[swaps/approve] Erreur planning:', err.message);
+    return res.status(409).json({ error: err.message || 'Échec de la mise à jour du planning, échange non approuvé.' });
   }
-
-  db_.run(
-    `UPDATE shift_swaps SET status='approved', manager_id=?, manager_at=datetime('now'), manager_note=? WHERE id=?`,
-    [req.user.id, note || '', swap.id]
-  );
 
   notifyStaff(swap.requester_id, 'approval', '✅ Échange approuvé', 'Le manager a validé votre échange de créneau.', 'swap', swap.id);
   if (swap.responder_id) {
@@ -412,16 +441,21 @@ router.put('/:id/assign', ...MGR, (req, res) => {
   const requester = getStaff(swap.requester_id);
 
   try {
-    removeSlot(swap.requester_id, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
-    addSlot(assigneeId, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
+    db_.tx(() => {
+      const removed = removeSlot(swap.requester_id, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
+      if (!removed) {
+        throw new Error('Le créneau d\'origine est introuvable dans le planning (déjà modifié entre-temps) — assignation annulée, vérifiez le planning.');
+      }
+      addSlot(assigneeId, swap.week_start, swap.fn_slug, swap.day_index, swap.hour_start, swap.hour_end);
+      db_.run(
+        `UPDATE shift_swaps SET status='approved', responder_id=?, manager_id=?, manager_at=datetime('now'), manager_note=? WHERE id=?`,
+        [assigneeId, req.user.id, req.body.note || '', swap.id]
+      );
+    });
   } catch (err) {
-    console.error('[swaps/assign] Erreur planning:', err);
+    console.error('[swaps/assign] Erreur planning:', err.message);
+    return res.status(409).json({ error: err.message || 'Échec de la mise à jour du planning, assignation annulée.' });
   }
-
-  db_.run(
-    `UPDATE shift_swaps SET status='approved', responder_id=?, manager_id=?, manager_at=datetime('now'), manager_note=? WHERE id=?`,
-    [assigneeId, req.user.id, req.body.note || '', swap.id]
-  );
 
   notifyStaff(swap.requester_id, 'approval',
     '✅ Remplaçant désigné par le référent',

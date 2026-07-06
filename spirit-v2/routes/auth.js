@@ -5,8 +5,13 @@ const crypto    = require('crypto');
 const jwt       = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { db_ }   = require('../db/database');
-const { issueTokens, revokeRefreshToken, requireAuth } = require('../middleware/auth');
+const { issueTokens, revokeRefreshToken, requireAuth, auditLog } = require('../middleware/auth');
 const { isConfigured, sendResetEmail } = require('../utils/mailer');
+
+// Hash "factice" comparé quand l'email n'existe pas, pour que le temps de
+// réponse soit le même que pour un email connu + mauvais mot de passe —
+// empêche l'énumération de comptes par mesure de latence (audit §1.8).
+const DUMMY_HASH = bcrypt.hashSync('dummy_password_for_constant_time_login', 12);
 
 // ── Rate limiter : 10 tentatives / 15 min par IP ─────────────
 const loginLimiter = rateLimit({
@@ -28,10 +33,8 @@ router.post('/login', loginLimiter, (req, res) => {
     'SELECT * FROM users WHERE email = ? AND active = 1',
     [email.toLowerCase().trim()]
   );
-  if (!user) return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
-
-  const valid = bcrypt.compareSync(password, user.password);
-  if (!valid) return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+  const valid = bcrypt.compareSync(password, user ? user.password : DUMMY_HASH);
+  if (!user || !valid) return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
 
   // Mise à jour last_login
   db_.run("UPDATE users SET last_login = datetime('now') WHERE id = ?", [user.id]);
@@ -67,6 +70,20 @@ router.post('/refresh', (req, res) => {
   if (!rawToken) return res.status(401).json({ error: 'Refresh token manquant' });
 
   const hash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  // Recherche sans filtrer sur revoked : un token trouvé mais déjà révoqué
+  // signale un rejeu (vol potentiel), pas juste une expiration normale.
+  const anyMatch = db_.get(`SELECT user_id, revoked FROM refresh_tokens WHERE token_hash = ?`, [hash]);
+  if (anyMatch && anyMatch.revoked) {
+    // Rejeu d'un refresh token déjà utilisé : révoque toutes les sessions de
+    // ce compte par précaution (audit_pre_ete_2026.md §1.8).
+    db_.run(`UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?`, [anyMatch.user_id]);
+    auditLog(req, 'REFRESH_TOKEN_REUSE_DETECTED', 'users', anyMatch.user_id);
+    res.clearCookie('spirit_access',  { path: '/' });
+    res.clearCookie('spirit_refresh', { path: '/api/auth/refresh' });
+    return res.status(401).json({ error: 'Session invalide, merci de vous reconnecter', code: 'TOKEN_REUSE' });
+  }
+
   const stored = db_.get(
     `SELECT rt.*, u.id as uid, u.email, u.role, u.staff_id, u.active
      FROM refresh_tokens rt
@@ -78,7 +95,6 @@ router.post('/refresh', (req, res) => {
   if (!stored || !stored.active)
     return res.status(401).json({ error: 'Refresh token invalide ou expiré' });
 
-  // Détection de réutilisation (token déjà révoqué = compromis potentiel)
   revokeRefreshToken(rawToken);
 
   const user = { id: stored.uid, email: stored.email, role: stored.role, staff_id: stored.staff_id };
