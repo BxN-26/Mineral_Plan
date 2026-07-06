@@ -190,11 +190,13 @@ function checkUrgentSwapAlerts() {
     const now = Date.now();
     const limitMs = now + alertHours * 3600 * 1000;
 
-    const pending = _jobDb.all(
-      `SELECT * FROM shift_swaps WHERE status='pending' AND urgent_alert_sent=0`
+    // 'matched' inclus : un échange accepté par un collègue mais jamais
+    // approuvé par le manager à temps doit aussi alerter — cf. §3.8.
+    const candidates = _jobDb.all(
+      `SELECT * FROM shift_swaps WHERE status IN ('pending','matched') AND urgent_alert_sent=0`
     );
 
-    for (const swap of pending) {
+    for (const swap of candidates) {
       if (swap.hour_start == null) continue;
       // Calculer la date/heure du créneau (week_start = YYYY-MM-DD lundi)
       const [y, m, d] = swap.week_start.split('-').map(Number);
@@ -202,19 +204,26 @@ function checkUrgentSwapAlerts() {
       shiftDate.setHours(Math.floor(swap.hour_start), Math.round((swap.hour_start % 1) * 60), 0, 0);
       const shiftMs = shiftDate.getTime();
 
-      if (shiftMs > now && shiftMs <= limitMs) {
+      // shiftMs <= limitMs (pas de borne basse sur "now") : rattrape aussi une
+      // échéance déjà dépassée si le job n'est pas passé au bon moment
+      // (redémarrage serveur, coupure...) — auparavant "shiftMs > now" excluait
+      // définitivement tout créneau déjà commencé, sans jamais rattraper.
+      if (shiftMs <= limitMs) {
         const requester = _jobDb.get('SELECT * FROM staff WHERE id=?', [swap.requester_id]);
         if (!requester) continue;
         const managerStaffId = requester.manager_id;
         if (managerStaffId) {
           const dayNames = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
           const creneauLabel = `${dayNames[swap.day_index]} ${_fmtH(swap.hour_start)}–${_fmtH(swap.hour_end)} sem. ${swap.week_start.slice(5)}`;
-          const hoursLeft = Math.round((shiftMs - now) / 3600000);
-          _notifyStaff(managerStaffId, 'urgent',
-            `⚠️ Créneau non couvert dans ${hoursLeft}h`,
-            `Le créneau de ${requester.firstname} ${requester.lastname} (${creneauLabel}) n'a pas de remplaçant. Veuillez attribuer ce créneau manuellement.`,
-            'swap', swap.id
-          );
+          const overdue    = shiftMs <= now;
+          const hoursLeft  = Math.round(Math.abs(shiftMs - now) / 3600000);
+          const title = overdue
+            ? `⚠️ Créneau non couvert — échéance dépassée`
+            : `⚠️ Créneau non couvert dans ${hoursLeft}h`;
+          const body = swap.status === 'matched'
+            ? `L'échange de ${requester.firstname} ${requester.lastname} (${creneauLabel}) est accepté par un collègue mais toujours en attente de votre validation. Veuillez le traiter${overdue ? ' — le créneau a déjà débuté ou est passé' : ''}.`
+            : `Le créneau de ${requester.firstname} ${requester.lastname} (${creneauLabel}) n'a pas de remplaçant. Veuillez attribuer ce créneau manuellement${overdue ? ' — le créneau a déjà débuté ou est passé' : ''}.`;
+          _notifyStaff(managerStaffId, 'urgent', title, body, 'swap', swap.id);
         }
         _jobDb.run(`UPDATE shift_swaps SET urgent_alert_sent=1 WHERE id=?`, [swap.id]);
       }

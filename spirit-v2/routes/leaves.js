@@ -310,8 +310,11 @@ router.post('/', AUTH, (req, res) => {
     const noticeDays    = db_.get("SELECT value FROM settings WHERE key='leave_min_notice_days'");
     if (noticeEnabled?.value === 'true' && noticeDays) {
       const globalMin  = parseInt(noticeDays.value, 10) || 0;
-      const today      = new Date();
-      const startDt    = new Date(start_date);
+      // Normalisation à minuit local (cf. audit_pre_ete_2026.md §3.9) : sans
+      // ça, l'heure de soumission dans la journée pouvait décaler le calcul
+      // de ±1 jour près du seuil (comparaison heure courante vs minuit UTC).
+      const today      = new Date(); today.setHours(0, 0, 0, 0);
+      const startDt    = new Date(start_date + 'T00:00:00');
       const diff       = Math.floor((startDt - today) / 86400000);
       if (diff < globalMin)
         return res.status(400).json({
@@ -320,8 +323,8 @@ router.post('/', AUTH, (req, res) => {
     }
     // 2. Règle par type de congé
     if (leaveType.min_notice_days > 0) {
-      const today      = new Date();
-      const startDt    = new Date(start_date);
+      const today      = new Date(); today.setHours(0, 0, 0, 0);
+      const startDt    = new Date(start_date + 'T00:00:00');
       const noticeDiff = Math.floor((startDt - today) / 86400000);
       if (noticeDiff < leaveType.min_notice_days)
         return res.status(400).json({
@@ -334,6 +337,11 @@ router.post('/', AUTH, (req, res) => {
   const toFlag = v => (v === true || v === 1 || v === 'true' || v === '1') ? 1 : 0;
   const half_start = toFlag(req.body.half_start);
   const half_end   = toFlag(req.body.half_end);
+  // Garde-fou : demi-journée début ET fin sur un seul jour = 0 jour décompté,
+  // combinaison non sensée (protégée côté frontend par des radios exclusifs,
+  // mais pas par l'API — cf. audit_pre_ete_2026.md §3.9).
+  if (half_start && half_end && start_date === end_date)
+    return res.status(400).json({ error: 'Impossible de cumuler demi-journée début et fin sur un seul jour' });
   // M6 — JSON.parse sécurisé
   let levels;
   try { levels = JSON.parse(leaveType.approval_levels || '["manager"]'); }
