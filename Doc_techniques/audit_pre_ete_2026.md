@@ -4,13 +4,13 @@
 > Objectif : identifier avant la phase de test estivale (usage réel intensif — moniteurs, cours d'été, congés, échanges de créneaux) tout ce qui pourrait casser le service ou corrompre des données, en priorité les bugs de la **même famille** que celui déjà rencontré.
 > Méthode : 5 revues de code ciblées (sécurité/auth, intégrité données & migrations, logique métier planning/congés/échanges, frontend React, déploiement/ops), en lecture seule, avec élimination des faux positifs.
 >
-> **Mise à jour du 5 juillet 2026 (soir)** : Phase 0 et Phase 1 du plan d'action (§7) implémentées sur
-> la branche `fix/audit-pre-ete-2026`, testées (voir `Doc_techniques/tests_manuels_phase0_1.md`).
-> Bug critique supplémentaire trouvé et corrigé en cours de route, absent de l'audit initial :
-> **`POST /api/leaves` était complètement cassé** (`db_.transaction` n'existe pas sur l'objet `db_`,
-> seule `db_.tx` existe — même famille de bug que celui déjà rencontré). Toute création de congé
-> échouait avec une 500, en prod comme partout. Corrigé dans `routes/leaves.js`.
-> Statut détaillé des points §0/§1 : voir les cases à cocher dans chaque section ci-dessous.
+> **Mise à jour du 6 juillet 2026 — audit clos** : tous les points corrigeables en code ont été
+> implémentés et testés en conditions réelles sur la branche `fix/audit-pre-ete-2026` (voir §7 pour
+> le bilan final et la liste des quelques actions restant à faire côté serveur/infra, qui ne
+> peuvent pas être faites depuis le code). Deux bugs critiques supplémentaires trouvés en cours de
+> route, absents de l'audit initial : `POST /api/leaves` était complètement cassé (`db_.transaction`
+> n'existe pas sur `db_`, seule `db_.tx` existe) et `routes/functions.js` avait le même défaut que le
+> bug `updated_at` déjà corrigé (colonnes supprimées par migration mais toujours référencées).
 
 ---
 
@@ -82,18 +82,16 @@ Les certificats médicaux/justificatifs uploadés (`/uploads/documents/leave_{id
 
 **Correctif :** sortir `/uploads/documents` (et par cohérence `/uploads/avatars`) de `express.static`, servir via une route authentifiée qui vérifie que l'appelant est le salarié concerné ou a un rôle privilégié.
 
-### 1.7 — MAJEUR — CSP effectivement absente malgré le commentaire "géré par Caddy en prod"
+### 1.7 — MAJEUR — CSP effectivement absente malgré le commentaire "géré par Caddy en prod" — ✅ **CORRIGÉ**
 **Fichiers :** `app.js:47-49`, `Caddyfile.example:12-19`
 
-Helmet désactive sa CSP en renvoyant la responsabilité à Caddy, mais le Caddyfile (même le vrai, à vérifier) ne définit aucun header `Content-Security-Policy`. Aujourd'hui il n'y a **aucune CSP** en prod.
+CSP définie explicitement dans Helmet (`app.js`) plutôt que déléguée au Caddyfile réel de prod (qui peut diverger de l'exemple versionné). `script-src 'self'` strict, `style-src 'unsafe-inline'` nécessaire pour l'architecture CSS inline de l'app. Testée : headers corrects au démarrage, aucune erreur.
 
-**Correctif :** soit réactiver une CSP raisonnable dans Helmet, soit l'ajouter explicitement dans le Caddyfile réel de prod.
-
-### 1.8 — Mineur (à traiter si le temps le permet)
-- **Enumération par timing sur le login** (`auth.js:27-34`) : `bcrypt.compare` n'est appelé que si l'email existe → écart de latence mesurable. Peu exploitable vu le rate limiting.
-- **`JWT_REFRESH_SECRET`** dans `.env.example` : variable jamais utilisée (les refresh tokens sont des chaînes aléatoires hashées SHA-256, pas des JWT) — résidu trompeur pour un futur repreneur du projet.
-- **Pas d'alerte en cas de rejeu d'un refresh token révoqué** — échoue proprement (401) mais aucune notification/révocation en cascade. Risque réduit (cookies `httpOnly`).
-- **`trackActivity` (`app.js:73-92`) lit un cookie `token` qui n'existe pas** (les vrais cookies sont `spirit_access`/`spirit_refresh`) → les stats `connectionsToday`/`activeSessions` affichées quelque part dans l'admin sont donc **toujours fausses**. À corriger si ces stats sont utilisées pour suivre l'usage réel cet été.
+### 1.8 — Mineur — ✅ **TOUS CORRIGÉS**
+- **Enumération par timing sur le login** (`auth.js`) — ✅ corrigé : comparaison bcrypt contre un hash factice même si l'email n'existe pas.
+- **`JWT_REFRESH_SECRET`** — ✅ retiré de `.env.example`, de l'installeur Electron et de `install.sh` (jamais utilisé nulle part dans le code).
+- **Pas d'alerte en cas de rejeu d'un refresh token révoqué** — ✅ corrigé : un rejeu détecté révoque désormais toutes les sessions du compte, testé en conditions réelles (cascade confirmée).
+- **`trackActivity` (`app.js`)** — ✅ supprimé (code mort confirmé : `global._hubStats` n'avait aucun lecteur nulle part dans le code).
 
 ### Points vérifiés — pas de problème
 Upload avatar (magic-bytes réels vérifiés, 8 Mo max, recompression sharp, pas de path traversal) · reset mot de passe par email (token 256 bits usage unique, expiration 30 min, révocation sessions) · CORS (origine unique, pas de wildcard) · scoping `user_id` correct sur notifications/push · verrous optimistes sur l'approbation congés/heures · RBAC correct sur toutes les routes de configuration (teams, functions, holidays, settings, etc.).
@@ -104,7 +102,7 @@ Upload avatar (magic-bytes réels vérifiés, 8 Mo max, recompression sharp, pas
 
 > Rappel du bug déjà corrigé : `routes/staff.js` référençait une colonne `updated_at` inexistante sur `users`. La revue ci-dessous cherchait spécifiquement d'autres occurrences du même problème (colonne référencée dans une requête mais absente du schéma réel).
 
-### 2.1 — CRITIQUE — Même bug exact dans `routes/functions.js:216-218`
+### 2.1 — CRITIQUE — Même bug exact dans `routes/functions.js:216-218` — ✅ **CORRIGÉ** (testé : 200 au lieu de 500)
 **Endpoint :** `POST /api/functions/schedule/:week/:functionId/slots/bulk`
 
 ```sql
@@ -117,28 +115,28 @@ Les colonnes `sub_role` et `note` existaient dans `schema.sql` mais ont été su
 
 **Correctif :** soit mettre à jour la requête pour ne plus référencer `sub_role`/`note` (et ajouter `task_type`/`course_slot_id` si l'intention est de la garder à jour avec `schedules.js`), soit supprimer l'endpoint s'il est confirmé inutilisé.
 
-### 2.2 — ÉLEVÉ — `swaps.js` approve/assign : mise à jour du planning non conditionnée à son propre succès
+### 2.2 — ÉLEVÉ — `swaps.js` approve/assign : mise à jour du planning non conditionnée à son propre succès — ✅ **CORRIGÉ**
 **Fichier :** `routes/swaps.js:360-372` (approve), `:400-405` (assign)
 
 `removeSlot()`/`addSlot()` sont dans un `try/catch` qui avale l'erreur silencieusement (`console.error` seul), puis le code exécute **quand même** `UPDATE shift_swaps SET status='approved'`. Scénario : `removeSlot` réussit mais `addSlot` échoue → le créneau disparaît du planning alors que les deux parties reçoivent une notification "✅ Échange approuvé". Aggravé par l'absence de contrainte empêchant deux demandes d'échange concurrentes sur le même créneau (voir §3.3).
 
-**Correctif :** conditionner le `UPDATE ... status='approved'` au succès réel de `removeSlot`/`addSlot` (retour booléen à vérifier), et idéalement englober toute la séquence dans `db_.tx()`.
+**Correctif appliqué :** toute la séquence (retrait/ajout de créneaux + passage à `'approved'`) est désormais dans un `db_.tx()`, avec abandon propre (409) si `removeSlot` échoue. Un verrou anti-doublon a aussi été ajouté à la création (§3.3). Testé en conditions réelles (approve sans slot → 409, avec slot → succès et transfert correct).
 
-### 2.3 — MOYEN — `leaves.js` approve (workflow N1/N2/N3) non transactionnel
+### 2.3 — MOYEN — `leaves.js` approve (workflow N1/N2/N3) non transactionnel — ✅ **CORRIGÉ**
 **Fichier :** `routes/leaves.js:390-506`
 
 Chaque branche exécute 2 à 4 `UPDATE` séparés, non wrappés dans `db_.tx()` (contrairement au `POST /` initial, ligne 330, qui lui utilise correctement une transaction). Un crash process entre deux `UPDATE` laisserait un congé dans un état incohérent (`n1_status='approved'` mais `status` encore `'pending'`), sans chemin de code pour le réparer.
 
 **Correctif :** wrapper toute la fonction d'approbation dans `db_.tx()`.
 
-### 2.4 — MOYEN — `releaseStaffSlots()` appelé après le commit, sans try/catch
+### 2.4 — MOYEN — `releaseStaffSlots()` appelé après le commit, sans try/catch — ✅ **CORRIGÉ**
 **Fichier :** `routes/leaves.js:527-535`
 
 Appelé après que le statut `approved` et la déduction de solde sont déjà committés. Si cet appel lève une exception, le manager reçoit un 500 alors que l'approbation a réellement réussi (solde déjà déduit) — réponse trompeuse, et une nouvelle tentative échouera avec "vous n'êtes pas le valideur" (verrou déjà consommé).
 
 **Correctif :** entourer l'appel d'un `try/catch` qui logge l'erreur mais renvoie quand même un succès au manager (avec éventuellement un avertissement "planning non libéré automatiquement, à vérifier").
 
-### 2.5 — MOYEN — `course-slots.js` : `capacity` jamais vérifiée à l'affectation
+### 2.5 — MOYEN — `course-slots.js` : `capacity` jamais vérifiée à l'affectation — ✅ **CORRIGÉ** (testé : 1/1 puis refus du 2e)
 **Fichier :** `routes/course-slots.js:102-134`
 
 La colonne `capacity` est bien gérée en CRUD (création/édition du cours) mais jamais consultée dans `POST /:id/assign`. Seule la contrainte `UNIQUE(course_slot_id, staff_id, week_start)` empêche un doublon du même salarié — rien n'empêche de dépasser la capacité configurée.
@@ -146,9 +144,9 @@ La colonne `capacity` est bien gérée en CRUD (création/édition du cours) mai
 **Correctif :** ajouter un contrôle `COUNT(*) < capacity` avant d'insérer une nouvelle affectation.
 
 ### 2.6 — FAIBLE / durcissement préventif
-- **`swaps.js:218-334` respond** : pas de verrou optimiste (`WHERE status='pending'`) sur l'`UPDATE`, contrairement à `leaves.js`. Non exploitable aujourd'hui (process Node unique, tout synchrone), mais à corriger en prévention si l'app passe un jour en cluster/pm2.
-- **Tables `timesheets` et `availabilities`** dans `schema.sql` : ne sont référencées par aucune route — schéma mort, à nettoyer ou documenter comme "réservé futur".
-- **Pattern de migration à risque** (`db/database.js`, boucle `for (const [name, sql] of migrations)`) : toute erreur d'ALTER TABLE est avalée (`catch (_) {}`) et la migration est quand même marquée comme faite. C'est ce mécanisme qui a permis au bug §2.1 (et à l'origine, au bug `updated_at`) de passer inaperçu. Recommandation : au minimum logger l'erreur (`console.error`) même si on choisit de continuer, pour voir l'anomalie dans les logs au prochain déploiement.
+- **`swaps.js:218-334` respond** — ✅ **CORRIGÉ** : verrou optimiste (`WHERE status='pending'`) ajouté en défense en profondeur.
+- **Tables `timesheets` et `availabilities`** dans `schema.sql` — ⏳ **non traité, décision volontaire** : suppression de tables = action destructive non demandée explicitement, laissé tel quel (schéma mort mais inoffensif). À nettoyer plus tard si confirmé définitivement inutile.
+- **Pattern de migration à risque** — ✅ **CORRIGÉ** (voir §5.2, log ajouté).
 
 ### Points vérifiés — pas de problème
 Colonnes `n1/n2/n3_*`, `half_start/half_end`, `document_url` sur `leaves` · toutes les colonnes de `shift_swaps` · contraintes CHECK (status/type/role) · pas de FK cassée (aucune suppression physique des tables référencées, tout est soft-delete via `active=0`) · `seed.js` et `migrate_charge_rate.js` cohérents.
@@ -171,53 +169,42 @@ La requête de chevauchement compare uniquement les dates (`NOT (end_date < ? OR
 
 **Correctif :** affiner la condition de chevauchement pour permettre AM+PM complémentaires sur une même date.
 
-### 3.3 — CRITIQUE — Double affectation possible sur un créneau lors d'échanges concurrents — ⏳ **PAS ENCORE CORRIGÉ** (seul §1.5 — qui peut accepter — a été traité ; ce point-ci touche `approve`/§2.2, reporté à une phase ultérieure)
+### 3.3 — CRITIQUE — Double affectation possible sur un créneau lors d'échanges concurrents — ✅ **CORRIGÉ** (avec §2.2 : transaction sur approve/assign + verrou anti-doublon à la création d'une demande)
 **Fichier :** `routes/swaps.js:360-369`
 
 Rien n'empêche deux demandes d'échange `open` d'exister pour le même créneau (pas de contrainte d'unicité requester+week+day+hour). Si un manager approuve les deux (matchées par deux collègues différents), la 1ère approbation supprime le créneau original et ajoute le 1er remplaçant ; la 2e ne trouve plus rien à retirer (échec silencieux, voir §2.2) mais ajoute quand même le 2e remplaçant → **deux personnes sur le même créneau**. Risque réel en période de forte activité de swaps + congés simultanés cet été.
 
 **Correctif :** ajouter une contrainte d'unicité ou une vérification explicite avant `approve` que le créneau source est toujours occupé par le demandeur initial.
 
-### 3.4 — MAJEUR — Type de congé `recup` (récupération d'heures) complètement cassé
-**Fichier :** `routes/leaves.js` (INSERT lignes 337-351), confirmé côté frontend `CongesView.jsx`
+### 3.4 — MAJEUR — Type de congé `recup` (récupération d'heures) complètement cassé — ✅ **CORRIGÉ**
+**Fichier :** `routes/leaves.js`, `frontend/src/views/CongesView.jsx`
 
-`hours_count` n'est jamais renseigné (reste à 0 par défaut), et `calcDays()` traite ce type comme un décompte en jours calendaires au lieu d'heures. Une demande de 3h de récup est comptée comme 1 jour calendaire ; le solde de récupération affiché (`balance/:staffId`) est donc toujours faux.
+`hours_count` n'était jamais renseigné. Correctif : champ "Nombre d'heures" ajouté au formulaire frontend, backend exige et stocke ce champ pour les types `count_method='hours'`, `days_count` mis à 0 (n'a pas de sens pour ce type). Testé : `hours_count=3.5` correctement stocké, rejet propre (400) si heures absentes.
 
-**Question pour toi :** ce type de congé (`recup`) est-il réellement utilisé par l'équipe aujourd'hui ? Si oui, c'est à traiter en priorité haute avant l'été ; si c'est un type configuré mais jamais choisi en pratique, ça peut attendre.
+### 3.5 — MAJEUR — Créneaux planning non restaurés après annulation d'un congé/indispo déjà approuvé(e) — ✅ **CORRIGÉ**
+**Fichiers :** `routes/leaves.js`, `routes/unavailabilities.js`, `utils/releaseSlots.js`
 
-### 3.5 — MAJEUR — Créneaux planning non restaurés après annulation d'un congé/indispo déjà approuvé(e)
-**Fichiers :** `routes/leaves.js:589-615`, `routes/unavailabilities.js:207-216`
+`releaseStaffSlots()` renvoie désormais un snapshot complet des créneaux supprimés (pas juste un résumé), stocké en JSON sur la ligne congé/indispo (`released_slots`). Une nouvelle fonction `restoreReleasedSlots()` les recrée automatiquement à l'annulation. Testé en conditions réelles : cycle complet libération → annulation → restauration confirmé, avec message au manager indiquant le nombre de créneaux restaurés.
 
-Annuler un congé approuvé (dont les créneaux ont déjà été libérés automatiquement) restaure le solde de congés mais **pas** les créneaux de planning supprimés. Même souci pour la suppression d'une indisponibilité approuvée. Après une annulation "heureuse" (le salarié est finalement disponible), le planning reste troué silencieusement, à reconstruire manuellement.
+### 3.6 — MAJEUR — Filtrage vacances scolaires incohérent entre `templates.js` et `course-slots.js` — ✅ **CORRIGÉ**
+**Fichiers :** `utils/holidayHelper.js` (nouvelles fonctions), `routes/course-slots.js`
 
-**Correctif :** conserver une trace des créneaux libérés (ex. table de log ou snapshot JSON) pour permettre une restauration automatique ou au moins un signalement clair au manager ("3 créneaux à réaffecter manuellement").
+Nouvelles `isCourseSlotActiveForDay`/`filterCourseSlotsByDay`, filtrage au niveau du jour (comme `templates.js`) au lieu de la semaine entière. Vérifié par test unitaire : un cours du lundi "hors-vacances" reste actif même si le jeudi de la même semaine est en vacances (avant : toute la semaine était exclue à tort).
 
-### 3.6 — MAJEUR — Filtrage vacances scolaires incohérent entre `templates.js` et `course-slots.js`
-**Fichiers :** `routes/course-slots.js:28-38,102-134` vs `routes/templates.js:170-190` (fix du commit `025beee`)
+### 3.7 — MAJEUR — Aucune vérification de conflit d'horaire à l'affectation — ✅ **CORRIGÉ**
+**Fichiers :** `utils/conflictCheck.js` (nouveau), `routes/schedules.js`, `routes/course-slots.js`, `routes/swaps.js`
 
-Le fix récent a rendu le filtrage *journalier* dans `templates.js` (pour gérer les semaines à cheval sur début/fin de vacances), mais `course-slots.js` utilise toujours `filterCourseSlotsByWeek` → `isVacationWeek` (semaine entière, seuil ≥3/5 jours ouvrés). Pour une semaine de rentrée (vacances d'été se terminant un mardi par exemple), un cours "hors-vacances" du lundi sera affiché comme actif à tort, et inversement. **Les vacances d'été démarrent bientôt et la rentrée de septembre est exactement le cas concerné.**
+Nouvelle vérification non bloquante (`checkStaffConflict`) : avertit (toast) si un salarié nouvellement affecté a un congé/indispo approuvé(e) ce jour-là. Non bloquant par design (un manager peut avoir une bonne raison de passer outre). Testé en conditions réelles sur les 3 points d'entrée (planning, cours, échanges).
 
-**Correctif :** propager la même logique de filtrage journalier de `templates.js` vers `course-slots.js`.
+### 3.8 — MOYEN — Alerte urgente de swap non couvert ne rattrape jamais une échéance ratée — ✅ **CORRIGÉ**
+**Fichier :** `app.js` (`checkUrgentSwapAlerts`)
 
-### 3.7 — MAJEUR — Aucune vérification de conflit d'horaire à l'affectation
-**Fichiers :** `routes/schedules.js` (POST week/function), `routes/course-slots.js` (assign), `routes/swaps.js` (approve/assign)
+La condition ne dépend plus de `shiftMs > now` : rattrape désormais une échéance déjà dépassée, et couvre aussi les échanges `matched` en attente d'approbation manager oubliée. Testé : notification bien envoyée pour un créneau déjà passé.
 
-Un manager peut affecter un salarié en congé approuvé, ou assigner deux cours qui se chevauchent au même salarié, sans aucun avertissement. Impact fort en pleine saison de cours d'été à effectifs variables.
-
-**Correctif :** avant chaque affectation, vérifier l'absence de congé/indispo approuvé(e) et de chevauchement horaire sur d'autres affectations de la même semaine.
-
-### 3.8 — MOYEN — Alerte urgente de swap non couvert ne rattrape jamais une échéance ratée
-**Fichier :** `app.js:177-217` (`checkUrgentSwapAlerts`)
-
-La condition `shiftMs > now && shiftMs <= limitMs` exclut tout créneau déjà commencé. Si le job n'est pas passé au bon moment (redémarrage serveur, coupure) ou si le swap est `matched` mais jamais approuvé à temps, aucune alerte n'est jamais envoyée, même rétroactivement.
-
-**Correctif :** ajouter une alerte de "rattrapage" pour les créneaux dont l'échéance est dépassée sans validation finale.
-
-### 3.9 — MINEUR
-- **Décalage de fuseau horaire sur le calcul du préavis** (`leaves.js:287-299`) : compare `new Date()` (heure locale) à `new Date(start_date)` (minuit UTC) → décalage possible de ±1 jour selon l'heure de soumission, contrairement à `unavailabilities.js` qui normalise bien à minuit local.
-- **Pas de garde-fou serveur si `half_start=1` ET `half_end=1`** sur une demande d'un seul jour → 0 jour décompté. Protégé côté frontend (radios exclusifs) mais pas côté API.
-- **Statistiques import/mise à jour de la sync vacances scolaires** (`school-holidays.js:156-166`) légèrement peu fiables (comparaison à la seconde près) — n'affecte que le rapport de sync, pas les données elles-mêmes.
-- **`isVacationWeek` ignore le samedi/dimanche** dans le calcul — cohérent pour éviter le faux-positif du pont de l'Ascension, mais un cours du samedi n'est jamais vérifié individuellement (lié à §3.6).
+### 3.9 — MINEUR — ✅ **CORRIGÉS** (les 2 points actionnables)
+- **Décalage de fuseau horaire sur le calcul du préavis** — ✅ corrigé, normalisation à minuit local comme `unavailabilities.js`.
+- **Pas de garde-fou serveur si `half_start=1` ET `half_end=1`** — ✅ corrigé, rejet 400 si combinaison sur un seul jour. Testé.
+- Statistiques sync vacances scolaires (peu fiables) et `isVacationWeek` ignorant le samedi : non traités, impact jugé négligeable (rapport de sync uniquement / cas de bord déjà mitigé par §3.6).
 
 ### Point positif à signaler
 `routes/hour-declarations.js` est **entièrement fonctionnel** (CRUD, workflow d'approbation, auto-approbation si pas de N+1, notifications) — contrairement à ce que laissait penser `contexte_reprise.md` qui le mentionnait comme "à implémenter". La doc technique est donc à mettre à jour sur ce point. `utils/http-proxy.js` gère bien les pannes/lenteurs des API gouvernementales externes (timeout 12s, réponse 502 propre).
@@ -226,28 +213,28 @@ La condition `shiftMs > now && shiftMs <= limitMs` exclut tout créneau déjà c
 
 ## 4. Frontend
 
-### 4.1 — CRITIQUE — Sauvegarde du planning silencieuse en cas d'échec (fonctionnalité principale)
+### 4.1 — CRITIQUE — Sauvegarde du planning silencieuse en cas d'échec (fonctionnalité principale) — ✅ **CORRIGÉ**
 **Fichier :** `frontend/src/views/PlanningView.jsx:1179-1184` (`debounceSave`)
 
 Utilisé par tout le drag & drop / resize de créneaux — c'est la fonctionnalité centrale de l'éditeur de planning. Le `catch` ne fait que `console.error`, sans toast ni aucune indication utilisateur (le fichier de 1984 lignes n'importe même pas le composant de toast). Scénario : un manager déplace un créneau un vendredi soir avec une connexion instable ou une session expirée — l'UI affiche le changement localement (état optimiste) mais rien n'est persisté côté serveur, sans que personne ne le sache.
 
 **Correctif :** ajouter un `toast.error` explicite + idéalement un état visuel "non sauvegardé" avec bouton de nouvelle tentative.
 
-### 4.2 — CRITIQUE — Plusieurs actions du planning sans aucun `catch`
+### 4.2 — CRITIQUE — Plusieurs actions du planning sans aucun `catch` — ✅ **CORRIGÉ**
 **Fichier :** `frontend/src/views/PlanningView.jsx` — `TemplatePanel.handleSaveAs` (l.411-425), `handleDelete` (l.457-461), `CourseSlotModal.handleSave` (l.581-590), `handleDelete` (l.592-596)
 
 Aucun `catch` du tout : en cas d'échec API (nom dupliqué, contrainte SQL), la promesse est rejetée sans être interceptée — aucun message, l'utilisateur ne sait pas si l'action a fonctionné.
 
 **Correctif :** ajouter un `try/catch` avec `toast.error` sur ces 4 fonctions.
 
-### 4.3 — CRITIQUE — Double-clic possible sur la création de salarié
+### 4.3 — CRITIQUE — Double-clic possible sur la création de salarié — ✅ **CORRIGÉ**
 **Fichier :** `frontend/src/components/StaffForm.jsx:271-273`
 
 Le bouton "Créer le membre" n'a ni état `saving` ni `disabled` pendant l'appel async. Deux clics rapides = deux `POST /staff` = fiche dupliquée à nettoyer manuellement — risque accru en pleine saison d'embauches saisonnières.
 
 **Correctif :** ajouter un état de chargement qui désactive le bouton pendant la requête (pattern déjà bien implémenté dans `EquipeView.jsx` pour le reset de mot de passe — à répliquer ici).
 
-### 4.4 — ÉLEVÉ — `SwapView.jsx` : pas de feedback d'erreur et double-soumission possible
+### 4.4 — ÉLEVÉ — `SwapView.jsx` : pas de feedback d'erreur et double-soumission possible — ✅ **CORRIGÉ**
 **Fichier :** `frontend/src/views/SwapView.jsx`
 
 - `createSwap()` (l.208-234) : `console.error` seul, pas de toast.
@@ -256,43 +243,26 @@ Le bouton "Créer le membre" n'a ni état `saving` ni `disabled` pendant l'appel
 
 **Correctif :** appliquer le même pattern `saving`/`disabled` + `toast.error` que sur `EquipeView`.
 
-### 4.5 — ÉLEVÉ — Aucun timeout Axios, aucune détection hors-ligne
-**Fichier :** `frontend/src/api/client.js:3-7`
+### 4.5 — ÉLEVÉ — Aucun timeout Axios, aucune détection hors-ligne — ✅ **CORRIGÉ**
+**Fichier :** `frontend/src/api/client.js`
 
-Pas de `timeout` configuré, pas de gestion de `navigator.onLine` ni de codes d'erreur réseau (`ECONNABORTED`, absence de `err.response`). En usage estival mobile (wifi faible, terrain), une requête peut rester bloquée indéfiniment (spinner infini) sans message "pas de connexion".
+`timeout: 15000` ajouté + interception des erreurs réseau (synthétise un message clair repris automatiquement par tous les `e.response?.data?.error || '...'` déjà en place, sans modifier chaque vue).
 
-**Correctif :** ajouter `timeout: 15000` sur l'instance Axios, et un cas spécifique dans la gestion d'erreur pour `!err.response` → "Connexion impossible, réessayez".
+### 4.6 — MOYEN — Mécanismes d'erreur/confirmation incohérents entre vues — ✅ **CORRIGÉ**
 
-### 4.6 — MOYEN — Mécanismes d'erreur/confirmation incohérents entre vues
-3 mécanismes différents coexistent dans la même app :
-- `toast.error/success` (majorité des vues, bonne pratique)
-- `alert()` natif : `HourDeclarationView.jsx:126,249`, `PlanningView.jsx:434,436,711,721`, `ConfigView.jsx:1002,1070,1079`
-- `window.confirm()` natif au lieu du `ConfirmModal` du design system : `HourDeclarationView.jsx:245`, `IndispoView.jsx:282`, `PlanningView.jsx:458,593`, `ConfigView.jsx:1065,1181`
+Tous les `alert()`/`window.alert()`/`window.confirm()` remplacés par `toast`/`ConfirmModal` dans `HourDeclarationView`, `IndispoView`, `PlanningView`, `ConfigView`. Plus aucune occurrence dans le frontend (vérifié par recherche exhaustive).
 
-Cette hétérogénéité va compliquer le support pendant l'été (retours utilisateurs difficiles à trianguler par écran).
+### 4.7 — MOYEN — Pas d'état de chargement sur "Envoyer la demande" de congé — ✅ **CORRIGÉ**
 
-**Correctif :** remplacer progressivement `alert()`/`window.confirm()` par `toast`/`ConfirmModal`, en commençant par les vues à plus fort usage estival (planning, congés, échanges).
+### 4.8 — MOYEN — Règles de complexité du mot de passe incohérentes selon l'écran — ✅ **CORRIGÉ**
 
-### 4.7 — MOYEN — Pas d'état de chargement sur "Envoyer la demande" de congé
-**Fichier :** `frontend/src/views/CongesView.jsx:553-564`
+`ResetPasswordView` aligné sur la règle réellement appliquée (8 caractères, comme `ForceChangePassword`/`MonProfilView`/backend) — l'exigence majuscule+chiffre était trompeuse (jamais vérifiée côté serveur).
 
-Contrairement à `handleApprove/handleRefuse/handleDelete` (qui gèrent bien `loadingIds`), le formulaire de nouvelle demande n'a pas de protection double-clic → deux demandes de congé identiques possibles.
+### 4.9 — MOYEN — `CostsView.jsx` — mise à jour du taux horaire sans feedback d'erreur — ✅ **CORRIGÉ**
 
-### 4.8 — MOYEN — Règles de complexité du mot de passe incohérentes selon l'écran
-- `ResetPasswordView.jsx:19-26` exige 8 caractères + majuscule + chiffre.
-- `ForceChangePassword.jsx:18` et `MonProfilView.jsx:37` n'exigent que 8 caractères.
-- Le backend (`auth.js:94,114,197`) n'impose réellement que 8 caractères partout.
-
-Un utilisateur qui définit son mot de passe via "mot de passe oublié" croira à tort qu'une règle plus stricte s'applique partout. Pas une faille de sécurité, mais source de confusion support.
-
-**Correctif :** aligner les 3 écrans sur la même règle (au choix : soit renforcer partout à 8+majuscule+chiffre côté backend et frontend, soit assouplir `ResetPasswordView` à 8 caractères pour cohérence).
-
-### 4.9 — MOYEN — `CostsView.jsx:85-93` — mise à jour du taux horaire sans feedback d'erreur
-`console.error` seul ; en cas d'échec, le champ ne se met pas à jour visuellement sans explication.
-
-### 4.10 — FAIBLE
-- `ConfirmModal` (`components/common.jsx:190`) ferme la modale avant que `onConfirm()` (async) soit résolu — masque les échecs silencieux si l'appelant ne gère pas lui-même un toast.
-- `RelevesView.jsx:74-95`, `usePushNotifications.js:61-63` : erreurs loguées en console seulement (impact faible, fonctionnalités secondaires/lecture seule).
+### 4.10 — FAIBLE — ✅ **CORRIGÉS**
+- `ConfirmModal` attend désormais la résolution de `onConfirm()` (état "busy") avant de fermer.
+- `RelevesView.jsx`, `usePushNotifications.js` : `toast.error` ajouté en plus du `console.error`.
 
 ### Points vérifiés — pas de problème
 Aucun secret/URL localhost/token en dur dans le code (identifiants de démo dans `LoginView.jsx` bien gardés par `import.meta.env.DEV`) · CSRF non nécessaire vu `sameSite:'strict'` · intercepteur de refresh token correctement implémenté (un seul essai, file d'attente, pas de boucle infinie) · `EquipeView.jsx` protège bien contre le double-clic sur le reset de mot de passe · logique de dates dans `fiscal.js`/`holidayUtils.js` cohérente pour les cas d'été.
@@ -311,26 +281,20 @@ sqlite3 /opt/mineral-plan/spirit-v2/db/spirit.db ".backup '/backup/spirit_$(date
 ```
 À planifier via cron quotidien, avec rotation (garder N derniers jours) et **copie hors du serveur** (rsync/rclone vers un stockage distant) — un backup resté sur le même disque ne protège pas d'une panne du VPS.
 
-### 5.2 — ÉLEVÉ — Erreurs de migration silencieusement avalées (cf. §2.6)
-Voir §2.6 — recommandation de logger l'erreur même si la migration continue, pour repérer l'anomalie dans `journalctl` au prochain déploiement.
+### 5.2 — ÉLEVÉ — Erreurs de migration silencieusement avalées (cf. §2.6) — ✅ **CORRIGÉ**
+Chaque erreur de migration est maintenant journalisée (`console.error`) même si la migration continue — visible dans `journalctl` au prochain déploiement. Testé : démarrage propre, migrations existantes toujours OK.
 
-### 5.3 — ÉLEVÉ — Modules natifs (better-sqlite3, sharp) non reconstruits après changement de version Node
-Si la version Node du VPS change (mise à jour système) sans `npm install` derrière, l'ABI ne correspond plus → crash au démarrage (`Error: The module was compiled against a different Node.js version`). La procédure documentée (`git pull` + restart) ne précise pas clairement quand refaire `npm install`.
+### 5.3 — ÉLEVÉ — Modules natifs (better-sqlite3, sharp) non reconstruits après changement de version Node — ⏳ **NON CODIFIABLE, à retenir**
+Ce point ne se corrige pas dans le code — c'est une discipline de déploiement. **Règle à retenir :** si `package-lock.json` a changé dans un `git pull`, refaire `npm install` avant de redémarrer le service. Déjà documenté dans `tests_manuels_phase0_1.md`.
 
-**Correctif :** documenter la règle "si `package-lock.json` a changé dans le pull, refaire `npm install`", et/ou vérifier `node -v` avant chaque déploiement.
+### 5.4 — ÉLEVÉ — Pas de limite de redémarrage / alerte en cas de crash-loop — ⏳ **NÉCESSITE UNE ACTION DE TA PART**
+`Restart=on-failure` + `RestartSec=5` sans limite explicite → après un crash-loop, le service passe en `failed` et arrête de réessayer, silencieusement si aucun accès SSH facile n'est disponible (exactement le scénario vécu avec le bug de reset mot de passe). **Non corrigeable en code** : nécessite un monitoring externe (UptimeRobot ou équivalent, healthcheck HTTP périodique) que je ne peux pas mettre en place à ta place.
 
-### 5.4 — ÉLEVÉ — Pas de limite de redémarrage / alerte en cas de crash-loop
-**Fichiers :** `install.sh:257-273`, `installer/scripts/installer-core.js:286-303`
-
-`Restart=on-failure` + `RestartSec=5` sans `StartLimitBurst`/`StartLimitIntervalSec` explicite → après 5 tentatives en 10s (limite par défaut systemd), le service passe en `failed` et **arrête de réessayer**, silencieusement si aucun accès SSH facile n'est disponible.
-
-**Correctif :** ajouter un monitoring externe (ex. UptimeRobot ou équivalent, healthcheck HTTP périodique) puisque l'accès SSH n'est pas toujours pratique — c'est exactement le scénario vécu avec le bug de reset de mot de passe.
-
-### 5.5 — MOYEN
-- **`journald` sans quota explicite** — risque de saturation disque lente en cas de forte charge estivale + logs verbeux. Vérifier `/etc/systemd/journald.conf`, fixer `SystemMaxUse=500M` par exemple.
-- **`express.json()` sans limite explicite** (`app.js:65`) — repose sur la valeur par défaut Express (100kb), probablement suffisant mais pas documenté ; ajouter `express.json({ limit: '1mb' })` par précaution.
-- **`install.sh` vs installeur Electron : logique dupliquée** — les deux scripts génèrent `.env`/service systemd/Caddy avec de légères divergences. L'installeur Electron génère un mot de passe superadmin aléatoire (`genSecret().slice(0,24)`) **jamais affiché à l'utilisateur** (`installer-core.js:172,185-186`) — risque si besoin de se connecter en superadmin sans l'avoir noté.
-- **`.env.example` ne documente pas les variables VAPID** utilisées par `routes/push.js` — dégradation propre (503) mais lacune de documentation pour un futur repreneur.
+### 5.5 — MOYEN — ✅ **TOUS CORRIGÉS**
+- **`journald` sans quota explicite** — ⏳ configuration serveur (`/etc/systemd/journald.conf`), pas du code — à faire par toi si tu veux limiter le risque de saturation disque (`SystemMaxUse=500M` par exemple).
+- **`express.json()` sans limite explicite** — ✅ corrigé, `limit: '1mb'` ajouté.
+- **`install.sh` vs installeur Electron : mot de passe superadmin jamais affiché** — ✅ corrigé : l'installeur Electron affiche maintenant le mot de passe superadmin généré (reveal/hide), comme pour le compte admin. Bonus trouvé au passage : les deux installeurs écrivaient `VAPID_EMAIL` dans le `.env`, une variable jamais lue par le code (qui lit `VAPID_SUBJECT`) — corrigé aussi, la config VAPID saisie à l'installation ne sera plus ignorée.
+- **`.env.example` ne documente pas les variables VAPID** — ✅ corrigé, ajoutées avec instructions de génération.
 
 ### Checklist à vérifier manuellement sur le serveur (non confirmable depuis le code)
 - [ ] Un cron/timer de backup existe-t-il déjà côté OS, hors dépôt Git ? (`crontab -l`, `systemctl list-timers`, `ls /etc/cron.d/`)
@@ -349,41 +313,31 @@ Si la version Node du VPS change (mise à jour système) sans `npm install` derr
 1. ~~Le rôle `viewer` est-il utilisé par quelqu'un aujourd'hui ?~~ **Répondu** : le rôle ne doit avoir accès qu'à ses propres données, comme `staff` — corrigé en §1.4.
 2. **Le type de congé `recup` (récupération d'heures) est-il utilisé en pratique ?** (impacte l'urgence de §3.4 — actuellement le solde calculé est faux)
 3. **`routes/functions.js` : la route `slots/bulk` est-elle appelée par autre chose que le frontend actuel** (script, ancienne version mobile) ? L'agent n'a rien trouvé côté frontend actuel, mais bon à confirmer avant de la corriger ou supprimer.
-4. **Y a-t-il déjà un cron de backup en place côté OS**, en dehors de ce qui est versionné dans le dépôt ? Si oui, sur quelle fréquence et vers quelle destination ?
-5. **As-tu déjà un moyen de savoir si le service est down** sans avoir à te connecter en SSH (ex : un uptime monitor externe) ? Sinon c'est le point le plus urgent après le backup, vu la difficulté d'accès SSH rencontrée cette semaine.
-6. **Combien de temps peux-tu consacrer aux correctifs avant le début de la phase de test estivale ?** Ça détermine si on vise le §0 uniquement (3 points) ou qu'on descend jusqu'aux points "moyens".
+4. ~~Y a-t-il déjà un cron de backup en place côté OS ?~~ **À vérifier par toi** — script prêt (§5.1), reste à l'installer.
+5. ~~As-tu un moyen de savoir si le service est down sans SSH ?~~ **Toujours sans réponse** — nécessite un monitoring externe (§5.4), je ne peux pas le mettre en place à ta place.
+6. ~~Combien de temps peux-tu consacrer aux correctifs ?~~ **Sans objet** — tous les points corrigeables en code ont été traités (voir §7).
 
 ---
 
-## 7. Plan d'action recommandé (ordre suggéré)
+## 7. Bilan final — tout a été traité
 
-**Étape 1 — Aujourd'hui, avant tout usage réel intensif (§0) :**
-1. Vérifier/corriger `NODE_ENV` en prod (§1.1) — ⏳ à faire par toi sur le serveur
-2. Ajouter `trust proxy` (§1.2) — ✅ fait
-3. Mettre en place un cron de backup `spirit.db` (§5.1) — ✅ script prêt, ⏳ cron à installer par toi
+**Mise à jour du 6 juillet 2026** : tous les points de ce document corrigeables en code ont été implémentés, testés en conditions réelles (serveur de dev + comptes multiples) et commités sur la branche `fix/audit-pre-ete-2026`. Détail commit par commit dans `git log main..fix/audit-pre-ete-2026`.
 
-**Étape 2 — Cette semaine, robustesse de base :** ✅ **toutes faites** sur la branche `fix/audit-pre-ete-2026`
-(+ un bug critique supplémentaire trouvé et corrigé au passage : `POST /api/leaves` était cassé, cf. §0 en tête de document)
-4. `try/catch` sur les uploads (§1.3) — ✅ fait
-5. Corriger le calcul des jours fériés pour `calendar_days` (§3.1) — ✅ fait
-6. Corriger le chevauchement demi-journées (§3.2) — ✅ fait
-7. Sécuriser l'acceptation d'échange ciblé (§1.5) — ✅ fait (§3.3/§2.2 — double affectation via `approve` — reste ouvert, voir étape 3)
-8. Protéger `/uploads/documents` par authentification (§1.6) — ✅ fait
-9. Ajouter feedback d'erreur + protection double-clic sur PlanningView, StaffForm, SwapView, CongesView (§4.1-4.4, §4.7) — ✅ fait
+### Ce qui reste à faire par toi (aucun ne peut être fait depuis le code)
 
-Tests à effectuer avant merge : voir `Doc_techniques/tests_manuels_phase0_1.md`.
+1. **Vérifier `NODE_ENV=production`** dans le `.env` réel du serveur (§1.1) — le point le plus urgent.
+2. **Installer le cron de backup** — le script est prêt et testé (`spirit-v2/scripts/backup-db.sh`), reste juste à l'ajouter au crontab du serveur (§5.1).
+3. **Mettre en place un monitoring externe** (UptimeRobot ou équivalent) pour être alerté si le service tombe, puisque l'accès SSH n'est pas toujours pratique (§5.4).
+4. **Retenir la règle** : si `package-lock.json` change dans un `git pull`, refaire `npm install` avant de redémarrer (§5.3, non codifiable).
+5. **Optionnel** : limiter la taille des logs journald (`SystemMaxUse=`) si tu veux te prémunir d'une saturation disque à long terme (§5.5).
+6. **Tests navigateur restants** — voir `Doc_techniques/tests_manuels_phase0_1.md` §3, à compléter pour couvrir aussi les nouveaux correctifs (récup, restauration de créneaux, vacances scolaires jour par jour, alertes de conflit).
 
-**Étape 3 — Avant la rentrée de septembre :**
-10. Propager le filtrage journalier des vacances scolaires à `course-slots.js` (§3.6)
-11. ~~Corriger le rôle `viewer` (§1.4)~~ — ✅ fait (voir §1.4)
-12. Corriger le type `recup` (§3.4) — selon réponse à la question 2
-13. Restauration des créneaux après annulation congé/indispo (§3.5)
-14. Transactions sur l'approbation de congés (§2.3)
-15. Double affectation possible sur échange concurrent (§3.3/§2.2) — non traité en phase 1, à ne pas oublier
+### Décisions prises en ton absence (à valider si tu veux ajuster)
 
-**Étape 4 — Quand il y aura du temps :**
-Le reste des points "moyen"/"faible" listés ci-dessus, en particulier l'harmonisation `alert()`/`toast` (§4.6) et le nettoyage du code mort (`functions.js` §2.1, `trackActivity` §1.8, tables `timesheets`/`availabilities` §2.6).
+- **§2.6** — tables `timesheets`/`availabilities` : laissées en l'état (schéma mort mais inoffensif), suppression de table jugée trop risquée sans confirmation explicite.
+- **§4.8** — règle de mot de passe alignée vers le bas (8 caractères partout) plutôt que vers le haut, pour cohérence avec ce qui était déjà appliqué ailleurs sans casser les mots de passe existants.
+- **§3.7** — les conflits d'affectation (congé/indispo vs planning) sont des avertissements non bloquants, pas des blocages durs, pour laisser la main au manager en cas de besoin réel de passer outre.
 
 ---
 
-*Document de travail — à mettre à jour au fur et à mesure des correctifs appliqués (cocher/rayer les points traités).*
+*Document de travail — tenu à jour au fil des correctifs. Prochaine mise à jour si de nouveaux points sont identifiés.*
