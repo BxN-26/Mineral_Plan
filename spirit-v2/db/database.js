@@ -351,7 +351,12 @@ function getDb() {
     seed.run('leave_min_notice_days',    '2',            'number',  'Nombre de jours minimum de préavis requis avant la date de début du congé', 'conges');
     seed.run('leave_default_cp_balance', '25',           'number',  'Solde initial en jours de CP attribué lors de la création d\'un nouveau salarié', 'conges');
     seed.run('leave_default_rtt_balance','5',            'number',  'Solde initial en jours de RTT attribué lors de la création d\'un nouveau salarié', 'conges');
-    seed.run('leave_count_method',       'working_days', 'string',  'Méthode de décompte des congés : jours ouvrés ou calendaires', 'conges');
+    // Note : la méthode de décompte des congés (jours ouvrés/calendaires) est
+    // configurée PAR TYPE de congé (colonne leave_types.count_method), pas ici
+    // globalement — cf. audit_pre_ete_2026.md. Un ancien réglage global
+    // 'leave_count_method' existait mais n'était jamais lu par le backend,
+    // retiré du seed (une ligne orpheline peut subsister sur une base déjà
+    // installée, sans effet).
     // Groupe : planning
     seed.run('planning_day_start', '7',  'number', 'Heure de début d\'affichage du planning (0-23)', 'planning');
     seed.run('planning_day_end',   '22', 'number', 'Heure de fin d\'affichage du planning (0-23)', 'planning');

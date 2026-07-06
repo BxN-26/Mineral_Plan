@@ -7,6 +7,7 @@ const AUTH  = requireAuth;
 const ADMIN = [requireAuth, requireRole('admin', 'superadmin')];
 
 const VALID_LEVELS = ['manager', 'rh', 'direction'];
+const VALID_COUNT_METHODS = ['working_days', 'calendar_days', 'hours'];
 
 function parseApprovalLevels(raw) {
   if (Array.isArray(raw)) return raw;
@@ -50,6 +51,23 @@ router.put('/:id/approval', ...ADMIN, (req, res) => {
     [JSON.stringify(ordered), req.params.id]
   );
   res.json({ ok: true, approval_levels: ordered });
+});
+
+// ── PUT /api/leave-types/:id/count-method ─────────────────────
+// Configure la méthode de décompte (jours ouvrés / calendaires / heures)
+// PAR TYPE de congé — remplace l'ancien réglage global qui n'était jamais
+// lu par le backend (cf. audit_pre_ete_2026.md).
+router.put('/:id/count-method', ...ADMIN, (req, res) => {
+  const { count_method } = req.body;
+  if (!VALID_COUNT_METHODS.includes(count_method)) {
+    return res.status(400).json({ error: `Méthode valide : ${VALID_COUNT_METHODS.join(', ')}` });
+  }
+
+  const lt = db_.get('SELECT id FROM leave_types WHERE id = ?', [req.params.id]);
+  if (!lt) return res.status(404).json({ error: 'Type de congé introuvable' });
+
+  db_.run('UPDATE leave_types SET count_method = ? WHERE id = ?', [count_method, req.params.id]);
+  res.json({ ok: true, count_method });
 });
 
 module.exports = router;

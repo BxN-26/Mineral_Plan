@@ -141,7 +141,6 @@ const CongesConfig = ({ settings, setSettings }) => {
   const noticeDays       = map['leave_min_notice_days']    || '2';
   const cpDefault        = map['leave_default_cp_balance'] || '25';
   const rttDefault       = map['leave_default_rtt_balance']|| '5';
-  const countMethod      = map['leave_count_method']       || 'working_days';
 
   return (
     <div style={{ maxWidth: 620 }}>
@@ -162,14 +161,6 @@ const CongesConfig = ({ settings, setSettings }) => {
               onChange={v => save('leave_min_notice_days', parseInt(v, 10) || 1)} />
           </div>
         )}
-      </SettingCard>
-
-      <SettingCard icon="🧮" title="Méthode de décompte des congés"
-        desc="Détermine si les congés sont comptés en jours ouvrés (hors week-end) ou en jours calendaires (tous les jours).">
-        <select value={countMethod} onChange={e => save('leave_count_method', e.target.value)} style={{ ...inputSt, width: 'auto' }}>
-          <option value="working_days">Jours ouvrés (hors samedi et dimanche)</option>
-          <option value="calendar_days">Jours calendaires (tous les jours)</option>
-        </select>
       </SettingCard>
 
       <SectionTitle>Soldes attribués aux nouveaux salariés</SectionTitle>
@@ -211,6 +202,35 @@ const CongesConfig = ({ settings, setSettings }) => {
                   }
                 }}
               />
+
+              {/* Méthode de décompte — par type (remplace l'ancien réglage
+                  global "leave_count_method", jamais lu par le backend).
+                  Non proposé pour les types en heures (ex. récup) pour ne
+                  pas casser la saisie dédiée. */}
+              {lt.count_method !== 'hours' && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: '#6B6860', marginBottom: 4 }}>Méthode de décompte</div>
+                  <select
+                    value={lt.count_method}
+                    onChange={async e => {
+                      const newMethod = e.target.value;
+                      setLeaveTypes(prev => prev.map(x => x.id === lt.id ? { ...x, count_method: newMethod } : x));
+                      try {
+                        await api.put(`/leave-types/${lt.id}/count-method`, { count_method: newMethod });
+                        toast.success(`Méthode de décompte mise à jour pour "${lt.label}"`);
+                      } catch (err) {
+                        toast.error(err.response?.data?.error || 'Échec de la mise à jour');
+                        const lr = await api.get('/leave-types');
+                        setLeaveTypes(lr.data || []);
+                      }
+                    }}
+                    style={{ ...inp, width: 'auto' }}
+                  >
+                    <option value="working_days">Jours ouvrés (hors week-end et jours fériés)</option>
+                    <option value="calendar_days">Jours calendaires (tous les jours, fériés inclus)</option>
+                  </select>
+                </div>
+              )}
             </SettingCard>
           );
         })}
