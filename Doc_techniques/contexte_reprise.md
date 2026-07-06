@@ -321,5 +321,10 @@ sqlite3 /home/serveur/Mineral_Plan/spirit-v2/db/spirit.db \
 - Module de planning saisonnier (périodes vacances vs hors-vacances)
 - Gestion des certifications salariés (BE, BPJEPS…) avec dates d'expiration
 - API publique lecture seule pour afficher le planning sur le site vitrine
-- Déclarations d'heures autonomes (route `/api/hour-declarations` déjà montée, à implémenter)
+- ~~Déclarations d'heures autonomes~~ — fait, `/api/hour-declarations` entièrement fonctionnel (CRUD, workflow d'approbation, auto-approbation), voir `audit_pre_ete_2026.md`.
 - Notifications email automatiques (SMTP configuré pour reset mdp, extensible aux congés)
+- **Rafraîchissement temps réel du planning (WebSocket/SSE)** — jugé indispensable par le porteur du projet (6 juillet 2026). Actuellement, une vue planning déjà ouverte ne se recharge que sur changement de semaine sélectionnée ; si un congé/échange est approuvé ailleurs pendant qu'un manager a l'onglet ouvert, il voit un instantané périmé (les données en base sont correctes, seul l'affichage est en cause). Pistes discutées, du plus léger au plus lourd :
+  1. Rafraîchir automatiquement au retour sur l'onglet (`window focus`)
+  2. + Rafraîchissement périodique en arrière-plan (ex. toutes les 60-90s)
+  3. Temps réel via WebSocket/SSE (le serveur pousse un événement "planning modifié" aux clients concernés) — solution la plus correcte mais nécessite une vraie infrastructure temps réel, chantier plus conséquent que les deux précédentes options.
+  À prioriser après la série de tests manuels de l'audit pré-été en cours.
